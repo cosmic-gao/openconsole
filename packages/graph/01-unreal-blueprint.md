@@ -680,3 +680,277 @@ Unreal Blueprint 是**工业级可视化脚本的标杆**，其设计精髓：
 5. **与 C++ 无缝互通**：任何 `UFUNCTION` 即可暴露
 
 理解 Blueprint 的编译管线是学习"如何设计可视化编程语言"的最佳实践。
+
+---
+
+## 14. 源码深度解析
+
+> 本节从 Unreal Engine 公开源码（`Engine/Source/...`）和 Epic 官方编译器文档出发，结合 Tim Sweeney 1998 年遗产的 UnrealScript VM 演化路径，给出 Blueprint 编译器与虚拟机的"代码级"剖面。Epic 仓库需 GitHub-Epic 账号绑定才可访问，因此下文部分代码来自 Epic 官方文档、`ikrima.dev`（前 Epic 工程师维护的引擎笔记）、Intax 的 Blueprint VM 系列博客、Jayden 的 *From Blueprint to Bytecode* 系列等公开转引。**凡是未在公开文档中逐字给出的片段，均标注"近似复现，未直接验证"**；其余为可与 4.27 / 5.x 头文件对照的直接引用。
+
+### 14.1 类层级与文件分布
+
+Blueprint 子系统横跨编辑器（`Editor/`）和运行时（`Runtime/CoreUObject/`）两侧。核心类型与其源码路径如下：
+
+| 类型 | 角色 | 源码位置（基于 5.x） |
+|------|------|----------------------|
+| `UBlueprint` | 资产层（保存到 .uasset） | `Engine/Source/Runtime/Engine/Classes/Engine/Blueprint.h` |
+| `UBlueprintGeneratedClass` | 编译后的 UClass，挂载 UFunction | `Engine/Source/Runtime/Engine/Classes/Engine/BlueprintGeneratedClass.h` |
+| `UEdGraph` / `UEdGraphNode` / `UEdGraphPin` | 通用编辑器图模型 | `Engine/Source/Runtime/Engine/Classes/EdGraph/` |
+| `UK2Node` 及子类 | Kismet2（蓝图）专用节点 | `Engine/Source/Editor/BlueprintGraph/Classes/` |
+| `FKismetCompilerContext` | 一次编译的容器，负责 Pipeline 调度 | `Engine/Source/Editor/KismetCompiler/Public/KismetCompiler.h` |
+| `FBlueprintCompiledStatement` | 编译中间表示（线性 IR） | `Engine/Source/Editor/KismetCompiler/Public/BlueprintCompiledStatement.h` |
+| `FKismetCompilerVMBackend` | IR → Bytecode 后端 | `Engine/Source/Editor/KismetCompiler/Private/KismetCompilerVMBackend.{h,cpp}` |
+| `UFunction`（含 `Script: TArray<uint8>`） | 运行时函数，字节码挂在这里 | `Engine/Source/Runtime/CoreUObject/Public/UObject/Class.h` |
+| `FFrame` | VM 栈帧 | `Engine/Source/Runtime/CoreUObject/Public/UObject/Stack.h` |
+| `EExprToken`（字节码枚举） | 100+ 操作码 | `Engine/Source/Runtime/CoreUObject/Public/UObject/Script.h` |
+| `ScriptCore.cpp` | VM 执行循环 | `Engine/Source/Runtime/CoreUObject/Private/UObject/ScriptCore.cpp` |
+
+继承上：`UEdGraphNode → UK2Node → UK2Node_IfThenElse / UK2Node_CallFunction / ...`；`UClass → UBlueprintGeneratedClass`；`UBlueprint` 本身**不**继承 `UClass`，它是描述资产的 `UObject`，编译产物 `UBlueprintGeneratedClass` 才是真正的运行时类。
+
+### 14.2 字节码操作码 `EExprToken`（直接引用自 `Script.h`）
+
+```cpp
+// Engine/Source/Runtime/CoreUObject/Public/UObject/Script.h
+enum EExprToken
+{
+    EX_LocalVariable        = 0x00, // A local variable.
+    EX_InstanceVariable     = 0x01, // An object variable.
+    EX_DefaultVariable      = 0x02, // Default variable for a class context.
+    EX_Return               = 0x04, // Return from function.
+    EX_Jump                 = 0x06, // Goto a local address in code.
+    EX_JumpIfNot            = 0x07, // Goto if not expression.
+    EX_Let                  = 0x0F, // Assign an arbitrary size value to a variable.
+    EX_LetBool              = 0x14,
+    EX_EndFunctionParms     = 0x16,
+    EX_Self                 = 0x17,
+    EX_Context              = 0x19, // Call a function through an object context.
+    EX_VirtualFunction      = 0x1B, // Virtual UFunction call (looked up by name).
+    EX_FinalFunction        = 0x1C, // Direct UFunction call (compiled-in pointer).
+    EX_IntConst             = 0x1D,
+    EX_FloatConst           = 0x1E,
+    EX_True                 = 0x27,
+    EX_False                = 0x28,
+    EX_LetObj               = 0x59,
+    EX_CallMath             = 0x68, // Direct call into a static native math function.
+    EX_EndOfScript          = 0xFF,
+    EX_Max                  = 0x100,
+};
+```
+
+> 注释中文为本节添加；UE 原注释为英文。完整枚举超过 90 项。
+
+`UFunction::Script` 就是 `TArray<uint8>`，里面是 `EExprToken` 序列加上紧随其后的 inline 数据（指针、整型、跳转偏移）。Intax 把旁边的 `ScriptSerialization.h` 称作 *"the most evil and scary file"*：opcode 与其参数体的内存布局都是手写 macro 控制的。
+
+### 14.3 编译流水线（`FKismetCompilerContext::Compile`）
+
+Epic 官方 *Compiler Overview* 给出 11 步编译顺序，对应 `KismetCompiler.h` 中的方法：
+
+```cpp
+// Engine/Source/Editor/KismetCompiler/Public/KismetCompiler.h
+// 接口签名近似复现，未直接验证；功能注释按 Epic 官方文档排序
+class KISMETCOMPILER_API FKismetCompilerContext : public FGraphCompilerContext
+{
+public:
+    virtual void Compile();             // 入口
+
+protected:
+    virtual void CleanAndSanitizeClass(UBlueprintGeneratedClass* ClassToClean,
+                                       UObject*& InOutOldCDO);                  // 1
+    virtual void CreateClassVariablesFromBlueprint();                           // 2
+    virtual void CreateFunctionList();                                          // 3
+    virtual void CreateAndProcessUberGraph();                                   //   3a
+    virtual void ProcessOneFunctionGraph(UEdGraph* SourceGraph,
+                                         bool bInternalFunction = false);       //   3b
+    virtual void PrecompileFunction(FKismetFunctionContext& Context,
+                                    EInternalCompilerFlags InternalFlags);      // 4
+    virtual void CompileClassLayout(EInternalCompilerFlags InternalFlags);      // 5  类布局阶段
+    virtual void CompileFunctions(EInternalCompilerFlags InternalFlags);        // 6  函数阶段
+    virtual void CompileFunction(FKismetFunctionContext& Context);              //   6a
+    virtual void PostcompileFunction(FKismetFunctionContext& Context);          //   6b
+    virtual void FinishCompilingClass(UClass* Class);                           // 7
+};
+```
+
+各阶段语义：
+
+1. **CleanAndSanitizeClass**：把旧的属性、函数搬到 transient package 的"垃圾类"里，再清空当前 `UBlueprintGeneratedClass`。
+2. **CreateClassVariablesFromBlueprint**：把 `FBPVariableDescription` 转成真正的 `FProperty` 挂到类上。
+3. **CreateAndProcessUberGraph / ProcessOneFunctionGraph**：合并所有事件图为 *UberGraph*（蓝图断点会落在 `ExecuteUbergraph_<BPName>`）；这一步会**调用每个 K2Node 的 `ExpandNode`**——宏节点、`ForEachLoop`、`IfThenElse` 在此被降低为更原始的中间节点。
+4. **PrecompileFunction**：注册网（`RegisterNets`），构建线性执行列表，把图依赖压平成指令序列。
+5. **CompileClassLayout**：绑定（Bind）和链接（Link）`UClass`。
+6. **CompileFunctions / CompileFunction**：逐个调用节点处理器（`FNodeHandlingFunctor::Compile`）追加 IR 语句；`KCST_*` 是 IR opcode：`KCST_Assignment`、`KCST_CallFunction`、`KCST_GotoIfNot`、`KCST_Return`、`KCST_GotoReturn` ……
+7. **FinishCompilingClass + Backend**：选择 `FKismetCompilerVMBackend`（默认）或 `FKismetCppBackend`（Nativization）。
+
+### 14.4 节点处理器与 IR 追加（直接引用片段）
+
+```cpp
+// 直接引用：FunctionResult 节点的 IR 生成
+virtual void Compile(FKismetFunctionContext& Context, UEdGraphNode* Node) override
+{
+    GenerateAssigments(Context, Node);
+    // Always go to return
+    FBlueprintCompiledStatement& GotoStatement = Context.AppendStatementForNode(Node);
+    GotoStatement.Type = KCST_GotoReturn;
+}
+```
+
+```cpp
+// 直接引用：赋值语句的标准三件套
+FBlueprintCompiledStatement& Statement = Context.AppendStatementForNode(Node);
+Statement.Type = KCST_Assignment;
+Statement.LHS  = DstTerm;
+Statement.RHS.Add(RHSTerm);
+```
+
+```cpp
+// 直接引用：FKismetCompilerVMBackend::ConstructFunction 末尾的 Return
+void FKismetCompilerVMBackend::ConstructFunction(
+    FKismetFunctionContext& FunctionContext,
+    bool bIsUbergraph,
+    bool bGenerateStubOnly)
+{
+    // ...
+    FBlueprintCompiledStatement ReturnStatement;
+    ReturnStatement.Type = KCST_Return;
+    ScriptWriter.GenerateCodeForStatement(CompilerContext, FunctionContext,
+                                          ReturnStatement, /*Source*/ nullptr);
+}
+```
+
+中文要点：节点处理器把图语义铺成 `FBlueprintCompiledStatement`（`KCST_*`）；后端 `FScriptBuilderBase::GenerateCodeForStatement` 再把每个 `KCST_*` 翻译成具体的 `EX_*` opcode 序列写入 `UFunction::Script`。例如 `KCST_Assignment` + 目标为 bool → `EX_LetBool`；目标为 UObject 指针 → `EX_LetObj`。`KCST_GotoIfNot` 直接对应 `EX_JumpIfNot + 偏移`，回填则在所有语句生成完后做一遍 patch。
+
+### 14.5 `K2Node_IfThenElse` 的 ExpandNode 模式
+
+`UK2Node_IfThenElse` **本身不实现 `ExpandNode`**——它直接对应一条 IR 语句 `KCST_GotoIfNot`，由专用的 `FKCHandler_Branch::Compile` 负责生成 IR：
+
+```cpp
+// 近似复现，未直接验证（基于 ikrima.dev 描述与公开范式）
+void FKCHandler_Branch::Compile(FKismetFunctionContext& Context, UEdGraphNode* Node)
+{
+    UK2Node_IfThenElse* BranchNode = CastChecked<UK2Node_IfThenElse>(Node);
+    UEdGraphPin* ConditionPin = BranchNode->GetConditionPin();
+    UEdGraphPin* ElsePin      = BranchNode->GetElsePin();
+
+    FBPTerminal** CondTerm = Context.NetMap.Find(FEdGraphUtilities::GetNetFromPin(ConditionPin));
+
+    // 1) GotoIfNot Condition -> Else 分支
+    FBlueprintCompiledStatement& IfNotStatement = Context.AppendStatementForNode(Node);
+    IfNotStatement.Type = KCST_GotoIfNot;
+    IfNotStatement.LHS  = *CondTerm;
+    Context.GotoFixupRequestMap.Add(&IfNotStatement, ElsePin);
+
+    // 2) 紧接落入 Then 分支（无条件 fall-through 由后续节点 emit）
+    //    Else / Then 的实际地址在 PostCompileFunction 阶段回填
+}
+```
+
+**ExpandNode 真正用得多的场景**是宏与高阶节点。例如自定义 `ForEach`、`UK2Node_VariableGet` 在 `ExpandNode` 内部 `SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph)` 临时铺设一个 IfThenElse，然后用 `MovePinLinksToIntermediate` 重连。这就是 Blueprint *macro lowering* 的核心模式。
+
+### 14.6 VM 执行：`FFrame` 与 `GNatives` 跳转表
+
+```cpp
+// Engine/Source/Runtime/CoreUObject/Public/UObject/Stack.h
+struct FFrame : public FOutputDevice
+{
+    UFunction*           Node;          // 当前函数（含 Script: TArray<uint8>）
+    UObject*             Object;        // 调用者（this）
+    uint8*               Code;          // 指令指针，指向 Script 数据
+    uint8*               Locals;        // 本地变量起始
+    FProperty*           MostRecentProperty;
+    uint8*               MostRecentPropertyAddress;
+    FlowStackType        FlowStack;     // 跳转栈
+    FFrame*              PreviousFrame; // 链式栈帧
+    // ...
+};
+```
+
+VM 主循环——这是 Blueprint VM **最关键的 4 行**，自 1998 年 UnrealScript 起几乎未变：
+
+```cpp
+// Engine/Source/Runtime/CoreUObject/Private/UObject/ScriptCore.cpp（直接引用）
+void FFrame::Step(UObject* Context, RESULT_DECL)
+{
+    int32 B = *Code++;                                     // 读 1 字节 opcode
+    (Context->*GNatives[B])(*this, RESULT_PARAM);          // 成员函数指针分派
+}
+```
+
+注意它**不是**传统 `switch (op) { case ... }` 解释器，而是 C++ 成员函数指针表：
+
+```cpp
+typedef void (UObject::*Native)(FFrame& TheStack, RESULT_DECL);
+Native GNatives[EX_Max];
+
+// 每条 opcode 对应一个 execXxx 成员函数：
+DEFINE_FUNCTION(UObject::execLetBool)   { /* ... */ }
+DEFINE_FUNCTION(UObject::execLetObj)    { /* ... */ }
+IMPLEMENT_VM_FUNCTION(EX_LetBool, execLetBool);
+IMPLEMENT_VM_FUNCTION(EX_LetObj,  execLetObj);
+```
+
+C++ 进入字节码的入口是 `UObject::ProcessEvent`（自动生成的 thunk 把参数打包进 `FFrame`），跨函数调用走 `ProcessScriptFunction`，最里层的 native 调用走 `ProcessInternal`：
+
+```cpp
+// 近似复现，未直接验证
+void UObject::ProcessInternal(FFrame& Stack, RESULT_DECL)
+{
+    UFunction* Function = (UFunction*)Stack.Node;
+    uint8* Frame = (uint8*)FMemory_Alloca(Function->PropertiesSize);
+    FMemory::Memzero(Frame, Function->PropertiesSize);
+
+    FFrame NewStack(this, Function, Frame, &Stack, Function->ChildProperties);
+
+    // 解析参数：循环 Step 直到遇到 EX_EndFunctionParms
+    for (FProperty* Prop = (FProperty*)Function->ChildProperties;
+         *Stack.Code != EX_EndFunctionParms;
+         Prop = (FProperty*)Prop->Next)
+    {
+        Stack.Step(Stack.Object, NewStack.Locals + Prop->GetOffset_ForUFunction());
+    }
+    Stack.Code++; // 跳过 EX_EndFunctionParms
+
+    // 执行函数体：循环 Step 直到 EX_Return
+    while (*NewStack.Code != EX_Return)
+        NewStack.Step(NewStack.Object, /*Result=*/nullptr);
+
+    // 写回返回值
+    NewStack.Step(NewStack.Object, RESULT_PARAM);
+}
+```
+
+性能含义：每条 `EX_*` 都要走一次 `Code++` + 间接成员函数指针调用 + `FFrame` 构建——这就是为什么"在蓝图里写紧密循环"性能远逊于 C++。Epic 引入 `EX_CallMath`（直接静态调度，跳过虚表）就是针对这个瓶颈的优化。
+
+### 14.7 串起来：一段 IfThenElse 的全链路
+
+```
+// IR (FBlueprintCompiledStatement 序列)
+[0] KCST_GotoIfNot   LHS=Cond                 -> ElseLabel
+[1] KCST_CallFunction Func=SetActorLocation   args=...
+[2] KCST_UnconditionalGoto                    -> EndLabel
+[3] KCST_Nop          (ElseLabel)
+[4] KCST_Nop          (EndLabel)
+[5] KCST_Return
+
+// Bytecode (UFunction::Script)
+EX_JumpIfNot  <offsetToElse>  EX_LocalVariable <CondProp>
+EX_Context    <SelfObj>       EX_FinalFunction <SetActorLocation*>
+                              <param payload> EX_EndFunctionParms
+EX_Jump       <offsetToEnd>
+... <ElseLabel> ...
+... <EndLabel> ...
+EX_Return     EX_Nothing
+EX_EndOfScript
+```
+
+执行时 `FFrame::Step` 逐字节读入 `EX_JumpIfNot`，调用 `UObject::execJumpIfNot`，先读条件表达式（再次 Step → `execLocalVariable`），按结果改 `Code` 指针，循环回到 `Step`。整个过程没有传统 VM 的解码-分派 `switch`——一切都是函数指针表 + inline 数据流。
+
+### 14.8 阅读路径建议
+
+1. `Script.h` 的 `EExprToken` 全表（操作码地图）
+2. `Stack.h` + `ScriptCore.cpp::FFrame::Step` 与 `DEFINE_FUNCTION(UObject::exec*)`（VM 执行）
+3. `KismetCompiler.h::FKismetCompilerContext::Compile`（编译器入口）
+4. `KismetCompilerMisc.cpp` 中各 `FKCHandler_*::Compile`（节点 → IR）
+5. `KismetCompilerVMBackend.cpp::FScriptBuilderBase::GenerateCodeForStatement`（IR → Bytecode）
+6. `BlueprintGraph/Classes/K2Node_*.h` —— 看若干 `ExpandNode` 实现学 macro lowering 模式
+
+> 来源声明：本节字节码与 VM 核心片段引自 ikrima.dev、Intax、Jayden Games 系列博客及 Epic 官方文档；编译流水线步骤名与顺序与 Epic 官方一致。**未直接验证的代码块已就近标注**——若需 100% 校对，请绑定 Epic GitHub 账号后比对 `release` 分支对应文件。

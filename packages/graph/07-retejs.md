@@ -644,3 +644,308 @@ Rete.js 是**最专业的可视化编程框架**，其设计精髓：
 **不适合**：
 - 快速原型（LiteGraph.js 更简单）
 - 不需要 TypeScript 的项目
+
+---
+
+## 17. 源码深度解析
+
+> 本节基于 GitHub `retejs/rete@main` 与 `retejs/engine@main` 真实源码，逐文件剖析 Rete.js v2 的核心抽象。所有引用均标注 `文件路径:行号`。
+
+### 17.1 基础类型层：`packages/rete/src/types.ts`
+
+Rete v2 把整个图模型压缩成 6 个类型定义：
+
+```typescript
+// rete/src/types.ts:1-30
+export type NodeId = string
+export type ConnectionId = string
+
+export type NodeBase = { id: NodeId }
+export type ConnectionBase = { id: ConnectionId, source: NodeId, target: NodeId }
+
+export type GetSchemes<
+  NodeData extends NodeBase,
+  ConnectionData extends ConnectionBase
+> = { Node: NodeData, Connection: ConnectionData }
+
+export type BaseSchemes = GetSchemes<NodeBase, ConnectionBase>
+```
+
+`GetSchemes` 是一个"类型工厂"——要求 `NodeData` 必须扩展 `NodeBase`（即至少有 `id`），返回打包成 `{ Node, Connection }` 的对象类型。所有插件通过 `<Schemes extends BaseSchemes>` 形式接入，从而实现"插件不感知具体节点字段，但能在使用方拿到完整字段提示"的双向类型流。
+
+### 17.2 核心抽象：`packages/rete/src/scope.ts`
+
+`scope.ts`（约 130 行）是 Rete 全部架构的"心脏"。
+
+#### Pipe：可中断的中间件函数签名
+
+```typescript
+// rete/src/scope.ts:14-19
+export type Pipe<T> = (data: T) => Promise<undefined | T> | undefined | T
+```
+
+`Pipe<T>` 既可同步可异步，返回 `undefined` 表示"吞掉信号、终止后续传播"——这就是文档常说的 "return undefined to block propagation"。
+
+#### Signal：迭代式中间件链
+
+```typescript
+// rete/src/scope.ts:62-79
+export class Signal<T> {
+  pipes: Pipe<T>[] = []
+
+  addPipe(pipe: Pipe<T>) {
+    this.pipes.push(pipe)
+  }
+
+  async emit<Context extends T>(context: Context): Promise<Context | undefined> {
+    let current: Context | undefined = context
+
+    for (const pipe of this.pipes) {
+      current = await pipe(current) as Context
+
+      if (typeof current === 'undefined') return
+    }
+    return current
+  }
+}
+```
+
+与 Redux middleware 那种 `next => action => next(action)` 的递归套娃不同，Rete 用一个简单的 `for` 循环顺序 `await` 每个 pipe，把上一步结果 feed 给下一步——这意味着任何 pipe 都可以**改写 payload**。一旦某个 pipe 返回 `undefined`，循环立即 `return`，后面的 pipe 全部不执行。
+
+#### Scope：双参数泛型作用域
+
+```typescript
+// rete/src/scope.ts:84-119
+export class Scope<Produces, Parents extends unknown[] = []> {
+  signal = new Signal<AcceptPartialUnion<Produces | Parents[number]>>()
+  parent?: any
+  __scope!: {
+    produces: Produces
+    parents: Parents
+  }
+
+  constructor(public name: string) { }
+
+  addPipe(middleware: Pipe<Produces | Parents[number]>) {
+    this.signal.addPipe(middleware)
+  }
+
+  use<S extends Scope<any, any[]>>(scope: NestedScope<S, [Produces, ...Parents]>) {
+    if (!(scope instanceof Scope)) throw new Error('cannot use non-Scope instance')
+
+    scope.setParent(this)
+    this.addPipe(context => {
+      return scope.signal.emit(context)
+    })
+
+    return useHelper<S, Produces | Parents[number]>()
+  }
+
+  setParent(scope: Scope<Parents[0], Tail<Parents>>) {
+    this.parent = scope
+  }
+
+  emit<C extends Produces>(context: C): Promise<Extract<Produces, C> | undefined> {
+    return this.signal.emit(context) as Promise<Extract<Produces, C>>
+  }
+}
+```
+
+**这是整个 Rete 最具创造性的设计**：
+
+1. **两个泛型参数**：`Produces` 是该 Scope 自己产出的信号类型；`Parents extends unknown[]` 是一个类型元组，记录"我可以挂在哪些父 Scope 之下"。例如 `class DataflowEngine extends Scope<never, [Root<Schemes>]>` 表示它**不产出**任何自己的信号（`never`），但**期待**父 Scope 产出 `Root<Schemes>` 类型的信号。
+2. **`use()` 方法的精髓**：`scope.setParent(this)` 把子 scope 链回父级，然后 `this.addPipe(context => scope.signal.emit(context))` ——**把子 scope 的整个 signal 管道塞进父 scope 的 pipe 数组里作为一个 pipe**。这一行代码实现了"插件嵌套即管道嵌套"。
+3. **类型校验通过 `NestedScope<S, [Produces, ...Parents]>` 实现**：当你写 `area.use(connectionPlugin)`，TypeScript 会检查 `connectionPlugin.__scope.parents[0]` 是否兼容 `[area.__scope.produces, ...area.__scope.parents][0]`，不兼容则直接给出错误字符串。
+
+### 17.3 编辑器入口：`packages/rete/src/editor.ts`
+
+#### 信号联合类型 `Root`
+
+```typescript
+// rete/src/editor.ts:10-21
+export type Root<Scheme extends BaseSchemes> =
+  | { type: 'nodecreate', data: Scheme['Node'] }
+  | { type: 'nodecreated', data: Scheme['Node'] }
+  | { type: 'noderemove', data: Scheme['Node'] }
+  | { type: 'noderemoved', data: Scheme['Node'] }
+  | { type: 'connectioncreate', data: Scheme['Connection'] }
+  | { type: 'connectioncreated', data: Scheme['Connection'] }
+  | { type: 'connectionremove', data: Scheme['Connection'] }
+  | { type: 'connectionremoved', data: Scheme['Connection'] }
+  | { type: 'clear' }
+  | { type: 'clearcancelled' }
+  | { type: 'cleared' }
+```
+
+经典的**判别联合（discriminated union）**。所有事件以 `type` 字段做窄化，pipe 中可以直接 `if (context.type === 'nodecreated') context.data` ——`data` 会自动被推断为 `Scheme['Node']`。
+
+#### NodeEditor 与 `addNode`
+
+```typescript
+// rete/src/editor.ts:29-87
+export class NodeEditor<Scheme extends BaseSchemes> extends Scope<Root<Scheme>> {
+  private nodes: Scheme['Node'][] = []
+  private connections: Scheme['Connection'][] = []
+
+  async addNode(data: Scheme['Node']) {
+    if (this.getNode(data.id)) throw new Error('node has already been added')
+
+    if (!await this.emit({ type: 'nodecreate', data })) return false
+
+    this.nodes.push(data)
+
+    await this.emit({ type: 'nodecreated', data })
+    return true
+  }
+
+  async addConnection(data: Scheme['Connection']) {
+    if (this.getConnection(data.id)) throw new Error('connection has already been added')
+
+    if (!await this.emit({ type: 'connectioncreate', data })) return false
+
+    this.connections.push(data)
+
+    await this.emit({ type: 'connectioncreated', data })
+    return true
+  }
+}
+```
+
+注意"两阶段事件"模式——`nodecreate`（动词，可被拦截）→ 实际写入数组 → `nodecreated`（过去分词，已落库）。`if (!await this.emit(...)) return false` 一行就是"短路语义"的应用：任何插件返回 `undefined`，整条 `addNode` 链路直接放弃写入。这就是 ReadOnly、Validation 等插件的全部实现机制。
+
+### 17.4 引擎包：`@retejs/engine`
+
+#### Dataflow：拉式（pull-based）DAG 求值
+
+```typescript
+// engine/src/dataflow.ts:54-105
+public async fetchInputs<T extends Inputs = DefaultInputs>(nodeId: NodeId): Promise<FetchInputs<T>> {
+  const result = this.setups.get(nodeId)
+  if (!result) throw new Error('node is not initialized')
+
+  const inputKeys = result.inputs()
+  const cons = this.editor.getConnections().filter(c => {
+    return c.target === nodeId && inputKeys.includes(c.targetInput)
+  })
+
+  const inputs = {} as FetchInputs<T>
+  const consWithSourceData = await Promise.all(cons.map(async c => {
+    return {
+      c,
+      sourceData: await this.fetch(c.source)   // ← 递归
+    }
+  }))
+
+  for (const { c, sourceData } of consWithSourceData) {
+    const previous = (inputs[c.targetInput] ? inputs[c.targetInput] : [])!
+    const inputsMutation = inputs as Record<string, any[]>
+    inputsMutation[c.targetInput] = [...previous, sourceData[c.sourceOutput]]
+  }
+
+  return inputs
+}
+
+public async fetch<T extends Record<string, any>>(nodeId: NodeId): Promise<T> {
+  const result = this.setups.get(nodeId)
+  if (!result) throw new Error('node is not initialized')
+
+  const outputKeys = result.outputs()
+  const data = await result.data(() => this.fetchInputs(nodeId))
+  return data
+}
+```
+
+`fetch(nodeId)` 与 `fetchInputs(nodeId)` 互相递归——典型的**反向后序遍历 DAG**。`Promise.all` 并行拉所有上游连接，使得"叶子→根"的求值能最大化并行；同一输入端口若有多条入边，结果聚合为数组。
+
+#### DataflowEngine：把 Dataflow 装成 Scope 插件
+
+```typescript
+// engine/src/dataflow-engine.ts:30-58
+export class DataflowEngine<Schemes extends DataflowEngineScheme> extends Scope<never, [Root<Schemes>]> {
+  editor!: NodeEditor<Schemes>
+  dataflow?: Dataflow<Schemes>
+  cache = new Cache<NodeId, Cancellable<Record<string, any>>>(data => data?.cancel && data.cancel())
+
+  constructor(private configure?: Configure<Schemes>) {
+    super('dataflow-engine')
+
+    this.addPipe(context => {
+      if (context.type === 'nodecreated') {
+        this.add(context.data)
+      }
+      if (context.type === 'noderemoved') {
+        this.remove(context.data)
+      }
+      return context
+    })
+  }
+
+  setParent(scope: Scope<Root<Schemes>>): void {
+    super.setParent(scope)
+
+    this.editor = this.parentScope<NodeEditor<Schemes>>(NodeEditor)
+    this.dataflow = new Dataflow(this.editor)
+  }
+}
+```
+
+教科书般的 Rete 插件写法：
+
+- 类型签名 `Scope<never, [Root<Schemes>]>` 表示"我自己不广播事件，但要求挂在能广播 `Root<Schemes>` 的父级（即 NodeEditor）下"。任何错误嵌套都会触发类型报错。
+- 构造函数里 `this.addPipe(...)` 注册一个监听器：每当 `nodecreated` 事件流到这里，就把节点登记进内部的 `Dataflow` 实例；`return context` 不返回 `undefined`，所以信号继续向后传——其它插件仍能收到该事件。
+- `setParent` 在被 `editor.use(engine)` 调用时触发，借助 `parentScope<NodeEditor<Schemes>>(NodeEditor)` 拿到强类型的父引用。
+
+#### ControlFlow：推式（push-based）分发
+
+```typescript
+// engine/src/control-flow.ts:48-69
+public execute(nodeId: NodeId, input?: string) {
+  const setup = this.setups.get(nodeId)
+  if (!setup) throw new Error('node is not initialized')
+  const inputKeys = setup.inputs()
+
+  if (input && !inputKeys.includes(input)) throw new Error('inputs don\'t have a key')
+
+  setup.execute(input, output => {
+    const outputKeys = setup.outputs()
+    if (!outputKeys.includes(output)) throw new Error('outputs don\'t have a key')
+
+    const cons = this.editor.getConnections().filter(c => {
+      return c.source === nodeId && c.sourceOutput === output
+    })
+
+    cons.forEach(con => {
+      this.execute(con.target, con.targetInput)   // ← 递归向下游推
+    })
+  })
+}
+```
+
+与 Dataflow 完全对偶——`execute(nodeId)` 调用节点自己的 `execute(input, forward)`，节点决定**何时、向哪个 output** 调用 `forward`，触发对下游的递归 `execute`。这是经典的**事件流/流程编排**语义（类似 UE 蓝图的白色执行线），允许循环、条件分支、延迟触发。**注意它是同步的**（没有 `await`），节点自己负责异步调度。
+
+### 17.5 设计模式总览
+
+| 模式 | 体现位置 | 价值 |
+|---|---|---|
+| **Signal 短路传播** | `scope.ts:73-78` 的 `for` 循环 + `if undefined return` | 用最朴素的迭代实现"中间件可拦截" |
+| **Scope 类型化嵌套** | `scope.ts:101-110` 的 `use()` + `NestedScope<S, [Produces, ...Parents]>` | 把 `pluginA.use(pluginB)` 编译期检查 |
+| **两阶段事件** | `editor.ts:78-87` 的 `nodecreate` → `push` → `nodecreated` | 用一对事件实现"可取消的副作用" |
+
+**Scope/Signal 级联**这套设计——用不到 100 行代码同时解决了：
+
+1. 插件如何监听核心事件（`addPipe`）；
+2. 插件如何嵌套且嵌套关系本身被类型系统校验（`use<S>` + `NestedScope`）；
+3. 插件如何向上找到父级强类型引用（`parentScope<T>(type)`）；
+4. 嵌套插件如何保持事件冒泡（`use()` 内的 `this.addPipe(ctx => scope.signal.emit(ctx))` 一行代码完成"管道嵌套"）。
+
+这种"一个抽象同时承担消息总线 + 依赖注入 + 类型校验"的能力，在 Drawflow、LiteGraph、ReactFlow 之类的库里完全没有对应物——后者要么用全局事件名字符串、要么用 React Context、要么干脆没有插件机制。
+
+**关键文件参考**：
+- `rete/src/scope.ts`（≈130 行，整个 Rete 的核心）
+- `rete/src/editor.ts:29-172`（NodeEditor 完整实现）
+- `rete/src/types.ts:1-30`（六个类型，奠定 Schema 模型）
+- `engine/src/dataflow.ts`（拉式求值算法）
+- `engine/src/control-flow.ts`（推式分发算法）
+- `engine/src/dataflow-engine.ts`（插件化包装的样板范例）
+
+阅读顺序建议：`types.ts` → `scope.ts` → `editor.ts` → 任一 engine 文件。看完这四份代码（合计不到 500 行）即可基本掌握 Rete v2 的全部架构理念。

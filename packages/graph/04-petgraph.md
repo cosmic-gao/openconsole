@@ -794,3 +794,282 @@ petgraph 是 **Rust 图数据结构的最佳实践**，其设计精髓：
 4. **可选特性**：serde、rayon 按需开启
 
 作为编排引擎的存储层，petgraph 可以让我们专注于**执行语义**，而把**图存储和遍历**交给库处理。
+
+---
+
+## 15. 源码深度解析
+
+> 本节基于 petgraph master 分支真实源码（仓库已迁移为 Cargo workspace，主代码位于 `crates/petgraph/src/`）。所有引用的代码均为逐字摘录。
+
+### 15.1 核心数据结构：`Graph<N, E, Ty, Ix>`
+
+```rust
+// crates/petgraph/src/graph_impl/mod.rs
+pub struct Graph<N, E, Ty = Directed, Ix = DefaultIx> {
+    nodes: Vec<Node<N, Ix>>,
+    edges: Vec<Edge<E, Ix>>,
+    ty: PhantomData<Ty>,
+}
+```
+
+四个泛型参数承担不同维度的抽象：
+- `N` / `E`：节点/边的负载（weight）
+- `Ty`：方向性标签类型（`Directed` 或 `Undirected`），仅作为编译期标记存在于 `PhantomData<Ty>` 中，**不占运行时空间**
+- `Ix`：索引底层类型（默认 `u32`），通过 `IndexType` trait 抽象
+
+默认配置 (`u32` 索引) 在 64 位机上每个 `NodeIndex` 仅 4 字节，是 `Box<dyn Node>` 风格继承体系的 1/4 ~ 1/8。
+
+### 15.2 邻接表的链表小技巧
+
+```rust
+// crates/petgraph/src/graph_impl/mod.rs
+pub struct Node<N, Ix = DefaultIx> {
+    pub weight: N,
+    next: [EdgeIndex<Ix>; 2],
+}
+
+pub struct Edge<E, Ix = DefaultIx> {
+    pub weight: E,
+    next: [EdgeIndex<Ix>; 2],
+    node: [NodeIndex<Ix>; 2],
+}
+```
+
+**「双链头嵌入式邻接表」**：
+
+- `Node.next[0]` 指向该节点的**第一条出边**；`Node.next[1]` 指向**第一条入边**
+- `Edge.next[0]` 指向**与同一源节点共享的下一条出边**；`Edge.next[1]` 指向**与同一目标节点共享的下一条入边**
+- `Edge.node[0]` / `node[1]` 分别为源、目标节点
+
+整个邻接结构因此被两条**侵入式单向链表**串起。这种布局让所有边都连续存储在一个 `Vec<Edge>` 里，**缓存友好性远好于 `HashMap<Node, Vec<Edge>>` 方案**，并且 `add_edge` 是 O(1) 头插，无需任何分配。
+
+### 15.3 类型安全的 newtype 索引
+
+```rust
+#[derive(Copy, Clone, Default, PartialEq, Eq, Ord, Hash)]
+pub struct NodeIndex<Ix = DefaultIx>(Ix);
+
+#[derive(Copy, Clone, Default, PartialEq, Eq, Ord, Hash)]
+pub struct EdgeIndex<Ix = DefaultIx>(Ix);
+```
+
+把 `NodeIndex` 与 `EdgeIndex` 做成 newtype，编译器从此拒绝把节点索引误用为边索引——Rust 类型系统的零开销护栏。`NodeIndex<u32>` 在内存中就是一个裸 `u32`。
+
+### 15.4 `add_edge` 的链表头插
+
+```rust
+// crates/petgraph/src/graph_impl/mod.rs
+pub fn try_add_edge(
+    &mut self,
+    a: NodeIndex<Ix>,
+    b: NodeIndex<Ix>,
+    weight: E,
+) -> Result<EdgeIndex<Ix>, GraphError> {
+    let edge_idx = EdgeIndex::new(self.edges.len());
+    let mut edge = Edge {
+        weight,
+        node: [a, b],
+        next: [EdgeIndex::end(); 2],
+    };
+    match index_twice(&mut self.nodes, a.index(), b.index()) {
+        Pair::One(an) => {
+            edge.next = an.next;
+            an.next[0] = edge_idx;
+            an.next[1] = edge_idx;
+        }
+        Pair::Both(an, bn) => {
+            edge.next = [an.next[0], bn.next[1]];
+            an.next[0] = edge_idx;
+            bn.next[1] = edge_idx;
+        }
+        Pair::None => return Err(GraphError::NodeOutBounds),
+    }
+    self.edges.push(edge);
+    Ok(edge_idx)
+}
+```
+
+`index_twice` 一次性获取两个节点的可变借用，规避 Rust 的双借用规则；自环（`a == b`）走 `Pair::One` 分支。整体复杂度严格 O(1)。
+
+### 15.5 类型级方向分派：`EdgeType` + `PhantomData`
+
+```rust
+// crates/petgraph/src/lib.rs
+pub trait EdgeType {
+    fn is_directed() -> bool;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Directed {}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Undirected {}
+
+impl EdgeType for Directed {
+    #[inline]
+    fn is_directed() -> bool { true }
+}
+
+impl EdgeType for Undirected {
+    #[inline]
+    fn is_directed() -> bool { false }
+}
+```
+
+两个关键设计点：
+
+1. `Directed` / `Undirected` 被定义为**空 enum**——它们永远不能被实例化，仅作为类型层的标签。
+2. `is_directed()` 是**关联函数**而非方法。配合 `#[inline]`，编译器在单态化阶段就能把 `if self.is_directed()` 折叠成 `if true` 或 `if false`，连同下游的死代码一起被消除。
+
+这正是 Rust「**zero-cost abstraction**」的教科书示例：方向性这个概念在源码里随处可见，但二进制里**根本不存在 `Ty` 字段、不存在分支跳转**。
+
+`Direction` 本身是 `#[repr(usize)]` 的 enum：
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[repr(usize)]
+pub enum Direction {
+    Outgoing = 0,
+    Incoming = 1,
+}
+```
+
+显式写成 0/1 是为了让 `dir.index()` 直接当数组下标用（`iter.next[1 - k]`），完美对应 `Node.next: [EdgeIndex; 2]` 的两个槽位。
+
+### 15.6 链表迭代器：`Neighbors`
+
+```rust
+impl<E, Ix> Iterator for Neighbors<'_, E, Ix>
+where Ix: IndexType,
+{
+    type Item = NodeIndex<Ix>;
+
+    fn next(&mut self) -> Option<NodeIndex<Ix>> {
+        match self.edges.get(self.next[0].index()) {
+            None => {}
+            Some(edge) => {
+                self.next[0] = edge.next[0];
+                return Some(edge.node[1]);
+            }
+        }
+        while let Some(edge) = self.edges.get(self.next[1].index()) {
+            self.next[1] = edge.next[1];
+            if edge.node[0] != self.skip_start {
+                return Some(edge.node[0]);
+            }
+        }
+        None
+    }
+}
+```
+
+逻辑：先沿 `next[0]`（出边链）吐节点，链尽后再沿 `next[1]`（入边链）继续。整个迭代过程**不分配内存**，每次 `next()` 调用就是几次数组索引。
+
+### 15.7 访问者 trait 体系：算法/容器解耦
+
+```rust
+// crates/petgraph/src/visit/mod.rs
+pub trait GraphBase {
+    type NodeId: Copy + PartialEq;
+    type EdgeId: Copy + PartialEq;
+}
+
+pub trait GraphRef: Copy + GraphBase {}
+impl<G> GraphRef for &G where G: GraphBase {}
+
+pub trait IntoNeighbors: GraphRef {
+    type Neighbors: Iterator<Item = Self::NodeId>;
+    fn neighbors(self, a: Self::NodeId) -> Self::Neighbors;
+}
+
+pub trait NodeIndexable: GraphBase {
+    fn node_bound(&self) -> usize;
+    fn to_index(&self, a: Self::NodeId) -> usize;
+    fn from_index(&self, i: usize) -> Self::NodeId;
+}
+
+pub trait Visitable: GraphBase {
+    type Map: VisitMap<Self::NodeId>;
+    fn visit_map(&self) -> Self::Map;
+    fn reset_map(&self, map: &mut Self::Map);
+}
+```
+
+设计亮点：
+
+- **`GraphRef: Copy`**：算法接受 `G: GraphRef` 而非 `&G`，意味着图的「不可变视图」是按值传递的、可任意复制的——内部就是一个引用，但语义上像句柄。
+- **`Visitable::Map`**：把「节点是否被访问过」抽象成关联类型。`Graph` 提供位图实现 (`FixedBitSet`)，`GraphMap` 提供 `HashSet` 实现，**算法代码完全无感**。
+- **`NodeIndexable`**：让算法可以把 `NodeId` 临时映射为连续的 `usize`，从而以 `Vec<T>` 替代 `HashMap<NodeId, T>`。
+
+### 15.8 算法层：用 trait bound 编写一次，处处可跑
+
+#### Dijkstra 的 relax 循环
+
+```rust
+// crates/petgraph/src/algo/dijkstra.rs
+while let Some(MinScored(node_score, node)) = visit_next.pop() {
+    if visited.is_visited(&node) { continue; }
+    if goal_fn(&node) { goal_node = Some(node); break; }
+    for edge in graph.edges(node) {
+        let next = edge.target();
+        if visited.is_visited(&next) { continue; }
+        let next_score = node_score + edge_cost(edge);
+        match scores.entry(next) {
+            Occupied(ent) => if next_score < *ent.get() {
+                *ent.into_mut() = next_score;
+                visit_next.push(MinScored(next_score, next));
+            },
+            Vacant(ent) => {
+                ent.insert(next_score);
+                visit_next.push(MinScored(next_score, next));
+            }
+        }
+    }
+    visited.visit(node);
+}
+```
+
+整段代码**没有任何对 `Graph` 的提及**——它只用 `G::NodeId`、`graph.edges(node)`、`edge.target()`、`visited.visit(...)`。这意味着同一份 dijkstra 既能跑在 `&Graph<_,_,Directed,_>` 上，也能跑在 `&StableGraph` 或任意第三方实现了 `IntoEdges + Visitable` 的图上，**单态化后零运行时分发开销**。
+
+#### Toposort 中的 `Reversed` 适配器
+
+```rust
+// crates/petgraph/src/algo/mod.rs (部分)
+pub fn toposort<G>(...) -> Result<Vec<G::NodeId>, Cycle<G::NodeId>>
+where
+    G: IntoNeighborsDirected + IntoNodeIdentifiers + Visitable,
+{
+    ...
+    dfs.reset(g);
+    for &i in &finish_stack {
+        dfs.move_to(i);
+        let mut cycle = false;
+        while let Some(j) = dfs.next(Reversed(g)) {
+            if cycle { return Err(Cycle(j)); }
+            cycle = true;
+        }
+    }
+}
+```
+
+**`Reversed(g)`** 是一个零成本的图视图包装器，把所有 `IntoNeighbors` 调用反向。petgraph 不需要真的复制图来反转：仅靠一层 trait 适配器就完成了「图的逆」操作。同理，`NodeFiltered`、`EdgeFiltered`、`Undirected adapter` 都是几十行 trait 转发代码，**运行时零开销**。
+
+### 15.9 设计哲学小结
+
+| 抽象层 | 实现手段 | Zero-cost 体现 |
+| --- | --- | --- |
+| 方向性 | `EdgeType` trait + `PhantomData<Ty>` + 空 enum | `Ty::is_directed()` 在单态化时折叠为常量 |
+| 索引宽度 | `IndexType` trait + `Ix` 泛型 (默认 `u32`) | `NodeIndex<u32>` 在内存里就是裸 `u32` |
+| 邻接结构 | `Vec<Edge>` + `next: [EdgeIndex; 2]` 嵌入式链表 | `add_edge` O(1)，遍历无堆分配 |
+| 算法/容器解耦 | `IntoNeighbors` / `IntoEdges` / `Visitable` 等细粒度 trait | 所有调用编译期单态化，无 `dyn` |
+| 图变换 | `Reversed`、`NodeFiltered` 等转发包装 | 不复制图，只做 trait 适配 |
+| 类型安全 | `NodeIndex` / `EdgeIndex` newtype | 0 运行时开销，编译期拒绝混用 |
+
+petgraph 是「**一座抽象大厦完全靠零成本砖块砌成**」的优秀样本，也解释了为什么 Rust 生态中后续的 graph 库（`graphlib`、`pathfinding`）很大程度上仍以 petgraph 的访问者 trait 设计为蓝本。
+
+**关键源码引用清单**：
+- `crates/petgraph/src/graph_impl/mod.rs` — `Graph`, `Node`, `Edge`, `NodeIndex`, `EdgeIndex`, `try_add_edge`, `Neighbors`
+- `crates/petgraph/src/lib.rs` — `EdgeType` trait, `Directed`, `Undirected`, `Direction`
+- `crates/petgraph/src/visit/mod.rs` — `GraphBase`, `GraphRef`, `IntoNeighbors`, `Visitable`
+- `crates/petgraph/src/algo/dijkstra.rs` — `dijkstra`, `MinScored`
+- `crates/petgraph/src/algo/mod.rs` — `toposort`, `Cycle<N>`, `Reversed` 适配器

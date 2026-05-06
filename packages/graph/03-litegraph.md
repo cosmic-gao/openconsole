@@ -923,3 +923,289 @@ LiteGraph.js 是**最简洁的浏览器蓝图引擎**，其设计精髓：
 - 需要 DOM 组件嵌入（如 React/Vue 节点）
 - 复杂类型系统
 - 大型团队协作
+
+---
+
+## 14. 源码深度解析
+
+> 本节面向已经读完前文的工程师，提供源码层级（行号 + 真实代码摘录）的补充。所有摘录均来自 `jagenjo/litegraph.js` master 分支单文件构建 `src/litegraph.js`（约 14400 行）。该仓库将 `LiteGraph` 命名空间、`LGraph`、`LLink`、`LGraphNode`、`LGraphGroup`、`LGraphCanvas` 全部塞在同一个 IIFE 内。
+
+### 14.1 文件结构与命名空间布局
+
+| 行号 | 内容 |
+|----|----|
+| L93–L120 | `LiteGraph` 全局对象的开篇配置 |
+| L157 | `LiteGraph.registerNodeType(type, base_class)` |
+| L476 | `LiteGraph.createNode(type, title, options)` |
+| L835 | `function LGraph(o)` 构造函数 |
+| L1054 | `LGraph.prototype.runStep` |
+| L1161 | `LGraph.prototype.computeExecutionOrder` |
+| L2185 | `LGraph.prototype.serialize` |
+| L2240 | `LGraph.prototype.configure` |
+| L2376 | `function LLink(...)` |
+| L2480 | `function LGraphNode(title)` |
+| L2795 | `LGraphNode.prototype.setOutputData` |
+| L2863 | `LGraphNode.prototype.getInputData` |
+| L4293 | `LGraphNode.prototype.connect` |
+| L5325 | `function LGraphCanvas(canvas, graph, options)` |
+| L8539 | `LGraphCanvas.prototype.drawNode` |
+| L9360 | `LGraphCanvas.prototype.drawConnections` |
+
+### 14.2 `LLink`（L2376）—— 边的最小表示
+
+```js
+// src/litegraph.js:2376-2386
+function LLink(id, type, origin_id, origin_slot, target_id, target_slot) {
+    this.id = id;
+    this.type = type;
+    this.origin_id = origin_id;
+    this.origin_slot = origin_slot;
+    this.target_id = target_id;
+    this.target_slot = target_slot;
+
+    this._data = null;
+    this._pos = new Float32Array(2); //center
+}
+```
+
+注意点：
+- `_data` 字段并不参与 `serialize()`——通过连接传输的值是运行期瞬态。
+- `serialize()` 故意把链路压成数组 `[id, origin_id, origin_slot, target_id, target_slot, type]`（L2407–L2415），相比对象格式节省 ~70% 字节。`configure(o)` 同时支持数组与对象输入是为了向后兼容老存档。
+- `_pos` 用 `Float32Array(2)` 是渲染缓存。
+
+### 14.3 `LGraph` 状态字段（L876–L920）
+
+```js
+// src/litegraph.js:884-910
+this._nodes = [];
+this._nodes_by_id = {};
+this._nodes_in_order = [];        //nodes sorted in execution order
+this._nodes_executable = null;    //nodes that contain onExecute sorted in execution order
+this.links = {};                  //container with all the links
+this.iteration = 0;
+this.vars = {};
+this.extra = {};
+this.globaltime = 0;
+this.runningtime = 0;
+this.fixedtime_lapse = 0.01;
+```
+
+不变量：
+- `_nodes` 是插入顺序数组，`_nodes_by_id` 是 O(1) 查找索引，`_nodes_in_order` 是拓扑顺序，`_nodes_executable` 仅含定义了 `onExecute` 的节点——**`runStep` 总是迭代 `_nodes_executable` 而不是 `_nodes`**，所以无副作用节点（纯 UI 节点）零成本。
+- `links` 是 `Object<id, LLink>` 而不是数组：删除链路只需 `delete this.links[id]`。
+
+### 14.4 `runStep` 执行循环（L1054）
+
+```js
+// src/litegraph.js:1064-1090
+var nodes = this._nodes_executable
+    ? this._nodes_executable
+    : this._nodes;
+if (!nodes) return;
+limit = limit || nodes.length;
+
+for (var i = 0; i < num; i++) {
+    for (var j = 0; j < limit; ++j) {
+        var node = nodes[j];
+        if (LiteGraph.use_deferred_actions
+            && node._waiting_actions
+            && node._waiting_actions.length)
+            node.executePendingActions();
+        if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+            node.doExecute();
+        }
+    }
+    this.fixedtime += this.fixedtime_lapse;
+    if (this.onExecuteStep) this.onExecuteStep();
+}
+```
+
+要点：
+1. **不是事件驱动**——单纯按预排序的数组顺序对每个节点调一次 `onExecute`，由节点内部 `getInputData` 拉数据。
+2. `node.mode` 有五种（`ALWAYS / ON_EVENT / NEVER / ON_TRIGGER / ON_REQUEST`），只有 `ALWAYS` 在 `runStep` 主循环里被无条件触发。
+3. `do_not_catch_errors=true` 路径用 `node.doExecute()`（带包装），`false` 路径直接调 `node.onExecute()`——区分"开发"和"生产"模式。
+
+### 14.5 `computeExecutionOrder`（L1161）—— Kahn 拓扑排序
+
+```js
+// src/litegraph.js:1161-1205
+LGraph.prototype.computeExecutionOrder = function(only_onExecute, set_level) {
+    var L = [];                 // result list
+    var S = [];                 // starting nodes (in-degree 0)
+    var M = {};                 // pending nodes
+    var visited_links = {};
+    var remaining_links = {};
+
+    // 1) 统计每个节点的入度，入度 0 的塞进 S
+    for (var i = 0; i < this._nodes.length; ++i) {
+        var node = this._nodes[i];
+        if (only_onExecute && !node.onExecute) continue;
+        M[node.id] = node;
+        var num = 0;
+        if (node.inputs) {
+            for (var j = 0; j < node.inputs.length; j++) {
+                if (node.inputs[j] && node.inputs[j].link != null) num += 1;
+            }
+        }
+        if (num == 0) {
+            S.push(node);
+            if (set_level) node._level = 1;
+        } else {
+            if (set_level) node._level = 0;
+            remaining_links[node.id] = num;
+        }
+    }
+```
+
+LiteGraph 处理环（feedback loop）的做法是 **后置兜底**：
+
+```js
+// src/litegraph.js:1265-1268
+//the remaining ones (loops)
+for (var i in M) {
+    L.push(M[i]);
+}
+```
+
+剩在 `M` 里的就是参与环的节点，以任意顺序追加到结果末尾——所以 LiteGraph 允许图里有环，只是环内顺序不保证。
+
+最后一步是 **优先级二次排序**（L1281–L1290）：
+
+```js
+L = L.sort(function(A, B) {
+    var Ap = A.constructor.priority || A.priority || 0;
+    var Bp = B.constructor.priority || B.priority || 0;
+    if (Ap == Bp) return A.order - B.order;
+    return Ap - Bp;
+});
+```
+
+### 14.6 `connect()`（L4293）—— 边的合法性 + 存储
+
+可分为五个阶段：
+
+1. **参数规整**（L4293–L4360）：`slot` 字符串转 index；`target_slot === LiteGraph.EVENT` 自动找 `onTrigger` 输入槽并把目标节点 mode 切成 `ON_TRIGGER`。
+2. **类型校验**（L4364–L4382）：`LiteGraph.isValidConnection` 支持 `*` 通配、`","` 分隔多类型、大小写不敏感。
+3. **回调否决**（L4386–L4395）：`target_node.onConnectInput` 与 `this.onConnectOutput` 任一返回 `false` 直接拒绝。
+4. **清旧建新**（L4399–L4434）：
+
+```js
+// src/litegraph.js:4419-4434
+var nextId
+if (LiteGraph.use_uuids) nextId = LiteGraph.uuidv4();
+else nextId = ++this.graph.last_link_id;
+
+link_info = new LLink(
+    nextId,
+    input.type || output.type,
+    this.id, slot,
+    target_node.id, target_slot
+);
+
+this.graph.links[link_info.id] = link_info;
+
+if (output.links == null) output.links = [];
+output.links.push(link_info.id);
+target_node.inputs[target_slot].link = link_info.id;
+```
+
+**三处写入**（`graph.links[id]`、源节点 `output.links`、目标节点 `input.link`）的一致性完全靠 `connect`/`disconnect*` 维护，没有事务，所以**直接改 `node.inputs[i].link = null` 而不更新 `graph.links` 是泄漏链路的常见 bug**。
+
+5. **通知**（L4451–L4493）：触发 `onConnectionsChange` 与 `onNodeConnectionChange`，最后 `setDirtyCanvas` 触发重绘，`graph._version++`。
+
+### 14.7 拉数据：`getInputData` / `setOutputData`
+
+```js
+// src/litegraph.js:2863-2898
+LGraphNode.prototype.getInputData = function(slot, force_update) {
+    if (!this.inputs) return;
+    if (slot >= this.inputs.length || this.inputs[slot].link == null) return;
+
+    var link_id = this.inputs[slot].link;
+    var link = this.graph.links[link_id];
+    if (!link) return null;
+
+    if (!force_update) return link.data;
+
+    //special case: force the upstream node to recompute
+    var node = this.graph.getNodeById(link.origin_id);
+    if (!node) return link.data;
+    if (node.updateOutputData) node.updateOutputData(link.origin_slot);
+    else if (node.onExecute) node.onExecute();
+    return link.data;
+};
+```
+
+```js
+// src/litegraph.js:2795-2825
+LGraphNode.prototype.setOutputData = function(slot, data) {
+    if (!this.outputs) return;
+    if (slot == -1 || slot >= this.outputs.length) return;
+    var output_info = this.outputs[slot];
+    output_info._data = data;
+    if (this.outputs[slot].links) {
+        for (var i = 0; i < this.outputs[slot].links.length; i++) {
+            var link_id = this.outputs[slot].links[i];
+            var link = this.graph.links[link_id];
+            if (link) link.data = data;
+        }
+    }
+};
+```
+
+设计要点：**数据存在 `LLink` 上而不是 input slot**——`setOutputData` 把 `data` 写到所有出边的 `link.data`，下游 `getInputData` 直接读 `link.data`。`force_update=true` 触发**递归拉取**：上游节点没在本帧执行就当场调它的 `onExecute`。
+
+### 14.8 节点注册的 mixin 设计
+
+```js
+// src/litegraph.js:157-235
+registerNodeType: function(type, base_class) {
+    if (!base_class.prototype) throw "Cannot register a simple object";
+    base_class.type = type;
+    const pos = type.lastIndexOf("/");
+    base_class.category = type.substring(0, pos);
+    if (!base_class.title) base_class.title = base_class.name;
+
+    //extend class: 把 LGraphNode.prototype 上未被覆盖的方法 mixin 进来
+    for (var i in LGraphNode.prototype) {
+        if (!base_class.prototype[i]) {
+            base_class.prototype[i] = LGraphNode.prototype[i];
+        }
+    }
+    this.registered_node_types[type] = base_class;
+}
+```
+
+**LiteGraph 不强制继承 `LGraphNode`**，而是 `for in` 把 `LGraphNode.prototype` 的所有方法"塞"到用户类的原型链上。这种 mixin 比 `class extends` 灵活，但代价是子类重写父类方法时无法 `super.xxx()` 调原版。
+
+### 14.9 画布渲染管线
+
+`drawConnections` 的关键技巧：**只遍历 inputs 而不遍历 outputs**——因为每个 input 只持有 1 条 link，每条 link 有且只有一个 input 端，所以"遍历所有节点的所有 input 槽" = "遍历所有 link"，且天然去重。
+
+```js
+// src/litegraph.js:9376-9395
+var nodes = this.graph._nodes;
+for (var n = 0; n < nodes.length; ++n) {
+    var node = nodes[n];
+    if (!node.inputs || !node.inputs.length) continue;
+
+    for (var i = 0; i < node.inputs.length; ++i) {
+        var input = node.inputs[i];
+        if (!input || input.link == null) continue;
+        var link_id = input.link;
+        var link = this.graph.links[link_id];
+        if (!link) continue;
+        var start_node = this.graph.getNodeById(link.origin_id);
+        ...
+```
+
+实际曲线绘制由 `renderLink(ctx, a, b, link, ...)` 负责，三种连线模式：直线 / 折线 / 三次贝塞尔（默认），贝塞尔控制点距离按水平距离的 0.25 倍——这就是 LiteGraph 那种"S 型"连线的来源。
+
+### 14.10 给读源码的人的几条线索
+
+1. **想看交互事件流水线**：从 `LGraphCanvas.prototype.processMouseDown / processMouseMove / processMouseUp` 入手。
+2. **想看子图（subgraph）实现**：搜 `Subgraph.prototype` 和 `LGraph.prototype.inputs / outputs`。子图本质是一个外层节点 `Subgraph` 内部持有一个完整 `LGraph` 实例。
+3. **TS Fork（Comfy-Org/litegraph.js）**：把所有 `function X` + `prototype.method` 转成了 ES class，如果做 ComfyUI 二开应优先读 fork 的 `src/LGraphCanvas.ts`、`src/LGraph.ts`。
+4. **断点位置建议**：连接 bug 在 L4382（类型校验失败）和 L4434（链路写入完成）下；执行顺序在 L1262（Kahn 主循环结束）和 L1281（priority 重排前）下。
+
+完整源码见 https://github.com/jagenjo/litegraph.js/blob/master/src/litegraph.js

@@ -833,3 +833,323 @@ Node-RED 是 **FBP 范式在 Node.js 生态的最佳实践**：
 
 **适用场景**：IoT 集成、API 编排、简单自动化
 **不适合**：高性能计算、复杂状态管理
+
+---
+
+## 16. 源码深度解析
+
+> 本节直接从 `node-red/node-red` 仓库 `master` 分支拉取真实代码，沿着「节点定义 → 输入接收 → wires 扇出 → 异步派发 → 完成/错误」这条主链路把运行时核心拆开看一遍。所有路径相对于仓库根目录。
+
+### 16.1 Node 基类：构造、wires 与 send 优化
+
+```javascript
+// packages/node_modules/@node-red/runtime/lib/nodes/Node.js:37-72
+function Node(n) {
+    this.id = n.id;
+    this.type = n.type;
+    this.z = n.z;        // 所属 tab/flow 的 id
+    this.g = n.g;        // 所属 group 的 id（可选）
+    this._closeCallbacks = [];
+    this._inputCallback = null;
+    this._inputCallbacks = null;
+    this._expectedDoneCount = 0;
+    if (n.name)   { this.name = n.name; }
+    if (n._alias) { this._alias = n._alias; }
+    if (n._flow) {
+        // 反向引用所在 Flow，设为不可枚举避免 JSON 循环引用
+        Object.defineProperty(this,'_flow', {value: n._flow, enumerable: false, writable: true })
+    }
+    this.updateWires(n.wires);
+}
+util.inherits(Node, EventEmitter);
+```
+
+每个节点实例本质上就是一个 `EventEmitter`。`_inputCallback`、`_inputCallbacks`、`_expectedDoneCount` 是 1.0 之后为 done() 跟踪而新增的内部账本。
+
+### 16.2 wires 三档优化
+
+```javascript
+// Node.js:89-111
+Node.prototype.updateWires = function(wires) {
+    this.wires = wires || [];
+    delete this._wire;
+    var wc = 0;
+    this.wires.forEach(function(w) { wc += w.length; });
+    this._wireCount = wc;
+    if (wc === 0) {
+        // 无下游：直接换成 NO-OP 函数
+        this.send = NOOP_SEND
+    } else {
+        this.send = Node.prototype.send;
+        if (this.wires.length === 1 && this.wires[0].length === 1) {
+            // 单输出 + 单下游：直接缓存目标节点 id
+            this._wire = this.wires[0][0];
+        }
+    }
+}
+```
+
+把「拓扑」编译进函数指针：零下游的节点 `send` 被替换为 `NOOP_SEND`，单线连接走 `_wire` 短路；只有真正多端口/多扇出的节点才走通用的 `wires[i][j]` 双层数组遍历。
+
+### 16.3 send 主路径：消息构造与扇出
+
+```javascript
+// Node.js:381-492 (节选)
+Node.prototype.send = function(msg) {
+    var msgSent = false;
+    if (msg === null || typeof msg === "undefined") { return; }
+    else if (!Array.isArray(msg)) {
+        if (this._wire) {
+            // 单线快速通道
+            if (!msg._msgid) { msg._msgid = redUtil.generateId(); }
+            this.metric("send",msg);
+            this._flow.send([{
+                msg: msg,
+                source:      { id: this.id, node: this, port: 0 },
+                destination: { id: this._wire, node: undefined },
+                cloneMessage: false
+            }]);
+            return;
+        } else { msg = [msg]; }
+    }
+
+    var numOutputs = this.wires.length;
+    var sendEvents = [];
+    // 通用扇出：先把所有 SendEvent 收集起来
+    for (var i = 0; i < numOutputs; i++) {
+        var wires = this.wires[i];
+        if (i < msg.length) {
+            var msgs = msg[i];
+            if (msgs !== null && typeof msgs !== "undefined") {
+                if (!Array.isArray(msgs)) { msgs = [msgs]; }
+                for (var j = 0; j < wires.length; j++) {
+                    for (var k = 0; k < msgs.length; k++) {
+                        var m = msgs[k];
+                        if (m && typeof m === 'object') {
+                            sendEvents.push({
+                                msg: m,
+                                source:      { id: this.id, node: this, port: i },
+                                destination: { id: wires[j], node: undefined },
+                                cloneMessage: msgSent   // 第二份起才需要克隆
+                            });
+                            msgSent = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    this._flow.send(sendEvents);
+};
+```
+
+要点：
+- `_msgid` 只有顶部 inject/源头节点才生成新 id，后续节点把同一个 `_msgid` 一路透传，让 Debug、Catch、Complete 节点能追踪同一次"消息流"。
+- `cloneMessage: msgSent` 是关键：**从第二份开始**才标记需要 clone，真正的克隆动作被推迟到 `Flow` 里 `preRoute` 之后。这避免了"单接收方场景下白白拷贝"。
+- Node 自身**不直接 `receive` 下游节点**，把 `SendEvent[]` 抛给 `this._flow.send(...)`。FBP 的"调度器"语义被 `Flow` 类承担。
+
+### 16.4 Flow 类：onSend → preRoute → preDeliver → postDeliver
+
+```javascript
+// Flow.js:789-855 (节选)
+function handleOnSend(flow, sendEvents, reportError) {
+    hooks.trigger("onSend", sendEvents, (err) => {
+        if (err) { reportError(err, sendEvents); return }
+        else if (err !== false) {
+            for (var i = 0; i < sendEvents.length; i++) {
+                handlePreRoute(flow, sendEvents[i], reportError)
+            }
+        }
+    });
+}
+
+function handlePreRoute(flow, sendEvent, reportError) {
+    hooks.trigger("preRoute", sendEvent, (err) => {
+        if (err) { reportError(err, sendEvent); return; }
+        else if (err !== false) {
+            sendEvent.destination.node = flow.getNode(sendEvent.destination.id);
+            if (sendEvent.destination.node && typeof sendEvent.destination.node === 'object') {
+                if (sendEvent.cloneMessage) { sendEvent.msg = redUtil.cloneMessage(sendEvent.msg); }
+                handlePreDeliver(flow, sendEvent, reportError);
+            }
+        }
+    })
+}
+
+function handlePreDeliver(flow, sendEvent, reportError) {
+    hooks.trigger("preDeliver", sendEvent, (err) => {
+        if (err) { reportError(err, sendEvent); return; }
+        else if (err !== false) {
+            if (asyncMessageDelivery) {
+                setImmediate(function() { deliverMessageToDestination(sendEvent) })
+            } else {
+                deliverMessageToDestination(sendEvent)
+            }
+            hooks.trigger("postDeliver", sendEvent, function(err) {
+                if (err) { reportError(err, sendEvent); }
+            })
+        }
+    })
+}
+```
+
+要点：
+- **异步切片用 `setImmediate` 而非 `setTimeout(0)` 或 `process.nextTick`**。`setImmediate` 在事件循环里属于 *check* 阶段，会让 I/O 回调先跑完再处理消息派发，避免连续 `send` 把 microtask 队列拖死。
+- **clone 时机**：只有 `sendEvent.cloneMessage === true` 才执行 `redUtil.cloneMessage`。clone 发生在 `preRoute` 之后、`preDeliver` 之前，hook 可以在 clone 之前观察到原始 msg。
+- **hook 终止协议**：回调里 `err === false` 表示"成功但请取消后续"，给监控/调试节点（如 Flow Debugger）实现"断点/丢弃"留了口子。
+
+### 16.5 Hooks API：链表 + 早终止
+
+```javascript
+// packages/node_modules/@node-red/util/lib/hooks.js:3-17
+const VALID_HOOKS = [
+   "onSend", "preRoute", "preDeliver", "postDeliver",
+   "onReceive", "postReceive", "onComplete",
+   "preInstall", "postInstall", "preUninstall", "postUninstall"
+]
+```
+
+```javascript
+// hooks.js:190-238 (节选)
+function invokeStack(hookItem, payload, done) {
+    function callNextHook(err) {
+        if (!hookItem || err) { done(err); return; }
+        if (hookItem.removed) { hookItem = hookItem.nextHook; callNextHook(); return; }
+        const callback = hookItem.cb;
+        if (callback.length === 1) {                 // 同步签名 cb(payload)
+            try {
+                let result = callback(payload);
+                if (result === false) { done(false); return }   // 整链早终止
+                if (result && typeof result.then === 'function') {
+                    result.then(handleResolve, callNextHook); return;
+                }
+                hookItem = hookItem.nextHook; callNextHook();
+            } catch(err) { done(err); return; }
+        } else {
+            try { callback(payload, handleResolve) }      // 异步签名
+            catch(err) { done(err); return; }
+        }
+    }
+    callNextHook();
+}
+```
+
+hooks 用「双向链表 + 标签」做注册，每条钩子既支持同步 `cb(payload)` 也支持异步 `cb(payload, next)`，还能返回 Promise；返回 `false` 等价于"成功但中断"。
+
+### 16.6 receive 与 input 多回调：done() 跟踪链
+
+```javascript
+// Node.js:499-507
+Node.prototype.receive = function(msg) {
+    if (!msg) { msg = {}; }
+    if (!msg._msgid) { msg._msgid = redUtil.generateId(); }
+    this.emit("input", msg);
+};
+```
+
+但 `emit` 被 Node-RED 重载（Node.js:187-249），把 `"input"` 事件路由到 `_emitInput`：
+
+```javascript
+Node.prototype._emitInput = function(arg) {
+    var node = this;
+    let receiveEvent = { msg: arg, destination: { id: this.id, node: this } }
+    hooks.trigger("onReceive", receiveEvent, (err) => {
+        if (err) { node.error(err); return }
+        else if (err !== false) {
+            if (node._inputCallback) {                 // 单回调快路径
+                try {
+                    node._inputCallback(
+                        arg,
+                        function() { node.send.apply(node, arguments) },     // send
+                        function(err) { node._complete(arg, err); }          // done
+                    );
+                } catch(err) { node.error(err, arg); }
+            } else if (node._inputCallbacks) {         // 多 listener 计数完成
+                var c = node._inputCallbacks.length;
+                let doneCount = 0
+                for (var i = 0; i < c; i++) {
+                    var cb = node._inputCallbacks[i];
+                    cb.call(node, arg,
+                        function() { node.send.apply(node, arguments) },
+                        function(err) {
+                            doneCount++;
+                            if (doneCount === node._expectedDoneCount) {
+                                node._complete(arg, err);   // 全部 done 才上报
+                            }
+                        }
+                    );
+                }
+            }
+        }
+    });
+}
+```
+
+要点：这是 1.0 之后 **`done(err)` 回调链**的核心实现：
+
+- `node.on('input', function(msg, send, done){ ... })`（三参签名）注册的回调，每个都把 `_expectedDoneCount` 加 1。
+- 多个模块 `node.on('input', ...)` 时，`_inputCallback`（单）会自动升级成 `_inputCallbacks`（数组）。
+
+### 16.7 错误向 Catch 节点的传播
+
+```javascript
+// Flow.js:596-694 (节选)
+const candidateNodes = [];
+this.catchNodes.forEach(targetCatchNode => {
+    if (targetCatchNode.g && targetCatchNode.scope === 'group' && !reportingNode.g) { return }
+    if (Array.isArray(targetCatchNode.scope) && targetCatchNode.scope.indexOf(reportingNode.id) === -1) { return; }
+    let distance = 0
+    if (reportingNode.g) {
+        let containingGroup = this.groups[reportingNode.g]
+        while (containingGroup && containingGroup.id !== targetCatchNode.g) {
+            distance++
+            containingGroup = this.groups[containingGroup.g]
+        }
+    }
+    candidateNodes.push({ d: distance, n: targetCatchNode })
+})
+candidateNodes.sort((A, B) => A.d - B.d)
+```
+
+错误事件**按 group 嵌套距离**挑选 Catch 节点（最近优先），支持 `scope: 'group' | nodeIds[] | uncaught`。同一错误若已被普通 Catch 处理，`uncaught` Catch 不会重复触发。同时还有**错误循环防护**：`count` 计数到 10 时直接告警停止，防止 Catch 又被自己的下游再次抛错形成无限环。
+
+### 16.8 createNode：mixin 式继承
+
+```javascript
+// packages/node_modules/@node-red/runtime/lib/nodes/index.js:92-112
+function createNode(node, def) {
+    Node.call(node, def);                     // 1) 调用 Node 构造
+    var id = node.id;
+    if (def._alias) { id = def._alias; }
+    var creds = credentials.get(id);
+    if (creds) {
+        creds = jsonClone(creds);
+        for (var p in creds) {
+            if (creds.hasOwnProperty(p)) {
+                flowUtil.mapEnvVarProperties(creds, p, node._flow, node);  // ${env} 替换
+            }
+        }
+        node.credentials = creds;
+    }
+}
+```
+
+`RED.nodes.createNode` 的本质是 **`Node.call(node, def)`**——以原型链的视角，相当于把用户的构造函数塞进 `Node` 体系里。这种"mixin 式继承"让任何符合 `function(config){ createNode(this, config) }` 模板的对象都能立刻拥有 `send/receive/error/log/status/_complete` 全部能力，而不需要 ES6 class。
+
+### 16.9 FBP 实现模式总结
+
+| 模式 | 体现 |
+|------|------|
+| **拓扑即数据，数据即调度** | `wires[port][i]` 是 JSON 拓扑直接镜像，`updateWires` 把它"编译"成三档快路径 |
+| **SendEvent 作为消息+路由元数据** | `{ msg, source, destination, cloneMessage }` 让所有 hook 拿到统一结构 |
+| **`setImmediate` 切片** | 每条边都是潜在事件循环切换，避免长链路把 microtask 队列饿死 |
+| **done() 计数收口** | 异步追踪不是 Promise 链，而是"为同一个 input 注册了几个监听器，就要被 done() 几次" |
+| **错误是另一条数据流** | Catch 不是异常处理，而是按 group 距离匹配的特殊 inport |
+| **Hooks 提供旁路扩展** | 七个钩子覆盖消息从产生到送达全部生命周期，返回 `false` 即可拦截 |
+
+参考文件清单：
+- `packages/node_modules/@node-red/runtime/lib/nodes/Node.js`（688 行）
+- `packages/node_modules/@node-red/runtime/lib/flows/Flow.js`（867 行）
+- `packages/node_modules/@node-red/runtime/lib/flows/index.js`（876 行）
+- `packages/node_modules/@node-red/runtime/lib/nodes/index.js`（271 行）
+- `packages/node_modules/@node-red/util/lib/hooks.js`（260 行）

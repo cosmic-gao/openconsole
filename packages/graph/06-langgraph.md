@@ -746,3 +746,340 @@ LangGraph 是 **LLM Agent 时代的状态机编排框架**，其设计精髓：
 | 错误恢复 | ❌ | ✅ |
 | 人工介入 | ❌ | ✅ |
 | 多 Agent 协作 | ⚠️ | ✅ |
+
+---
+
+## 18. 源码深度解析
+
+> 本节针对 `langchain-ai/langgraph` 的 `libs/langgraph/langgraph/` 子树进行源码级走读。所有引用的行号对应仓库 `main` 分支当前快照。重点关注 BSP（Bulk Synchronous Parallel）语义如何在 Python `asyncio` + 协程调度上落地。
+
+### 18.1 StateGraph 构建器：从类型注解到通道拓扑
+
+`StateGraph` 是面向用户的 builder。它的关键工作不是"建图"，而是**把 Python 的 `Annotated[T, reducer]` 翻译成 Channel 实例**。
+
+```python
+# libs/langgraph/langgraph/graph/state.py:220-260
+def __init__(
+    self,
+    state_schema: type[StateT],
+    context_schema: type[ContextT] | None = None,
+    *,
+    input_schema: type[InputT] | None = None,
+    output_schema: type[OutputT] | None = None,
+    **kwargs,
+) -> None:
+    ...
+    self.nodes = {}
+    self.edges = set()
+    self.branches = defaultdict(dict)
+    self.schemas = {}
+    self.channels = {}
+    self.managed = {}
+    self.compiled = False
+    self.waiting_edges = set()
+    self.state_schema = state_schema
+    ...
+    self._add_schema(self.state_schema)
+    self._add_schema(self.input_schema, allow_managed=False)
+    self._add_schema(self.output_schema, allow_managed=False)
+```
+
+**`StateGraph` 内部并不存在用户在 DSL 中"看到"的 State 字典**——`self.channels` 才是真正的"状态容器"。每个字段被映射成一个 `BaseChannel` 子类实例。
+
+Reducer 解析：
+
+```python
+# state.py:1361-1393
+def _get_channel(name, annotation, *, allow_managed=True):
+    if hasattr(annotation, "__origin__") and annotation.__origin__ in (Required, NotRequired):
+        annotation = annotation.__args__[0]
+    if manager := _is_field_managed_value(name, annotation):
+        if allow_managed:
+            return manager
+    elif channel := _is_field_channel(annotation):
+        channel.key = name
+        return channel
+    elif channel := _is_field_binop(annotation):
+        channel.key = name
+        return channel
+    fallback: LastValue = LastValue(annotation)   # 没声明 reducer => LastValue
+    fallback.key = name
+    return fallback
+
+
+def _is_field_binop(typ):
+    if hasattr(typ, "__metadata__"):           # Annotated 元数据存放点
+        meta = typ.__metadata__
+        if len(meta) >= 1 and callable(meta[-1]):
+            sig = signature(meta[-1])
+            params = list(sig.parameters.values())
+            if sum(p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) for p in params) == 2:
+                return BinaryOperatorAggregate(typ, meta[-1])
+```
+
+`Annotated[list[str], operator.add]` 之所以"自动累加"，靠的是 `__metadata__` 探测——LangGraph 反射 reducer 的签名要求"二元可调用"，正好符合 `operator.add` / `lambda a, b: a + b` 的形态。
+
+`compile()` 把 builder 物化成可执行 `CompiledStateGraph`：
+
+```python
+# state.py:762-850 (节选)
+compiled = CompiledStateGraph(
+    builder=self,
+    nodes={},
+    channels={
+        **self.channels,
+        **self.managed,
+        START: EphemeralValue(self.input_schema),   # 入口被建模成"瞬时通道"
+    },
+    input_channels=START,
+    output_channels=output_channels,
+    checkpointer=checkpointer,
+    interrupt_before_nodes=interrupt_before,
+    interrupt_after_nodes=interrupt_after,
+)
+```
+
+**`START` 是 channel，不是 node**。`Pregel` 引擎"启动"靠的是给 `START` 通道写入用户输入，让所有订阅它的节点被触发。
+
+### 18.2 Channel 层级：BSP 中的"消息总线"
+
+`BaseChannel` 抽象出三个泛型 `[Value, Update, Checkpoint]`，分别表示**读出类型、写入类型、序列化类型**。
+
+**LastValue**——独占覆盖：
+
+```python
+# libs/langgraph/langgraph/channels/last_value.py:1-58
+class LastValue(Generic[Value], BaseChannel[Value, Value, Value]):
+    """Stores the last value received, can receive at most one value per step."""
+    __slots__ = ("value",)
+
+    def __init__(self, typ, key=""):
+        super().__init__(typ, key)
+        self.value = MISSING
+
+    def update(self, values):
+        if len(values) == 0:
+            return False
+        if len(values) != 1:
+            raise InvalidUpdateError(
+                f"At key '{self.key}': Can receive only one value per step."
+            )
+        self.value = values[-1]
+        return True
+```
+
+`LastValue.update` 如果在同一 superstep 内收到 ≥2 次写，直接抛 `InvalidUpdateError`——这就是当两条并行分支都试图写同一个非 reducer 字段时报错的根因。BSP 的"超步内不应有写冲突"约束在这里以异常形式具象化。
+
+**BinaryOperatorAggregate**——reducer 累加：
+
+```python
+# channels/binop.py:1-44
+class BinaryOperatorAggregate(Generic[Value], BaseChannel[Value, Value, Value]):
+    __slots__ = ("value", "operator")
+
+    def __init__(self, typ, operator):
+        super().__init__(typ)
+        self.operator = operator
+        try:    self.value = typ()             # 尝试用零值初始化
+        except: self.value = MISSING
+
+    def update(self, values):
+        if not values: return False
+        if self.value is MISSING:
+            self.value = values[0]
+            values = values[1:]
+        for value in values:
+            is_overwrite, overwrite_value = _get_overwrite(value)
+            if is_overwrite:
+                self.value = overwrite_value     # 支持 Send/特殊指令覆盖
+                continue
+            self.value = self.operator(self.value, value)   # 关键：折叠
+        return True
+```
+
+这是 LangGraph 把 Pregel "combiner" 落到 Python 的核心代码。`for value in values: self.value = self.operator(self.value, value)` 是一次纯函数 fold——整个超步内的所有并行写在 `apply_writes` 阶段被收集到 `values`，然后**一次性**按确定顺序折叠。
+
+### 18.3 BSP 主循环：`PregelLoop.tick` / `after_tick`
+
+```python
+# libs/langgraph/langgraph/pregel/loop.py:653-720
+def tick(self) -> bool:
+    if self.step > self.stop:
+        self.status = "out_of_steps"
+        return False
+    self.tasks = prepare_next_tasks(
+        self.checkpoint, self.checkpoint_pending_writes,
+        self.nodes, self.channels, self.managed, self.config,
+        self.step, self.stop,
+        for_execution=True,
+        trigger_to_nodes=self.trigger_to_nodes,
+        updated_channels=self.updated_channels,
+    )
+    if not self.tasks:
+        self.status = "done"
+        return False
+    if self.interrupt_before and should_interrupt(
+        self.checkpoint, self.interrupt_before, self.tasks.values()
+    ):
+        self.status = "interrupt_before"
+        raise GraphInterrupt()
+    return True
+
+# loop.py:722-758
+def after_tick(self) -> None:
+    writes = [w for t in self.tasks.values() for w in t.writes]
+    self.updated_channels = apply_writes(
+        self.checkpoint, self.channels, self.tasks.values(),
+        self.checkpointer_get_next_version, self.trigger_to_nodes,
+    )
+    if not self.updated_channels.isdisjoint(...):
+        self._emit("values", map_output_values, self.output_keys, writes, self.channels)
+    self.checkpoint_pending_writes.clear()
+    self._put_checkpoint({"source": "loop"})
+    if self.interrupt_after and should_interrupt(...):
+        self.status = "interrupt_after"
+        raise GraphInterrupt()
+```
+
+教科书级的 BSP 三段式——`tick()` 完成 **Plan**（决定哪些节点该跑）、外部 runner 完成 **Execute**（并行运行 task，把 writes 缓存到 `checkpoint_pending_writes`）、`after_tick()` 完成 **Update**（一次性 `apply_writes` + `_put_checkpoint`）。
+
+**屏障在哪？** 屏障并不是显式的 `asyncio.Barrier`，而是**隐含在循环结构里**：runner 必须等所有 task 的 future 都 settled 才会回到 `after_tick`，相当于通过"`await asyncio.gather(*tasks)` + 单线程主循环"在事件循环层面实现了 BSP 屏障。这正是 Python 异步实现 BSP 的标准技巧——**用 cooperative scheduling 取代真正的同步原语**。
+
+### 18.4 Channel 状态推进：`apply_writes` 与版本号
+
+```python
+# libs/langgraph/langgraph/pregel/_algo.py:235-307
+def apply_writes(checkpoint, channels, tasks, get_next_version, trigger_to_nodes) -> set[str]:
+    tasks = sorted(tasks, key=lambda t: task_path_str(t.path[:3]))
+
+    # 1. 记录每个节点"看见过"的通道版本
+    for task in tasks:
+        checkpoint["versions_seen"].setdefault(task.name, {}).update(
+            {chan: checkpoint["channel_versions"][chan]
+             for chan in task.triggers if chan in checkpoint["channel_versions"]}
+        )
+
+    # 2. 计算下一个全局版本号
+    next_version = get_next_version(
+        max(checkpoint["channel_versions"].values()) if checkpoint["channel_versions"] else None,
+        None,
+    )
+
+    # 3. 消费已读通道（让 EphemeralValue 等清空）
+    for chan in {c for t in tasks for c in t.triggers if c not in RESERVED and c in channels}:
+        if channels[chan].consume() and next_version is not None:
+            checkpoint["channel_versions"][chan] = next_version
+
+    # 4. 按通道分组应用写入（reducer 在此触发）
+    pending = defaultdict(list)
+    for task in tasks:
+        for chan, val in task.writes:
+            if chan in channels:
+                pending[chan].append(val)
+
+    updated_channels: set[str] = set()
+    for chan, vals in pending.items():
+        if channels[chan].update(vals) and next_version is not None:
+            checkpoint["channel_versions"][chan] = next_version
+            if channels[chan].is_available():
+                updated_channels.add(chan)
+
+    return updated_channels
+```
+
+- `versions_seen[node][chan]` + `channel_versions[chan]` 共同实现了 Pregel 的 "vote to halt" 语义——`prepare_next_tasks` 对每个节点 `n`，检查它订阅的 trigger channel 当前版本是否 > 它已观测的版本，否则不调度。
+- 这里**没有锁**。`apply_writes` 在 `after_tick` 里串行调用，整个超步边界由事件循环单线程性保证安全。
+
+### 18.5 `Send` 与条件路由：fan-out 的隐式通道
+
+```python
+# libs/langgraph/langgraph/types.py:678-720
+class Send:
+    __slots__ = ("node", "arg", "timeout")
+    def __init__(self, /, node, arg, *, timeout=None):
+        self.node = node
+        self.arg = arg
+        self.timeout = TimeoutPolicy.coerce(timeout)
+```
+
+真正的"fan-out 调度"在 `_algo.py` 的 PUSH 路径：
+
+```python
+# _algo.py:390-460 (节选)
+tasks_channel = cast(Topic[Send] | None, channels.get(TASKS))
+if tasks_channel and tasks_channel.is_available():
+    for idx, _ in enumerate(tasks_channel.get()):
+        if task := prepare_single_task(
+            (PUSH, idx), None,
+            checkpoint=checkpoint, ...
+        ):
+            tasks.append(task)
+```
+
+`TASKS` 是一个**预定义 `Topic[Send]` 通道**。当节点 `return Command(goto=[Send("worker", {...}), ...])` 时，这些 `Send` 在 `apply_writes` 阶段被写入 `TASKS` 通道；下一超步 `prepare_next_tasks` 通过 `(PUSH, idx)` 路径把它们逐个实例化为 `PregelExecutableTask`。**LangGraph 没有为 `Send` 引入新调度器，全部塞进了同一个 BSP 框架**。
+
+### 18.6 `interrupt()` 的实现：异常 + scratchpad
+
+```python
+# types.py:799-890
+def interrupt(value: Any) -> Any:
+    from langgraph.errors import GraphInterrupt
+    conf = get_config()["configurable"]
+    scratchpad = conf[CONFIG_KEY_SCRATCHPAD]
+    idx = scratchpad.interrupt_counter()
+
+    if scratchpad.resume:
+        if idx < len(scratchpad.resume):
+            conf[CONFIG_KEY_SEND]([(RESUME, scratchpad.resume)])
+            return scratchpad.resume[idx]      # 重放：直接返回上次提供的值
+
+    v = scratchpad.get_null_resume(True)
+    if v is not None:
+        scratchpad.resume.append(v)
+        return v
+
+    raise GraphInterrupt(                      # 首次：抛出，PregelLoop 捕获
+        (Interrupt.from_ns(value=value, ns=conf[CONFIG_KEY_CHECKPOINT_NS]),)
+    )
+```
+
+- `interrupt()` 在第一次执行时**抛出 `GraphInterrupt`**——这是一个**控制流异常**，会被 `PregelLoop` 在 task 边界捕获并转化为状态 `interrupt_after`。
+- 第二次以 `Command(resume=...)` 进入时，scratchpad 里已有值，函数直接返回，节点代码"无感知"地继续执行。这套 `interrupt_counter()` 机制实现了**幂等回放**——同一个节点里多次 `interrupt()` 调用对应 `resume` 列表的不同 index。
+- 这不是真正的协程中断；是 BSP "dump to disk + replay" 的最自然表达。
+
+### 18.7 Checkpoint 与 `thread_id` 隔离
+
+```python
+# libs/checkpoint/langgraph/checkpoint/base/__init__.py:74-104
+class Checkpoint(TypedDict):
+    v: int
+    id: str                                     # 单调递增 UUIDv6
+    ts: str
+    channel_values: dict[str, Any]
+    channel_versions: ChannelVersions           # 通道 -> 版本字符串
+    versions_seen: dict[str, ChannelVersions]   # 节点 -> 通道版本快照
+    updated_channels: list[str] | None
+
+class BaseCheckpointSaver:
+    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None: ...
+    def list(self, config, *, filter=None, before=None, limit=None) -> Iterator[CheckpointTuple]: ...
+    def put(self, config, checkpoint, metadata, new_versions) -> RunnableConfig: ...
+    def put_writes(self, config, writes, task_id, task_path="") -> None: ...
+```
+
+`Checkpoint` 不是 dataclass 而是 `TypedDict`，方便直接 JSON / msgpack 序列化。它**只存通道值与版本号**——节点本身没有"私有状态"，所有可恢复信息都已被通道吸收。这是 BSP 模型对持久化的核心简化。
+
+### 18.8 总结：BSP 在 Python `asyncio` 中的具体落地
+
+| Pregel 抽象          | LangGraph 实现                                             | 关键文件:行号                |
+| -------------------- | ---------------------------------------------------------- | ---------------------------- |
+| Vertex / Process     | `PregelNode`（包装 `bound` Runnable + writers）            | `pregel/_read.py:119-165`    |
+| Message / Mailbox    | `BaseChannel` 子类（`LastValue` / `Topic` / `BinaryOp...`）| `channels/*.py`              |
+| Combiner             | `BinaryOperatorAggregate.update` 内的 fold                 | `channels/binop.py:26-44`    |
+| Superstep barrier    | `PregelLoop.tick` / `after_tick` + 事件循环单线程性        | `pregel/loop.py:653-758`     |
+| Vote-to-halt         | `versions_seen` vs `channel_versions` 比较                 | `pregel/_algo.py:235-307`    |
+| Persistent state     | `Checkpoint` TypedDict + `BaseCheckpointSaver`             | `checkpoint/base:74-216`     |
+| Send / dynamic edges | `TASKS` `Topic[Send]` 通道 + PUSH 任务路径                 | `pregel/_algo.py:390-460`    |
+| Human-in-the-loop    | `interrupt()` 抛 `GraphInterrupt` + scratchpad 回放        | `types.py:799-890`           |
+
+LangGraph 的设计哲学可以浓缩成一句话：**它没有发明新的并行原语，而是把 Pregel 的所有概念都映射到"通道写入 + 单线程主循环 + 单调版本号"这三件 Python 已有的工具上。** `asyncio` 提供 cooperative 屏障，`Annotated` + 反射提供 reducer 声明式 DSL，`TypedDict` 提供可序列化状态——BSP 的所有保证都从这三者的组合里自然涌现出来，这正是为什么 LangGraph 能在不到一万行 Python 代码里实现一个工业级图执行引擎。
