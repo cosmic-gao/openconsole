@@ -26,7 +26,7 @@ export abstract class Port<S extends Socket = Socket> {
 }
 
 export class Input<S extends Socket = Socket> extends Port<S> {
-  public readonly direction: Direction = 'input'
+  public readonly direction = 'input' as const
 
   public constructor(socket: S, id: PortId) {
     super(socket, id)
@@ -34,7 +34,7 @@ export class Input<S extends Socket = Socket> extends Port<S> {
 }
 
 export class Output<S extends Socket = Socket> extends Port<S> {
-  public readonly direction: Direction = 'output'
+  public readonly direction = 'output' as const
 
   public constructor(socket: S, id: PortId) {
     super(socket, id)
