@@ -4,7 +4,14 @@
     "@opendesign/tsconfig/lib",
     "@opendesign/tsconfig/esm"
   ],
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
   "include": [
-    "index.ts"
+    "*.ts"
   ]
 }
