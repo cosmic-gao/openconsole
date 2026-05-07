@@ -1,14 +1,13 @@
 declare const __brand: unique symbol
-
 export type Brand<T, B extends string> = T & { readonly [__brand]: B }
-export type Id<B extends string> = Brand<string, B>
 
+export type Id<B extends string> = Brand<string, B>
 export type NodeId = Id<'Node'>
 export type EdgeId = Id<'Edge'>
 export type PortId = Id<'Port'>
 
-export type NodeIndex = Brand<number, 'NodeIndex'>
-export type EdgeIndex = Brand<number, 'EdgeIndex'>
+export type NodeIndex<Ix = number> = Brand<Ix, 'NodeIndex'>
+export type EdgeIndex<Ix = number> = Brand<Ix, 'EdgeIndex'>
 
 export type Direction = 'input' | 'output'
 
