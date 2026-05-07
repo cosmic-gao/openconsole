@@ -12,82 +12,59 @@ export type SocketId = Id<'Socket'>
 export type PortId = Id<'Port'>
 export type EndpointId = Id<'Endpoint'>
 
+export type Direction = "input" | "output"
+
 export class Socket {
-  public constructor(
-    public readonly id: SocketId,
-    public readonly name: string,
-  ) { }
+  public constructor(public readonly name: string) { }
 }
 
-export class Port<S extends Socket = Socket> {
-  public readonly id: PortId
-
+export class Port<S extends Socket> {
   public constructor(
     public readonly socket: S,
-    public readonly label?: string,
-    public readonly multipleConnections?: boolean,
     public readonly index?: number,
+    public readonly id?: PortId,
   ) {
-    this.id = Symbol() as unknown as PortId
   }
 }
 
-export class Input<S extends Socket = Socket> extends Port<S> {
-  public constructor(
-    socket: S,
-    label?: string,
-    multipleConnections: boolean = false,
-    index?: number,
-  ) {
-    super(socket, label, multipleConnections, index)
+export class Input<S extends Socket> extends Port<S> {
+  public static direction: Direction = 'input'
+
+  public constructor(public socket: S) {
+    super(socket)
   }
 }
 
-export class Output<S extends Socket = Socket> extends Port<S> {
-  public constructor(
-    socket: S,
-    label?: string,
-    multipleConnections: boolean = true,
-    index?: number,
-  ) {
-    super(socket, label, multipleConnections, index)
+export class Output<S extends Socket> extends Port<S> {
+  public static direction: Direction = 'output'
+
+  public constructor(public socket: S) {
+    super(socket)
   }
 }
 
 export class Node<
-  Inputs extends Record<string, Input<Socket>> = Record<string, Input<Socket>>,
-  Outputs extends Record<string, Output<Socket>> = Record<string, Output<Socket>>,
+  I extends { [K in string]?: Socket } = { [K in string]?: Socket },
+  O extends { [K in string]?: Socket } = { [K in string]?: Socket },
 > {
-  public readonly id: NodeId
-  public readonly inputs: Partial<Inputs> = {}
-  public readonly outputs: Partial<Outputs> = {}
+  public readonly inputs: { [K in keyof I]?: Input<Exclude<I[K], undefined>> } = {}
+  public readonly outputs: { [K in keyof O]?: Output<Exclude<O[K], undefined>> } = {}
 
-  public constructor(
-    public readonly label: string,
-    id?: NodeId,
-  ) {
-    this.id = id ?? (Symbol() as unknown as NodeId)
-  }
+  public constructor(public readonly id: NodeId) { }
 }
 
-export interface Endpoint<
-  N extends Node = Node,
-  P extends Port = Port,
-> {
-  readonly id: EndpointId
-  readonly node: N
-  readonly port: P
+export interface Endpoint<N extends Node, P extends Port<Socket>> {
+  node: N
+  port: P
 }
 
 export class Edge<
-  S extends Node = Node,
-  T extends Node = Node,
-  O extends Output = Output,
-  I extends Input = Input,
+  S extends Node,
+  T extends Node
 > {
   public constructor(
+    public readonly source: keyof S['inputs'],
+    public readonly target: keyof T['outputs'],
     public readonly id: EdgeId,
-    public readonly source: Endpoint<S, O>,
-    public readonly target: Endpoint<T, I>,
   ) { }
 }
