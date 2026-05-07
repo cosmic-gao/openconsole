@@ -1,14 +1,14 @@
 declare const __brand: unique symbol
 
-export type Brand<T, B extends string> = T & {
-  readonly [__brand]: B
-}
-
+export type Brand<T, B extends string> = T & { readonly [__brand]: B }
 export type Id<B extends string> = Brand<string, B>
 
 export type NodeId = Id<'Node'>
 export type EdgeId = Id<'Edge'>
 export type PortId = Id<'Port'>
+
+export type NodeIndex = Brand<number, 'NodeIndex'>
+export type EdgeIndex = Brand<number, 'EdgeIndex'>
 
 export type Direction = 'input' | 'output'
 
@@ -28,17 +28,13 @@ export abstract class Port<S extends Socket = Socket> {
 export class Input<S extends Socket = Socket> extends Port<S> {
   public readonly direction = 'input' as const
 
-  public constructor(socket: S, id: PortId) {
-    super(socket, id)
-  }
+  public constructor(socket: S, id: PortId) { super(socket, id) }
 }
 
 export class Output<S extends Socket = Socket> extends Port<S> {
   public readonly direction = 'output' as const
 
-  public constructor(socket: S, id: PortId) {
-    super(socket, id)
-  }
+  public constructor(socket: S, id: PortId) { super(socket, id) }
 }
 
 export type Sockets = { [K: string]: Socket }
@@ -69,4 +65,8 @@ export class Edge<
     public readonly target: Endpoint<T, NonNullable<T['inputs'][keyof T['inputs']]>>,
     public readonly id: EdgeId,
   ) { }
+}
+
+export class Graph {
+
 }
