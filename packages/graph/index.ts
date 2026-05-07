@@ -130,6 +130,8 @@ export class Edge {
 export class Graph {
   private readonly _nodes = new Map<NodeId, Node>();
   private readonly _edges = new Map<EdgeId, Edge>();
+  private _dirty = true;
+  private _order: NodeId[] | null = null;
 
   public constructor(public readonly id: GraphId) {}
 
@@ -197,6 +199,7 @@ export class Graph {
   public clear(): void {
     this._nodes.clear();
     this._edges.clear();
+    this._markDirty();
   }
 
   public toJson(): object {
@@ -209,11 +212,58 @@ export class Graph {
       })),
       edges: Array.from(this._edges.values()).map(e => ({
         id: e.id,
-        source: { node_id: e.source_id, port_id: e.source.port_id },
-        target: { node_id: e.target_id, port_id: e.target.port_id },
+        source: { nodeId: e.source.nodeId, portId: e.source.portId },
+        target: { nodeId: e.target.nodeId, portId: e.target.portId },
         weight: e.weight,
       })),
     };
+  }
+
+  public executionOrder(): NodeId[] {
+    if (!this._dirty && this._order !== null) return this._order;
+    this._order = this._computeTopologicalOrder();
+    this._dirty = false;
+    return this._order;
+  }
+
+  private _computeTopologicalOrder(): NodeId[] {
+    const visited = new Set<NodeId>();
+    const result: NodeId[] = [];
+    const inDegree = new Map<NodeId, number>();
+    const adjacency = new Map<NodeId, NodeId[]>();
+
+    for (const nodeId of this._nodes.keys()) {
+      inDegree.set(nodeId, 0);
+      adjacency.set(nodeId, []);
+    }
+
+    for (const edge of this._edges.values()) {
+      adjacency.get(edge.sourceId)?.push(edge.targetId);
+      inDegree.set(edge.targetId, (inDegree.get(edge.targetId) ?? 0) + 1);
+    }
+
+    const queue: NodeId[] = [];
+    for (const [nodeId, degree] of inDegree.entries()) {
+      if (degree === 0) queue.push(nodeId);
+    }
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      result.push(nodeId);
+      visited.add(nodeId);
+
+      for (const neighbor of adjacency.get(nodeId) ?? []) {
+        const newDegree = (inDegree.get(neighbor) ?? 1) - 1;
+        inDegree.set(neighbor, newDegree);
+        if (newDegree === 0) queue.push(neighbor);
+      }
+    }
+
+    for (const nodeId of this._nodes.keys()) {
+      if (!visited.has(nodeId)) result.push(nodeId);
+    }
+
+    return result;
   }
 
   private _validate(edge: Edge): boolean {
