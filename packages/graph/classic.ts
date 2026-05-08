@@ -441,10 +441,6 @@ export class Graph<N = unknown, E = unknown> {
    */
   public constructor(public readonly id: GraphId) {}
 
-  // ============================================================
-  // 端口邻接遍历（无缓存，直接走端口列表）
-  // ============================================================
-
   /**
    * 节点所有出边的 ID 流。
    *
@@ -875,44 +871,41 @@ export class Graph<N = unknown, E = unknown> {
     };
   }
 
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public readonly nodeIds: Iterable<NodeId> = {
     [Symbol.iterator]: () => this.nodes.keys(),
   };
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public readonly edgeIds: Iterable<EdgeId> = {
     [Symbol.iterator]: () => this.edges.keys(),
   };
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     return this.nodes.size;
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     return this.edges.size;
   }
 
-  /** {@inheritdoc IntoNeighbors.neighbors} */
-  public neighbors(nodeId: NodeId): Iterable<NodeId> {
+  /** {@inheritdoc Neighbors.neighbors} */
+  public neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
+    if (direction === 'input') return this.predecessors(nodeId);
+    if (direction === 'output') return this.successors(nodeId);
     return this.adjacencies(nodeId);
   }
 
-  /** {@inheritdoc IntoNeighbors.incomingNeighbors} */
+  /** {@inheritdoc Neighbors.incomingNeighbors} */
   public incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.predecessors(nodeId);
   }
 
-  /** {@inheritdoc IntoNeighbors.outgoingNeighbors} */
+  /** {@inheritdoc Neighbors.outgoingNeighbors} */
   public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.successors(nodeId);
-  }
-
-  /** {@inheritdoc IntoNeighborsDirected.neighborsDirected} */
-  public neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId> {
-    return direction === 'input' ? this.predecessors(nodeId) : this.successors(nodeId);
   }
 
   /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
@@ -955,13 +948,13 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  /** {@inheritdoc NodeIndexable.nodeBound} */
-  public nodeBound(): number {
+  /** {@inheritdoc NodeIndexable.bound} */
+  public bound(): number {
     return this.nodes.size;
   }
 
-  /** {@inheritdoc NodeIndexable.nodeIdAt} */
-  public nodeIdAt(index: number): NodeId | undefined {
+  /** {@inheritdoc NodeIndexable.at} */
+  public at(index: number): NodeId | undefined {
     if (index < 0 || index >= this.nodes.size) return undefined;
     let i = 0;
     for (const nodeId of this.nodes.keys()) {
@@ -982,15 +975,15 @@ export class Graph<N = unknown, E = unknown> {
     return -1;
   }
 
-  /** {@inheritdoc Visitable.visitMap} */
-  public visitMap(): Map<NodeId, boolean> {
+  /** {@inheritdoc Visitable.marks} */
+  public marks(): Map<NodeId, boolean> {
     const map = new Map<NodeId, boolean>();
     for (const id of this.nodes.keys()) map.set(id, false);
     return map;
   }
 
-  /** {@inheritdoc Visitable.resetMap} */
-  public resetMap(map: Map<NodeId, boolean>): void {
+  /** {@inheritdoc Visitable.reset} */
+  public reset(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
   }
 

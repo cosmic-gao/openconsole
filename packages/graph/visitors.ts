@@ -20,18 +20,13 @@
 import type {
   Control,
   DfsEvent,
-  IntoNeighbors,
-  IntoNeighborsDirected,
+  Neighbors,
   IntoDegree,
-  GraphBase,
+  Catalog,
   NodeId,
-  TopoSortResult,
+  Topology,
   Walkable,
 } from './types';
-
-// ============================================================
-// 状态化遍历器
-// ============================================================
 
 /**
  * 深度优先遍历器（迭代实现，可暂停 / 恢复）。
@@ -70,17 +65,17 @@ export class Dfs {
    * @param _graph 图实例（仅用于类型推导，不保存引用）
    * @param start 起点节点 ID
    */
-  public static start<G extends IntoNeighbors>(_graph: G, start: NodeId): Dfs {
+  public static start<G extends Neighbors>(_graph: G, start: NodeId): Dfs {
     return new Dfs(start);
   }
 
   /**
    * 推进一步，返回下一个 discovered 节点；遍历结束返回 `undefined`。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例（每次调用传入，便于在不同视图间切换）
    */
-  public next<G extends IntoNeighbors>(graph: G): NodeId | undefined {
+  public next<G extends Neighbors>(graph: G): NodeId | undefined {
     while (this.stack.length > 0) {
       const nodeId = this.stack.pop()!;
       if (this.discovered.has(nodeId)) continue;
@@ -117,10 +112,10 @@ export class Dfs {
   /**
    * 把遍历器适配为可迭代对象，便于 `for...of` 消费。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends IntoNeighbors>(graph: G): IterableIterator<NodeId> {
+  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
     const self = this;
     const iter: IterableIterator<NodeId> = {
       [Symbol.iterator]() {
@@ -178,17 +173,17 @@ export class Bfs {
    * @param _graph 图实例（仅用于类型推导）
    * @param start 起点节点 ID
    */
-  public static start<G extends IntoNeighbors>(_graph: G, start: NodeId): Bfs {
+  public static start<G extends Neighbors>(_graph: G, start: NodeId): Bfs {
     return new Bfs(start);
   }
 
   /**
    * 推进一步，返回下一个访问到的节点；遍历结束返回 `undefined`。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public next<G extends IntoNeighbors>(graph: G): NodeId | undefined {
+  public next<G extends Neighbors>(graph: G): NodeId | undefined {
     if (this._head >= this.queue.length) return undefined;
     const nodeId = this.queue[this._head++]!;
     for (const neighbor of graph.outgoingNeighbors(nodeId)) {
@@ -222,10 +217,10 @@ export class Bfs {
   /**
    * 适配为可迭代对象。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends IntoNeighbors>(graph: G): IterableIterator<NodeId> {
+  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
     const self = this;
     const iter: IterableIterator<NodeId> = {
       [Symbol.iterator]() {
@@ -286,11 +281,11 @@ export class DfsPostorder {
   /**
    * 工厂方法：从指定起点构造遍历器（即时入栈，直接持有 graph 拿到的子迭代器）。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    * @param start 起点节点 ID
    */
-  public static start<G extends IntoNeighbors>(graph: G, start: NodeId): DfsPostorder {
+  public static start<G extends Neighbors>(graph: G, start: NodeId): DfsPostorder {
     const inst = new DfsPostorder();
     inst.discovered.add(start);
     inst.stack.push({ node: start, iter: graph.outgoingNeighbors(start)[Symbol.iterator]() });
@@ -300,10 +295,10 @@ export class DfsPostorder {
   /**
    * 推进一步，返回下一个 finish 节点；遍历结束返回 `undefined`。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public next<G extends IntoNeighbors>(graph: G): NodeId | undefined {
+  public next<G extends Neighbors>(graph: G): NodeId | undefined {
     if (this._initial !== undefined) {
       const start = this._initial;
       this._initial = undefined;
@@ -359,10 +354,10 @@ export class DfsPostorder {
   /**
    * 适配为可迭代对象。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends IntoNeighbors>(graph: G): IterableIterator<NodeId> {
+  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
     const self = this;
     const iter: IterableIterator<NodeId> = {
       [Symbol.iterator]() {
@@ -465,10 +460,10 @@ export class Topo {
   /**
    * 推进一步，返回拓扑序中下一个节点；剩余节点都在环上时返回 `undefined`。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public next<G extends IntoNeighbors>(graph: G): NodeId | undefined {
+  public next<G extends Neighbors>(graph: G): NodeId | undefined {
     if (this._head >= this.queue.length) return undefined;
     const nodeId = this.queue[this._head++]!;
     this._emitted++;
@@ -487,10 +482,10 @@ export class Topo {
   /**
    * 适配为可迭代对象。
    *
-   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends IntoNeighbors>(graph: G): IterableIterator<NodeId> {
+  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
     const self = this;
     const iter: IterableIterator<NodeId> = {
       [Symbol.iterator]() {
@@ -517,7 +512,7 @@ export class Topo {
   }
 
   /** 一次性 drain 出全部拓扑序与环路信息（与 algorithms.toposortFull 等价）。 */
-  public collect<G extends IntoNeighbors>(graph: G): TopoSortResult {
+  public collect<G extends Neighbors>(graph: G): Topology {
     const order: NodeId[] = [];
     while (true) {
       const next = this.next(graph);
@@ -528,14 +523,10 @@ export class Topo {
     if (cycleNodes.length > 0) order.push(...cycleNodes);
     return {
       order,
-      cycleInfo: { hasCycle: cycleNodes.length > 0, cycleNodes },
+      cycles: { hasCycle: cycleNodes.length > 0, cycleNodes },
     };
   }
 }
-
-// ============================================================
-// 事件回调风格 DFS
-// ============================================================
 
 /**
  * DFS 访问者回调集合。
@@ -563,13 +554,13 @@ export interface DfsVisitor {
  * - 边事件根据邻居颜色派发为 treeEdge / backEdge / crossForwardEdge；
  * - 任意回调返回 `'break'` 立即中止整次遍历并返回 `'break'`，否则返回最终的 {@link Control}。
  *
- * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Catalog} + {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param starts 起点节点序列；若省略则按 `graph.nodeIds` 全图扫描
  * @param visitor 回调集合
  * @returns 整体控制流结果
  */
-export function dfsVisit<G extends GraphBase & IntoNeighbors>(
+export function dfsVisit<G extends Catalog & Neighbors>(
   graph: G,
   starts: Iterable<NodeId> | null,
   visitor: DfsVisitor,
@@ -642,20 +633,3 @@ export function dfsVisit<G extends GraphBase & IntoNeighbors>(
   return 'continue';
 }
 
-/**
- * 把不带 `neighborsDirected` 的图升级为方向化邻居查询的视图。
- *
- * @remarks 已实现 {@link IntoNeighborsDirected} 的图原样返回；其余图通过 `Object.create` 浅包一层。
- *
- * @template G 至少满足 {@link IntoNeighbors} 的图类型
- * @param graph 图实例
- */
-export function directed<G extends IntoNeighbors>(graph: G): G & IntoNeighborsDirected {
-  if (typeof (graph as G & Partial<IntoNeighborsDirected>).neighborsDirected === 'function') {
-    return graph as G & IntoNeighborsDirected;
-  }
-  const wrapped: G & IntoNeighborsDirected = Object.create(graph);
-  wrapped.neighborsDirected = (nodeId, direction) =>
-    direction === 'input' ? graph.incomingNeighbors(nodeId) : graph.outgoingNeighbors(nodeId);
-  return wrapped;
-}

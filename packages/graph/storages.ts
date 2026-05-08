@@ -7,7 +7,7 @@
  * - {@link MapGraph}：基于 `Map<NodeId, ...>` 的轻量稀疏图，无端口，纯拓扑算法用；
  * - {@link MatrixGraph}：基于位图 / 邻接矩阵的稠密图，O(1) 邻接查询。
  *
- * 三者都实现同一组访问者 trait（{@link GraphBase}、{@link IntoNeighbors}、{@link IntoEdgeRefs}、
+ * 三者都实现同一组访问者 trait（{@link Catalog}、{@link Neighbors}、{@link IntoEdgeRefs}、
  * {@link IntoDegree}、{@link Visitable}、{@link NodeIndexable}），因此可以被同一份算法消费。
  */
 
@@ -15,20 +15,15 @@ import type {
   Direction,
   EdgeId,
   EdgeRef,
-  GraphBase,
+  Catalog,
   GraphId,
   IntoDegree,
   IntoEdgeRefs,
-  IntoNeighbors,
-  IntoNeighborsDirected,
+  Neighbors,
   NodeId,
   NodeIndexable,
   Visitable,
 } from './types';
-
-// ============================================================
-// MapGraph - 基于 Map 的稀疏图
-// ============================================================
 
 /** {@link MapGraph} 内部边记录。 */
 interface MapEdgeRecord<E> {
@@ -51,9 +46,8 @@ interface MapEdgeRecord<E> {
  */
 export class MapGraph<N = unknown, E = unknown>
 implements
-    GraphBase,
-    IntoNeighbors,
-    IntoNeighborsDirected,
+    Catalog,
+    Neighbors,
     IntoEdgeRefs<E>,
     IntoDegree,
     Visitable,
@@ -108,8 +102,6 @@ implements
     }
     return graph;
   }
-
-  // ---- 修改 API ----
 
   /**
    * 加入或覆盖一个节点的权重。
@@ -231,43 +223,43 @@ implements
     this._autoId = 0;
   }
 
-  // ---- GraphBase ----
-
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public readonly nodeIds: Iterable<NodeId> = {
     [Symbol.iterator]: () => this.nodes.keys(),
   };
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public readonly edgeIds: Iterable<EdgeId> = {
     [Symbol.iterator]: () => this.edges.keys(),
   };
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     return this.nodes.size;
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     return this.edges.size;
   }
 
-  // ---- IntoNeighbors ----
-
-  /** {@inheritdoc IntoNeighbors.neighbors} */
-  public *neighbors(nodeId: NodeId): Iterable<NodeId> {
-    for (const id of this._out.get(nodeId) ?? []) {
-      const edge = this.edges.get(id);
-      if (edge) yield edge.target;
+  /** {@inheritdoc Neighbors.neighbors} */
+  public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
+    if (direction !== 'input') {
+      for (const id of this._out.get(nodeId) ?? []) {
+        const edge = this.edges.get(id);
+        if (edge) yield edge.target;
+      }
     }
-    for (const id of this._in.get(nodeId) ?? []) {
-      const edge = this.edges.get(id);
-      if (edge) yield edge.source;
+    if (direction !== 'output') {
+      for (const id of this._in.get(nodeId) ?? []) {
+        const edge = this.edges.get(id);
+        if (edge) yield edge.source;
+      }
     }
   }
 
-  /** {@inheritdoc IntoNeighbors.incomingNeighbors} */
+  /** {@inheritdoc Neighbors.incomingNeighbors} */
   public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     for (const id of this._in.get(nodeId) ?? []) {
       const edge = this.edges.get(id);
@@ -275,20 +267,13 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoNeighbors.outgoingNeighbors} */
+  /** {@inheritdoc Neighbors.outgoingNeighbors} */
   public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     for (const id of this._out.get(nodeId) ?? []) {
       const edge = this.edges.get(id);
       if (edge) yield edge.target;
     }
   }
-
-  /** {@inheritdoc IntoNeighborsDirected.neighborsDirected} */
-  public neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId> {
-    return direction === 'input' ? this.incomingNeighbors(nodeId) : this.outgoingNeighbors(nodeId);
-  }
-
-  // ---- IntoEdgeRefs ----
 
   /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
   public *edgeRefs(): Iterable<EdgeRef<E>> {
@@ -311,8 +296,6 @@ implements
     }
   }
 
-  // ---- IntoDegree ----
-
   /** {@inheritdoc IntoDegree.inDegree} */
   public inDegree(nodeId: NodeId): number {
     return this._in.get(nodeId)?.length ?? 0;
@@ -323,27 +306,25 @@ implements
     return this._out.get(nodeId)?.length ?? 0;
   }
 
-  // ---- Visitable / NodeIndexable ----
-
-  /** {@inheritdoc Visitable.visitMap} */
-  public visitMap(): Map<NodeId, boolean> {
+  /** {@inheritdoc Visitable.marks} */
+  public marks(): Map<NodeId, boolean> {
     const map = new Map<NodeId, boolean>();
     for (const id of this.nodes.keys()) map.set(id, false);
     return map;
   }
 
-  /** {@inheritdoc Visitable.resetMap} */
-  public resetMap(map: Map<NodeId, boolean>): void {
+  /** {@inheritdoc Visitable.reset} */
+  public reset(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
   }
 
-  /** {@inheritdoc NodeIndexable.nodeBound} */
-  public nodeBound(): number {
+  /** {@inheritdoc NodeIndexable.bound} */
+  public bound(): number {
     return this.nodes.size;
   }
 
-  /** {@inheritdoc NodeIndexable.nodeIdAt} */
-  public nodeIdAt(index: number): NodeId | undefined {
+  /** {@inheritdoc NodeIndexable.at} */
+  public at(index: number): NodeId | undefined {
     if (index < 0 || index >= this.nodes.size) return undefined;
     let i = 0;
     for (const id of this.nodes.keys()) {
@@ -364,10 +345,6 @@ implements
     return -1;
   }
 }
-
-// ============================================================
-// MatrixGraph - 邻接矩阵稠密图
-// ============================================================
 
 /** {@link MatrixGraph} 内部边记录。 */
 interface MatrixEdgeRecord<E> {
@@ -390,9 +367,8 @@ interface MatrixEdgeRecord<E> {
  */
 export class MatrixGraph<N = unknown, E = unknown>
 implements
-    GraphBase,
-    IntoNeighbors,
-    IntoNeighborsDirected,
+    Catalog,
+    Neighbors,
     IntoEdgeRefs<E>,
     IntoDegree,
     Visitable,
@@ -466,8 +442,6 @@ implements
     }
     return graph;
   }
-
-  // ---- 修改 API ----
 
   /**
    * 加入节点。
@@ -604,37 +578,33 @@ implements
     return this.edges.has(edgeId);
   }
 
-  // ---- GraphBase ----
-
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public readonly nodeIds: Iterable<NodeId> = {
     [Symbol.iterator]: () => this._nodeIdIterator(),
   };
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public readonly edgeIds: Iterable<EdgeId> = {
     [Symbol.iterator]: () => this.edges.keys(),
   };
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     return this._nodeCount;
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     return this.edges.size;
   }
 
-  // ---- IntoNeighbors ----
-
-  /** {@inheritdoc IntoNeighbors.neighbors} */
-  public *neighbors(nodeId: NodeId): Iterable<NodeId> {
-    yield* this.outgoingNeighbors(nodeId);
-    yield* this.incomingNeighbors(nodeId);
+  /** {@inheritdoc Neighbors.neighbors} */
+  public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
+    if (direction !== 'input') yield* this.outgoingNeighbors(nodeId);
+    if (direction !== 'output') yield* this.incomingNeighbors(nodeId);
   }
 
-  /** {@inheritdoc IntoNeighbors.incomingNeighbors} */
+  /** {@inheritdoc Neighbors.incomingNeighbors} */
   public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     const targetIndex = this._nodeToIndex.get(nodeId);
     if (targetIndex === undefined) return;
@@ -645,7 +615,7 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoNeighbors.outgoingNeighbors} */
+  /** {@inheritdoc Neighbors.outgoingNeighbors} */
   public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     const sourceIndex = this._nodeToIndex.get(nodeId);
     if (sourceIndex === undefined) return;
@@ -656,13 +626,6 @@ implements
       if (id !== null) yield id;
     }
   }
-
-  /** {@inheritdoc IntoNeighborsDirected.neighborsDirected} */
-  public neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId> {
-    return direction === 'input' ? this.incomingNeighbors(nodeId) : this.outgoingNeighbors(nodeId);
-  }
-
-  // ---- IntoEdgeRefs ----
 
   /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
   public *edgeRefs(): Iterable<EdgeRef<E>> {
@@ -708,8 +671,6 @@ implements
     }
   }
 
-  // ---- IntoDegree ----
-
   /** {@inheritdoc IntoDegree.inDegree} */
   public inDegree(nodeId: NodeId): number {
     const targetIndex = this._nodeToIndex.get(nodeId);
@@ -733,34 +694,32 @@ implements
     return count;
   }
 
-  // ---- Visitable / NodeIndexable ----
-
-  /** {@inheritdoc Visitable.visitMap} */
-  public visitMap(): Map<NodeId, boolean> {
+  /** {@inheritdoc Visitable.marks} */
+  public marks(): Map<NodeId, boolean> {
     const map = new Map<NodeId, boolean>();
     for (const id of this.nodeIds) map.set(id, false);
     return map;
   }
 
-  /** {@inheritdoc Visitable.resetMap} */
-  public resetMap(map: Map<NodeId, boolean>): void {
+  /** {@inheritdoc Visitable.reset} */
+  public reset(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
   }
 
   /**
-   * {@inheritdoc NodeIndexable.nodeBound}
+   * {@inheritdoc NodeIndexable.bound}
    *
    * @remarks
    * 等于内部槽位数组长度，**可能大于** {@link nodeCount}：删除节点会留下墓碑槽，
-   * 在被新 `addNode` 复用之前 `nodeBound() > nodeCount()`。算法应迭代 `[0, nodeBound())`
-   * 并跳过 {@link nodeIdAt} 返回 `undefined` 的位置。
+   * 在被新 `addNode` 复用之前 `bound() > nodeCount()`。算法应迭代 `[0, bound())`
+   * 并跳过 {@link at} 返回 `undefined` 的位置。
    */
-  public nodeBound(): number {
+  public bound(): number {
     return this._indexToNode.length;
   }
 
-  /** {@inheritdoc NodeIndexable.nodeIdAt} */
-  public nodeIdAt(index: number): NodeId | undefined {
+  /** {@inheritdoc NodeIndexable.at} */
+  public at(index: number): NodeId | undefined {
     return this._indexToNode[index] ?? undefined;
   }
 
@@ -768,8 +727,6 @@ implements
   public indexOf(nodeId: NodeId): number {
     return this._nodeToIndex.get(nodeId) ?? -1;
   }
-
-  // ---- 内部工具 ----
 
   /**
    * 矩阵 2× 扩容，搬迁旧值到新行布局。
@@ -799,10 +756,6 @@ implements
     }
   }
 }
-
-// ============================================================
-// 内部工具
-// ============================================================
 
 /**
  * 从数组中删除首个等于 `value` 的元素（原地修改）。

@@ -3,25 +3,25 @@
  *
  * @remarks
  * 参考 petgraph 风格，算法与存储解耦。
- * 任何实现 GraphBase / IntoNeighbors / IntoEdges / IntoDegree 等 trait 的图都可以使用这些算法。
+ * 任何实现 Catalog / Neighbors / Edges / IntoDegree 等 trait 的图都可以使用这些算法。
  *
  * 命名约定（用户偏好）：算法导出使用单个英文单词；不得已使用两词组合。
  */
 
 import type {
   EdgeRef,
-  GraphBase,
+  Catalog,
   GraphRef,
   IntoDegree,
   IntoEdgeRefs,
-  IntoEdges,
-  IntoNeighbors,
+  Edges,
+  Neighbors,
   NodeId,
   Walkable,
   WeightedEdge,
-  CycleInfo,
-  TopoSortResult,
-  DegreeInfo,
+  Cycles,
+  Topology,
+  Degree,
 } from './types';
 import type { Edge } from './classic';
 import { reversed } from './adapters';
@@ -70,7 +70,7 @@ export function toposort<G extends Walkable>(
 export function toposortFull<G extends Walkable>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => cycle,
-): TopoSortResult {
+): Topology {
   const inDegree = new Map<NodeId, number>();
   const adjacency = new Map<NodeId, NodeId[]>();
   const nodeOrder: NodeId[] = [];
@@ -117,7 +117,7 @@ export function toposortFull<G extends Walkable>(
 
   return {
     order,
-    cycleInfo: {
+    cycles: {
       hasCycle: cycleNodes.length > 0,
       cycleNodes,
     },
@@ -131,8 +131,8 @@ export function toposortFull<G extends Walkable>(
  * @param graph 图实例
  * @returns 环路信息
  */
-export function cycles<G extends Walkable>(graph: G): CycleInfo {
-  return toposortFull(graph).cycleInfo;
+export function cycles<G extends Walkable>(graph: G): Cycles {
+  return toposortFull(graph).cycles;
 }
 
 /**
@@ -217,12 +217,12 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
 /**
  * DFS 生成器（迭代版，支持延迟消费）。
  *
- * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param start 起始节点
  * @yields 按 DFS 顺序访问到的节点 ID
  */
-export function* dfs<G extends IntoNeighbors>(
+export function* dfs<G extends Neighbors>(
   graph: G,
   start: NodeId,
 ): Generator<NodeId, void, unknown> {
@@ -246,12 +246,12 @@ export function* dfs<G extends IntoNeighbors>(
 /**
  * BFS 生成器。使用游标推进队列以避免 `Array#shift` 的 O(n) 拷贝。
  *
- * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param start 起始节点
  * @yields 按 BFS 顺序访问到的节点 ID
  */
-export function* bfs<G extends IntoNeighbors>(
+export function* bfs<G extends Neighbors>(
   graph: G,
   start: NodeId,
 ): Generator<NodeId, void, unknown> {
@@ -310,14 +310,14 @@ export function topoPredecessors<G extends Walkable>(graph: G, nodeId: NodeId): 
  * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边集合（O(N + E)）。
  *
  * @template E 边权重类型
- * @template G 至少满足 `GraphBase & IntoEdges<E>`，可选实现 {@link IntoDegree}
+ * @template G 至少满足 `Catalog & Edges<E>`，可选实现 {@link IntoDegree}
  * @param graph 图实例
- * @returns 节点 ID → {@link DegreeInfo}
+ * @returns 节点 ID → {@link Degree}
  */
-export function degrees<E, G extends GraphBase & IntoEdges<E>>(
+export function degrees<E, G extends Catalog & Edges<E>>(
   graph: G,
-): Map<NodeId, DegreeInfo> {
-  const result = new Map<NodeId, DegreeInfo>();
+): Map<NodeId, Degree> {
+  const result = new Map<NodeId, Degree>();
   const withDegree = graph as G & Partial<IntoDegree>;
 
   if (typeof withDegree.inDegree === 'function' && typeof withDegree.outDegree === 'function') {
@@ -342,30 +342,30 @@ export function degrees<E, G extends GraphBase & IntoEdges<E>>(
 /**
  * 入度为 0 的源节点。
  *
- * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @template G 同时满足 {@link Catalog} 与 {@link IntoDegree} 的图类型
  * @param graph 图实例
  */
-export function sources<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+export function sources<G extends Catalog & IntoDegree>(graph: G): NodeId[] {
   return pick(graph, (id) => graph.inDegree(id) === 0);
 }
 
 /**
  * 出度为 0 的汇节点。
  *
- * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @template G 同时满足 {@link Catalog} 与 {@link IntoDegree} 的图类型
  * @param graph 图实例
  */
-export function sinks<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+export function sinks<G extends Catalog & IntoDegree>(graph: G): NodeId[] {
   return pick(graph, (id) => graph.outDegree(id) === 0);
 }
 
 /**
  * 入度与出度均为 0 的孤立节点。
  *
- * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @template G 同时满足 {@link Catalog} 与 {@link IntoDegree} 的图类型
  * @param graph 图实例
  */
-export function isolated<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+export function isolated<G extends Catalog & IntoDegree>(graph: G): NodeId[] {
   return pick(graph, (id) => graph.inDegree(id) === 0 && graph.outDegree(id) === 0);
 }
 
@@ -458,13 +458,13 @@ export function condensation<G extends Walkable>(
 /**
  * `source` 是否能到达 `target`。
  *
- * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param source 起点节点 ID
  * @param target 终点节点 ID
  * @returns 是否可达
  */
-export function reachable<G extends IntoNeighbors>(
+export function reachable<G extends Neighbors>(
   graph: G,
   source: NodeId,
   target: NodeId,
@@ -530,11 +530,11 @@ export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] 
 /**
  * 收集 `node` 的全部后代（沿出边可达的节点，不含 `node` 本身）。
  *
- * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param node 起点
  */
-export function descendants<G extends IntoNeighbors>(graph: G, node: NodeId): NodeId[] {
+export function descendants<G extends Neighbors>(graph: G, node: NodeId): NodeId[] {
   const result: NodeId[] = [];
   let first = true;
   for (const visited of dfs(graph, node)) {
@@ -554,11 +554,11 @@ export function descendants<G extends IntoNeighbors>(graph: G, node: NodeId): No
  * - 利用 {@link dfsVisit} 收集 `finish` 事件即得到后序；
  * - 后序的逆序就是 DAG 的拓扑序，常用于实现 Kosaraju SCC、构造支配树等。
  *
- * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Catalog} + {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param starts 起点序列；省略时按 `graph.nodeIds` 全图扫描
  */
-export function postorder<G extends GraphBase & IntoNeighbors>(
+export function postorder<G extends Catalog & Neighbors>(
   graph: G,
   starts?: Iterable<NodeId>,
 ): NodeId[] {
@@ -579,11 +579,11 @@ export function postorder<G extends GraphBase & IntoNeighbors>(
  * 1. 在原图上跑 DFS，按 finish-time 收集后序栈；
  * 2. 在 {@link reversed} 视图上按 1) 的逆序跑 DFS；每棵 DFS 树即一个强连通分量。
  *
- * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @template G 实现 {@link Catalog} + {@link Neighbors} 的图类型
  * @param graph 图实例
  * @returns 各分量的节点 ID 数组
  */
-export function kosarajuScc<G extends GraphBase & IntoNeighbors>(graph: G): NodeId[][] {
+export function kosarajuScc<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
   const order = postorder(graph);
   const reversedGraph = reversed(graph);
   const components: NodeId[][] = [];
@@ -622,14 +622,14 @@ export function kosarajuScc<G extends GraphBase & IntoNeighbors>(graph: G): Node
  * - 不支持负权边；若 `edgeCost` 返回负数行为未定义。
  *
  * @template E 边权重类型
- * @template G 满足 {@link GraphBase} + {@link IntoEdgeRefs}<E> 的图类型
+ * @template G 满足 {@link Catalog} + {@link IntoEdgeRefs}<E> 的图类型
  * @param graph 图实例
  * @param start 起点
  * @param end 提前终止的目标节点；传 `undefined` 计算到所有可达节点的距离
  * @param edgeCost 边代价函数，接收 {@link EdgeRef} 返回非负数
  * @returns 节点 ID → 从 `start` 出发的最短距离；不可达节点不出现在 Map 中
  */
-export function dijkstra<E, G extends GraphBase & IntoEdgeRefs<E>>(
+export function dijkstra<E, G extends Catalog & IntoEdgeRefs<E>>(
   graph: G,
   start: NodeId,
   end: NodeId | undefined,
@@ -692,7 +692,7 @@ function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
  *
  * @internal
  */
-function pick<G extends GraphBase>(
+function pick<G extends Catalog>(
   graph: G,
   predicate: (nodeId: NodeId) => boolean,
 ): NodeId[] {

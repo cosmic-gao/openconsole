@@ -6,8 +6,12 @@
  * 实现细节（class、运行时常量）则保留在 {@link ./classic} 与 {@link ./algorithms} 里。
  *
  * 命名约定：
- * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`）。
- * - 接口前缀 `Into*` 为 petgraph 风格的能力 trait。
+ * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`、`EdgeRef`）。
+ * - 能力型 trait 用集合 / 动作的单数名词命名（{@link Catalog}、{@link Neighbors}、{@link Edges}、
+ *   {@link Visitable}、{@link Walkable}）；当无法挑出贴切单词时保留 `Into*` 前缀
+ *   （如 {@link IntoEdgeRefs}、{@link IntoDegree}）。
+ * - trait 上的方法亦优先单词形：`bound` / `at` / `marks` / `reset` / `neighbors`，
+ *   方向语义通过可选 `direction` 参数传入而不是新方法。
  */
 
 declare const __brand: unique symbol;
@@ -80,7 +84,7 @@ export type StoredNode<W = unknown> = Node<Sockets, Sockets, W>;
 export type PortDict<P extends Port = Port> = { readonly [key: string]: P | undefined };
 
 /** 拓扑排序时返回的环路信息。 */
-export interface CycleInfo {
+export interface Cycles {
   /** 是否检测到环。 */
   hasCycle: boolean;
   /** 环上的节点 ID 列表；无环时为空数组。 */
@@ -88,15 +92,15 @@ export interface CycleInfo {
 }
 
 /** 拓扑排序结果。 */
-export interface TopoSortResult {
+export interface Topology {
   /** 拓扑顺序的节点 ID 序列；含环时环上节点按原始顺序追加在末尾。 */
   order: NodeId[];
   /** 排序过程中收集的环路信息。 */
-  cycleInfo: CycleInfo;
+  cycles: Cycles;
 }
 
 /** 入度/出度信息 - 算法消费用。 */
-export interface DegreeInfo {
+export interface Degree {
   /** 流入节点的边数。 */
   inDegree: number;
   /** 流出节点的边数。 */
@@ -150,12 +154,8 @@ export interface Adjacency {
   outDegree: Map<NodeId, number>;
 }
 
-// ============================================================
-// 算法接口 (petgraph 风格的 visitor traits)
-// ============================================================
-
 /** 最小图接口 - 所有图实现必须提供的能力。 */
-export interface GraphBase {
+export interface Catalog {
   /** 节点 ID 的可迭代视图。 */
   readonly nodeIds: Iterable<NodeId>;
   /** 边 ID 的可迭代视图。 */
@@ -166,13 +166,25 @@ export interface GraphBase {
   edgeCount(): number;
 }
 
-/** 能列举直接邻居（出/入邻居）。 */
-export interface IntoNeighbors {
-  /** 所有邻居（前驱 + 后继，可能含重复）。 */
-  neighbors(nodeId: NodeId): Iterable<NodeId>;
-  /** 仅前驱（流入侧邻居）。 */
+/**
+ * 能列举直接邻居（出/入邻居）。
+ *
+ * @remarks
+ * 用 `direction` 可选参数代替 petgraph 的 `IntoNeighborsDirected` 子 trait：
+ * - 缺省：返回 前驱 + 后继（可能含重复，与原 `neighbors(node)` 行为一致）；
+ * - `'input'`：仅前驱；
+ * - `'output'`：仅后继。
+ *
+ * 调用方在编译期已知方向时，应直接使用 {@link incomingNeighbors} / {@link outgoingNeighbors}
+ * （明确语义、避免 `direction` 参数转发）。`neighbors(node, dir)` 仅在算法 / 适配器
+ * 需要按运行时方向分派时使用。
+ */
+export interface Neighbors {
+  /** 邻居迭代；缺省返回前驱 + 后继。 */
+  neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId>;
+  /** 仅前驱（流入侧邻居），等价于 `neighbors(nodeId, 'input')`。 */
   incomingNeighbors(nodeId: NodeId): Iterable<NodeId>;
-  /** 仅后继（流出侧邻居）。 */
+  /** 仅后继（流出侧邻居），等价于 `neighbors(nodeId, 'output')`。 */
   outgoingNeighbors(nodeId: NodeId): Iterable<NodeId>;
 }
 
@@ -181,7 +193,7 @@ export interface IntoNeighbors {
  *
  * @template E 边权重类型
  */
-export interface IntoEdges<E = unknown> {
+export interface Edges<E = unknown> {
   /** 与节点关联的所有边（流入 + 流出）。 */
   edges(nodeId: NodeId): Iterable<Edge<E>>;
   /** 流入节点的边。 */
@@ -209,31 +221,14 @@ export interface IntoEdgeRefs<E = unknown> {
 }
 
 /**
- * 同时提供方向化邻居查询，类比 petgraph 的 `IntoNeighborsDirected`。
- *
- * @remarks
- * 已在 {@link IntoNeighbors} 中拆分出 `incomingNeighbors` / `outgoingNeighbors`，本接口提供统一入口
- * 以方便适配器（如 {@link Reversed}）和泛型算法按 {@link Direction} 分派。
- */
-export interface IntoNeighborsDirected extends IntoNeighbors {
-  /**
-   * 按方向返回邻居。
-   *
-   * @param nodeId 节点 ID
-   * @param direction `'input'` 取前驱；`'output'` 取后继
-   */
-  neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId>;
-}
-
-/**
  * 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组、Floyd-Warshall 的二维矩阵）。
  *
  * @remarks
  * 索引语义跟 petgraph 的 `NodeIndexable` 对齐：
- * - {@link nodeBound} 给出有效索引的上界（不一定等于 {@link GraphBase.nodeCount}）；
- * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, nodeBound())` 处 {@link nodeIdAt} 返回 `undefined`
+ * - {@link bound} 给出有效索引的上界（不一定等于 {@link Catalog.nodeCount}）；
+ * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, bound())` 处 {@link at} 返回 `undefined`
  *   （例如 {@link MatrixGraph} 的墓碑位）；
- * - 算法应当遍历 `[0, nodeBound())` 并自行跳过 `undefined` 槽，不要假设 `nodeIdAt(i)` 一定有值。
+ * - 算法应当遍历 `[0, bound())` 并自行跳过 `undefined` 槽，不要假设 `at(i)` 一定有值。
  */
 export interface NodeIndexable {
   /**
@@ -243,9 +238,9 @@ export interface NodeIndexable {
    * - 稠密存储（`Graph` / `MapGraph`）：等于 `nodeCount()`；
    * - 稀疏存储（`MatrixGraph` 含墓碑）：可能 `> nodeCount()`，等于内部槽位总数。
    */
-  nodeBound(): number;
+  bound(): number;
   /** 按索引获取节点 ID；越界或槽位为空（墓碑）时返回 `undefined`。 */
-  nodeIdAt(index: number): NodeId | undefined;
+  at(index: number): NodeId | undefined;
   /** 节点的索引；不存在返回 `-1`。 */
   indexOf(nodeId: NodeId): number;
 }
@@ -253,9 +248,9 @@ export interface NodeIndexable {
 /** 能维护已访问集合 - 用于遍历算法。 */
 export interface Visitable {
   /** 创建一张全部初始化为 `false` 的访问位图。 */
-  visitMap(): Map<NodeId, boolean>;
+  marks(): Map<NodeId, boolean>;
   /** 把传入的访问位图全部重置为 `false`（原地修改）。 */
-  resetMap(map: Map<NodeId, boolean>): void;
+  reset(map: Map<NodeId, boolean>): void;
 }
 
 /** 能直接给出度数 - 拓扑排序、入口分析等算法消费。 */
@@ -273,9 +268,9 @@ export interface IntoDegree {
  * @template E 边权重类型
  */
 export interface GraphRef<N = unknown, E = unknown>
-  extends GraphBase,
-    IntoNeighbors,
-    IntoEdges<E>,
+  extends Catalog,
+    Neighbors,
+    Edges<E>,
     NodeIndexable,
     Visitable {
   /** 按 ID 取节点；不存在返回 `undefined`。 */
@@ -285,11 +280,7 @@ export interface GraphRef<N = unknown, E = unknown>
 }
 
 /** 算法常用的最小约束：可枚举节点 + 列举出邻居。 */
-export type Walkable = GraphBase & IntoNeighbors;
-
-// ============================================================
-// Visitor 控制流
-// ============================================================
+export type Walkable = Catalog & Neighbors;
 
 /**
  * 访问者回调返回值，模仿 petgraph 的 `Control<B>`。
@@ -302,25 +293,15 @@ export type Walkable = GraphBase & IntoNeighbors;
 export type Control = 'continue' | 'prune' | 'break';
 
 /**
- * DFS 访问事件类型。
+ * DFS 访问事件。
  *
  * @remarks 与 petgraph `DfsEvent` 对齐，便于 dominator/topo/SCC 等算法基于事件流编写。
- */
-export type DfsEventKind =
-  | 'discover'
-  | 'finish'
-  | 'treeEdge'
-  | 'backEdge'
-  | 'crossForwardEdge';
-
-/**
- * DFS 访问事件。
  *
  * @template T 用户载荷类型，预留给计时器（discover/finish 时间戳）等扩展使用
  */
 export interface DfsEvent<T = number> {
-  /** 事件种类。 */
-  readonly kind: DfsEventKind;
+  /** 事件种类（直接以字符串字面量联合给出，无需额外的 `Kind` 别名）。 */
+  readonly kind: 'discover' | 'finish' | 'treeEdge' | 'backEdge' | 'crossForwardEdge';
   /** 主节点 ID（discover/finish 时即当前节点；treeEdge 等事件时即源节点）。 */
   readonly node: NodeId;
   /** 边事件的目标节点 ID；非边事件时为 `undefined`。 */

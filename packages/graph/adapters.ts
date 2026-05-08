@@ -4,7 +4,7 @@
  * @remarks
  * 借鉴 petgraph 的 `Reversed` / `NodeFiltered` / `EdgeFiltered`：
  * - 适配器只做 trait 转发与方向 / 过滤翻译，不持有节点 / 边的副本；
- * - 任意实现 {@link IntoNeighbors} / {@link IntoEdgeRefs} 等 trait 的图都能被包装；
+ * - 任意实现 {@link Neighbors} / {@link IntoEdgeRefs} 等 trait 的图都能被包装；
  * - 适配后的实例本身仍满足相同 trait，因此可层层嵌套（如 `Reversed(NodeFiltered(g, p))`）。
  */
 
@@ -12,19 +12,14 @@ import type {
   Direction,
   EdgeId,
   EdgeRef,
-  GraphBase,
+  Catalog,
   IntoDegree,
   IntoEdgeRefs,
-  IntoNeighbors,
-  IntoNeighborsDirected,
+  Neighbors,
   NodeId,
   NodeIndexable,
   Visitable,
 } from './types';
-
-// ============================================================
-// Reversed - 反向边视图
-// ============================================================
 
 /**
  * 反向图视图：把所有边方向翻转后呈现给算法。
@@ -40,21 +35,19 @@ import type {
  * - 反向拓扑序：`toposort(reversed(g))`；
  * - 强连通分量第二阶段：Kosaraju 算法直接复用 SCC 主算法。
  *
- * @template G 至少满足 {@link GraphBase} 的图类型
+ * @template G 至少满足 {@link Catalog} 的图类型
  */
 export class Reversed<
-  G extends GraphBase &
-    IntoNeighbors &
-    Partial<IntoNeighborsDirected> &
+  G extends Catalog &
+    Neighbors &
     Partial<IntoEdgeRefs<unknown>> &
     Partial<IntoDegree> &
     Partial<Visitable> &
     Partial<NodeIndexable>,
 >
 implements
-    GraphBase,
-    IntoNeighbors,
-    IntoNeighborsDirected,
+    Catalog,
+    Neighbors,
     IntoEdgeRefs<unknown>,
     IntoDegree,
     Visitable,
@@ -64,32 +57,33 @@ implements
    */
   public constructor(public readonly inner: G) {}
 
-  // ---- GraphBase ----
-
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public get nodeIds(): Iterable<NodeId> {
     return this.inner.nodeIds;
   }
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public get edgeIds(): Iterable<EdgeId> {
     return this.inner.edgeIds;
   }
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     return this.inner.nodeCount();
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     return this.inner.edgeCount();
   }
 
-  // ---- IntoNeighbors（方向翻转） ----
-
-  /** 全邻居在无向语义下与方向无关，直接转发。 */
-  public neighbors(nodeId: NodeId): Iterable<NodeId> {
+  /**
+   * 反向图的邻居：缺省合并 in + out（无向语义不受翻转影响）；指定方向时复用本类
+   * 已翻转的 {@link incomingNeighbors} / {@link outgoingNeighbors}。
+   */
+  public neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
+    if (direction === 'input') return this.incomingNeighbors(nodeId);
+    if (direction === 'output') return this.outgoingNeighbors(nodeId);
     return this.inner.neighbors(nodeId);
   }
 
@@ -102,22 +96,6 @@ implements
   public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.inner.incomingNeighbors(nodeId);
   }
-
-  /**
-   * 按方向枚举反向图的邻居。
-   *
-   * @remarks
-   * - `'input'`：反向图的入邻居 = 原图的出邻居 → `this.incomingNeighbors`（其内部已委托到 `inner.outgoingNeighbors`）；
-   * - `'output'`：反向图的出邻居 = 原图的入邻居 → `this.outgoingNeighbors`。
-   * 直接复用本类的方向化方法即可，无需再次手动翻转。
-   */
-  public neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId> {
-    return direction === 'input'
-      ? this.incomingNeighbors(nodeId)
-      : this.outgoingNeighbors(nodeId);
-  }
-
-  // ---- IntoEdgeRefs（source/target 互换） ----
 
   /** 全图边引用（source/target 已互换）。 */
   public *edgeRefs(): Iterable<EdgeRef<unknown>> {
@@ -137,8 +115,6 @@ implements
     for (const ref of this.inner.incomingEdgeRefs(nodeId)) yield flipEdgeRef(ref);
   }
 
-  // ---- IntoDegree（入出度互换） ----
-
   /** {@inheritdoc IntoDegree.inDegree} */
   public inDegree(nodeId: NodeId): number {
     return typeof this.inner.outDegree === 'function' ? this.inner.outDegree(nodeId) : 0;
@@ -149,34 +125,32 @@ implements
     return typeof this.inner.inDegree === 'function' ? this.inner.inDegree(nodeId) : 0;
   }
 
-  // ---- Visitable / NodeIndexable（透传） ----
-
-  /** {@inheritdoc Visitable.visitMap} */
-  public visitMap(): Map<NodeId, boolean> {
-    if (typeof this.inner.visitMap === 'function') return this.inner.visitMap();
+  /** {@inheritdoc Visitable.marks} */
+  public marks(): Map<NodeId, boolean> {
+    if (typeof this.inner.marks === 'function') return this.inner.marks();
     const map = new Map<NodeId, boolean>();
     for (const id of this.nodeIds) map.set(id, false);
     return map;
   }
 
-  /** {@inheritdoc Visitable.resetMap} */
-  public resetMap(map: Map<NodeId, boolean>): void {
-    if (typeof this.inner.resetMap === 'function') {
-      this.inner.resetMap(map);
+  /** {@inheritdoc Visitable.reset} */
+  public reset(map: Map<NodeId, boolean>): void {
+    if (typeof this.inner.reset === 'function') {
+      this.inner.reset(map);
       return;
     }
     for (const key of map.keys()) map.set(key, false);
   }
 
-  /** {@inheritdoc NodeIndexable.nodeBound} */
-  public nodeBound(): number {
-    if (typeof this.inner.nodeBound === 'function') return this.inner.nodeBound();
+  /** {@inheritdoc NodeIndexable.bound} */
+  public bound(): number {
+    if (typeof this.inner.bound === 'function') return this.inner.bound();
     return this.inner.nodeCount();
   }
 
-  /** {@inheritdoc NodeIndexable.nodeIdAt} */
-  public nodeIdAt(index: number): NodeId | undefined {
-    if (typeof this.inner.nodeIdAt === 'function') return this.inner.nodeIdAt(index);
+  /** {@inheritdoc NodeIndexable.at} */
+  public at(index: number): NodeId | undefined {
+    if (typeof this.inner.at === 'function') return this.inner.at(index);
     let i = 0;
     for (const id of this.nodeIds) {
       if (i === index) return id;
@@ -210,9 +184,8 @@ implements
  * ```
  */
 export function reversed<
-  G extends GraphBase &
-    IntoNeighbors &
-    Partial<IntoNeighborsDirected> &
+  G extends Catalog &
+    Neighbors &
     Partial<IntoEdgeRefs<unknown>> &
     Partial<IntoDegree> &
     Partial<Visitable> &
@@ -230,10 +203,6 @@ function flipEdgeRef<E>(ref: EdgeRef<E>): EdgeRef<E> {
   return { id: ref.id, source: ref.target, target: ref.source, weight: ref.weight };
 }
 
-// ============================================================
-// NodeFiltered - 节点过滤视图
-// ============================================================
-
 /**
  * 节点过滤器。
  *
@@ -250,15 +219,15 @@ export type NodePredicate = (nodeId: NodeId) => boolean;
  * - 邻居 / 边引用迭代时也会跳过被隐去的节点；
  * - 用于子图分析（如某些标签的节点）而无需复制图。
  *
- * @template G 至少满足 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @template G 至少满足 {@link Catalog} + {@link Neighbors} 的图类型
  */
 export class NodeFiltered<
-  G extends GraphBase &
-    IntoNeighbors &
+  G extends Catalog &
+    Neighbors &
     Partial<IntoEdgeRefs<unknown>> &
     Partial<IntoDegree>,
 >
-implements GraphBase, IntoNeighbors, IntoEdgeRefs<unknown> {
+implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
   /**
    * @param inner 原始图
    * @param predicate 节点保留谓词
@@ -268,7 +237,7 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<unknown> {
     public readonly predicate: NodePredicate,
   ) {}
 
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public get nodeIds(): Iterable<NodeId> {
     const inner = this.inner;
     const predicate = this.predicate;
@@ -279,7 +248,7 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<unknown> {
     };
   }
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public get edgeIds(): Iterable<EdgeId> {
     if (typeof this.inner.edgeRefs !== 'function') return this.inner.edgeIds;
     const refs = this.inner.edgeRefs.bind(this.inner);
@@ -293,24 +262,24 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<unknown> {
     };
   }
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     let n = 0;
     for (const _ of this.nodeIds) n++;
     return n;
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     let n = 0;
     for (const _ of this.edgeIds) n++;
     return n;
   }
 
-  /** 全邻居（剔除被隐去的节点）。 */
-  public *neighbors(nodeId: NodeId): Iterable<NodeId> {
+  /** 邻居（剔除被隐去的节点）；`direction` 透传到 inner。 */
+  public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
     if (!this.predicate(nodeId)) return;
-    for (const n of this.inner.neighbors(nodeId)) if (this.predicate(n)) yield n;
+    for (const n of this.inner.neighbors(nodeId, direction)) if (this.predicate(n)) yield n;
   }
 
   /** 入邻居（剔除被隐去的节点）。 */
@@ -351,26 +320,6 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<unknown> {
 }
 
 /**
- * 工厂函数：包装为节点过滤视图。
- *
- * @template G 输入图类型
- * @param graph 原始图
- * @param predicate 节点保留谓词
- */
-export function nodeFiltered<
-  G extends GraphBase &
-    IntoNeighbors &
-    Partial<IntoEdgeRefs<unknown>> &
-    Partial<IntoDegree>,
->(graph: G, predicate: NodePredicate): NodeFiltered<G> {
-  return new NodeFiltered(graph, predicate);
-}
-
-// ============================================================
-// EdgeFiltered - 边过滤视图
-// ============================================================
-
-/**
  * 边过滤器。
  *
  * @param edge 边引用
@@ -384,13 +333,13 @@ export type EdgePredicate<E = unknown> = (edge: EdgeRef<E>) => boolean;
  * @remarks 必须依赖 {@link IntoEdgeRefs}，因为只有边引用才能高效地按谓词过滤。
  *
  * @template E 边权重类型
- * @template G 至少满足 {@link GraphBase} + {@link IntoEdgeRefs}<E> 的图类型
+ * @template G 至少满足 {@link Catalog} + {@link IntoEdgeRefs}<E> 的图类型
  */
 export class EdgeFiltered<
   E,
-  G extends GraphBase & IntoNeighbors & IntoEdgeRefs<E>,
+  G extends Catalog & Neighbors & IntoEdgeRefs<E>,
 >
-implements GraphBase, IntoNeighbors, IntoEdgeRefs<E> {
+implements Catalog, Neighbors, IntoEdgeRefs<E> {
   /**
    * @param inner 原始图
    * @param predicate 边保留谓词
@@ -400,12 +349,12 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<E> {
     public readonly predicate: EdgePredicate<E>,
   ) {}
 
-  /** {@inheritdoc GraphBase.nodeIds} */
+  /** {@inheritdoc Catalog.nodeIds} */
   public get nodeIds(): Iterable<NodeId> {
     return this.inner.nodeIds;
   }
 
-  /** {@inheritdoc GraphBase.edgeIds} */
+  /** {@inheritdoc Catalog.edgeIds} */
   public get edgeIds(): Iterable<EdgeId> {
     const refs = this.inner.edgeRefs.bind(this.inner);
     const predicate = this.predicate;
@@ -416,22 +365,22 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<E> {
     };
   }
 
-  /** {@inheritdoc GraphBase.nodeCount} */
+  /** {@inheritdoc Catalog.nodeCount} */
   public nodeCount(): number {
     return this.inner.nodeCount();
   }
 
-  /** {@inheritdoc GraphBase.edgeCount} */
+  /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     let n = 0;
     for (const _ of this.edgeRefs()) n++;
     return n;
   }
 
-  /** 全邻居：跳过被隐去的边。 */
-  public *neighbors(nodeId: NodeId): Iterable<NodeId> {
-    yield* this.outgoingNeighbors(nodeId);
-    yield* this.incomingNeighbors(nodeId);
+  /** 邻居：跳过被隐去的边；`direction` 缺省时返回 in + out。 */
+  public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
+    if (direction !== 'input') yield* this.outgoingNeighbors(nodeId);
+    if (direction !== 'output') yield* this.incomingNeighbors(nodeId);
   }
 
   /** 入邻居：根据保留的入边推导。 */
@@ -464,17 +413,3 @@ implements GraphBase, IntoNeighbors, IntoEdgeRefs<E> {
   }
 }
 
-/**
- * 工厂函数：包装为边过滤视图。
- *
- * @template E 边权重类型
- * @template G 输入图类型
- * @param graph 原始图
- * @param predicate 边保留谓词
- */
-export function edgeFiltered<E, G extends GraphBase & IntoNeighbors & IntoEdgeRefs<E>>(
-  graph: G,
-  predicate: EdgePredicate<E>,
-): EdgeFiltered<E, G> {
-  return new EdgeFiltered<E, G>(graph, predicate);
-}
