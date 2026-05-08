@@ -168,6 +168,12 @@ implements
     for (const key of map.keys()) map.set(key, false);
   }
 
+  /** {@inheritdoc NodeIndexable.nodeBound} */
+  public nodeBound(): number {
+    if (typeof this.inner.nodeBound === 'function') return this.inner.nodeBound();
+    return this.inner.nodeCount();
+  }
+
   /** {@inheritdoc NodeIndexable.nodeIdAt} */
   public nodeIdAt(index: number): NodeId | undefined {
     if (typeof this.inner.nodeIdAt === 'function') return this.inner.nodeIdAt(index);

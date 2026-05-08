@@ -202,7 +202,17 @@ implements
     return this.edges.has(edgeId);
   }
 
-  /** 指定方向上是否邻接。 */
+  /**
+   * 指定方向上是否邻接（沿出边方向 source → target）。
+   *
+   * @remarks
+   * 复杂度 **O(deg(source))**：邻接表型图的天然代价（与 petgraph 的 `Graph::contains_edge` 一致）。
+   * 如果业务需要 O(1) 邻接判定，请使用 {@link MatrixGraph}；在 `MapGraph` 上额外维护
+   * `Set<NodeId>` 索引会与多重边语义冲突，且要求所有写入路径双倍同步，得不偿失。
+   *
+   * @param source 起点节点 ID
+   * @param target 终点节点 ID
+   */
   public adjacent(source: NodeId, target: NodeId): boolean {
     const edges = this._out.get(source);
     if (!edges) return false;
@@ -325,6 +335,11 @@ implements
   /** {@inheritdoc Visitable.resetMap} */
   public resetMap(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
+  }
+
+  /** {@inheritdoc NodeIndexable.nodeBound} */
+  public nodeBound(): number {
+    return this.nodes.size;
   }
 
   /** {@inheritdoc NodeIndexable.nodeIdAt} */
@@ -730,6 +745,18 @@ implements
   /** {@inheritdoc Visitable.resetMap} */
   public resetMap(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
+  }
+
+  /**
+   * {@inheritdoc NodeIndexable.nodeBound}
+   *
+   * @remarks
+   * 等于内部槽位数组长度，**可能大于** {@link nodeCount}：删除节点会留下墓碑槽，
+   * 在被新 `addNode` 复用之前 `nodeBound() > nodeCount()`。算法应迭代 `[0, nodeBound())`
+   * 并跳过 {@link nodeIdAt} 返回 `undefined` 的位置。
+   */
+  public nodeBound(): number {
+    return this._indexToNode.length;
   }
 
   /** {@inheritdoc NodeIndexable.nodeIdAt} */

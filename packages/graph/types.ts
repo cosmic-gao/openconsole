@@ -225,9 +225,26 @@ export interface IntoNeighborsDirected extends IntoNeighbors {
   neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId>;
 }
 
-/** 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组）。 */
+/**
+ * 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组、Floyd-Warshall 的二维矩阵）。
+ *
+ * @remarks
+ * 索引语义跟 petgraph 的 `NodeIndexable` 对齐：
+ * - {@link nodeBound} 给出有效索引的上界（不一定等于 {@link GraphBase.nodeCount}）；
+ * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, nodeBound())` 处 {@link nodeIdAt} 返回 `undefined`
+ *   （例如 {@link MatrixGraph} 的墓碑位）；
+ * - 算法应当遍历 `[0, nodeBound())` 并自行跳过 `undefined` 槽，不要假设 `nodeIdAt(i)` 一定有值。
+ */
 export interface NodeIndexable {
-  /** 按索引获取节点 ID；越界返回 `undefined`。 */
+  /**
+   * 节点索引的上界（不含）。
+   *
+   * @remarks
+   * - 稠密存储（`Graph` / `MapGraph`）：等于 `nodeCount()`；
+   * - 稀疏存储（`MatrixGraph` 含墓碑）：可能 `> nodeCount()`，等于内部槽位总数。
+   */
+  nodeBound(): number;
+  /** 按索引获取节点 ID；越界或槽位为空（墓碑）时返回 `undefined`。 */
   nodeIdAt(index: number): NodeId | undefined;
   /** 节点的索引；不存在返回 `-1`。 */
   indexOf(nodeId: NodeId): number;

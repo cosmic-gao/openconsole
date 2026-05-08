@@ -955,6 +955,11 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
+  /** {@inheritdoc NodeIndexable.nodeBound} */
+  public nodeBound(): number {
+    return this.nodes.size;
+  }
+
   /** {@inheritdoc NodeIndexable.nodeIdAt} */
   public nodeIdAt(index: number): NodeId | undefined {
     if (index < 0 || index >= this.nodes.size) return undefined;
