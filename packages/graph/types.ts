@@ -270,13 +270,6 @@ export interface GraphRef<N = unknown, E = unknown>
 /** 算法常用的最小约束：可枚举节点 + 列举出邻居。 */
 export type Walkable = GraphBase & IntoNeighbors;
 
-/**
- * 通用拓扑约束：除 {@link Walkable} 外还能列举边引用，可被任意存储实现。
- *
- * @template E 边权重类型
- */
-export type WalkableRefs<E = unknown> = Walkable & IntoEdgeRefs<E>;
-
 // ============================================================
 // Visitor 控制流
 // ============================================================

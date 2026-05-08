@@ -103,11 +103,18 @@ implements
     return this.inner.incomingNeighbors(nodeId);
   }
 
-  /** 按方向枚举邻居。 */
+  /**
+   * 按方向枚举反向图的邻居。
+   *
+   * @remarks
+   * - `'input'`：反向图的入邻居 = 原图的出邻居 → `this.incomingNeighbors`（其内部已委托到 `inner.outgoingNeighbors`）；
+   * - `'output'`：反向图的出邻居 = 原图的入邻居 → `this.outgoingNeighbors`。
+   * 直接复用本类的方向化方法即可，无需再次手动翻转。
+   */
   public neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId> {
     return direction === 'input'
-      ? this.outgoingNeighbors(nodeId) /* 反向后输入边来自原图出邻居 */
-      : this.incomingNeighbors(nodeId);
+      ? this.incomingNeighbors(nodeId)
+      : this.outgoingNeighbors(nodeId);
   }
 
   // ---- IntoEdgeRefs（source/target 互换） ----

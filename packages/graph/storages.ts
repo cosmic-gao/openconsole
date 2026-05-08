@@ -78,6 +78,37 @@ implements
    */
   public constructor(public readonly id: GraphId) {}
 
+  /**
+   * 从边对数组快速构造 {@link MapGraph}。
+   *
+   * @template N 节点权重类型
+   * @template E 边权重类型
+   * @param id 图 ID
+   * @param edges `[source, target, weight?]` 形式的边列表；缺失的节点会被自动 `addNode`
+   *
+   * @example
+   * ```ts
+   * const g = MapGraph.from('demo' as GraphId, [
+   *   ['a' as NodeId, 'b' as NodeId, 1],
+   *   ['b' as NodeId, 'c' as NodeId, 2],
+   * ]);
+   * ```
+   */
+  public static from<N = unknown, E = unknown>(
+    id: GraphId,
+    edges: ReadonlyArray<[NodeId, NodeId] | [NodeId, NodeId, E]>,
+  ): MapGraph<N, E> {
+    const graph = new MapGraph<N, E>(id);
+    for (const entry of edges) {
+      const [source, target] = entry;
+      if (!graph.hasNode(source)) graph.addNode(source);
+      if (!graph.hasNode(target)) graph.addNode(target);
+      const weight = entry.length === 3 ? entry[2] : undefined;
+      graph.addEdge(source, target, weight);
+    }
+    return graph;
+  }
+
   // ---- 修改 API ----
 
   /**
@@ -319,37 +350,6 @@ implements
   }
 }
 
-/**
- * 从边对数组快速构造 {@link MapGraph}。
- *
- * @template N 节点权重类型
- * @template E 边权重类型
- * @param id 图 ID
- * @param edges `[source, target, weight?]` 形式的边列表
- *
- * @example
- * ```ts
- * const g = mapGraphFrom('demo' as GraphId, [
- *   ['a' as NodeId, 'b' as NodeId, 1],
- *   ['b' as NodeId, 'c' as NodeId, 2],
- * ]);
- * ```
- */
-export function mapGraphFrom<N = unknown, E = unknown>(
-  id: GraphId,
-  edges: ReadonlyArray<[NodeId, NodeId] | [NodeId, NodeId, E]>,
-): MapGraph<N, E> {
-  const graph = new MapGraph<N, E>(id);
-  for (const entry of edges) {
-    const [source, target] = entry;
-    if (!graph.hasNode(source)) graph.addNode(source);
-    if (!graph.hasNode(target)) graph.addNode(target);
-    const weight = entry.length === 3 ? entry[2] : undefined;
-    graph.addEdge(source, target, weight);
-  }
-  return graph;
-}
-
 // ============================================================
 // MatrixGraph - 邻接矩阵稠密图
 // ============================================================
@@ -416,6 +416,40 @@ implements
   public constructor(public readonly id: GraphId, initialCapacity = 8) {
     this._capacity = Math.max(1, initialCapacity);
     this._matrix = new Int32Array(this._capacity * this._capacity).fill(-1);
+  }
+
+  /**
+   * 从节点列表 + 边对快速构造 {@link MatrixGraph}。
+   *
+   * @template N 节点权重类型
+   * @template E 边权重类型
+   * @param id 图 ID
+   * @param nodes 节点 ID 数组（顺序决定矩阵索引）
+   * @param edges `[source, target, weight?]` 形式的边列表
+   *
+   * @example
+   * ```ts
+   * const g = MatrixGraph.from('mx' as GraphId, [
+   *   'a' as NodeId, 'b' as NodeId, 'c' as NodeId,
+   * ], [
+   *   ['a' as NodeId, 'b' as NodeId],
+   *   ['b' as NodeId, 'c' as NodeId],
+   * ]);
+   * ```
+   */
+  public static from<N = unknown, E = unknown>(
+    id: GraphId,
+    nodes: ReadonlyArray<NodeId>,
+    edges: ReadonlyArray<[NodeId, NodeId] | [NodeId, NodeId, E]>,
+  ): MatrixGraph<N, E> {
+    const graph = new MatrixGraph<N, E>(id, Math.max(8, nodes.length));
+    for (const node of nodes) graph.addNode(node);
+    for (const entry of edges) {
+      const [source, target] = entry;
+      const weight = entry.length === 3 ? entry[2] : undefined;
+      graph.addEdge(source, target, weight);
+    }
+    return graph;
   }
 
   // ---- 修改 API ----
@@ -737,30 +771,6 @@ implements
       if (id !== null) yield id;
     }
   }
-}
-
-/**
- * 从节点列表 + 边对快速构造 {@link MatrixGraph}。
- *
- * @template N 节点权重类型
- * @template E 边权重类型
- * @param id 图 ID
- * @param nodes 节点 ID 数组（顺序决定矩阵索引）
- * @param edges `[source, target, weight?]` 形式的边列表
- */
-export function matrixGraphFrom<N = unknown, E = unknown>(
-  id: GraphId,
-  nodes: ReadonlyArray<NodeId>,
-  edges: ReadonlyArray<[NodeId, NodeId] | [NodeId, NodeId, E]>,
-): MatrixGraph<N, E> {
-  const graph = new MatrixGraph<N, E>(id, Math.max(8, nodes.length));
-  for (const node of nodes) graph.addNode(node);
-  for (const entry of edges) {
-    const [source, target] = entry;
-    const weight = entry.length === 3 ? entry[2] : undefined;
-    graph.addEdge(source, target, weight);
-  }
-  return graph;
 }
 
 // ============================================================

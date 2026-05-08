@@ -243,6 +243,143 @@ export class Bfs {
 }
 
 /**
+ * DFS 后序状态化遍历器（迭代实现，可暂停 / 恢复）。
+ *
+ * @remarks
+ * - 借鉴 petgraph 的 `DfsPostOrder`：每个 `next(graph)` 调用返回下一个 finish 节点；
+ * - 后序意味着节点在所有后代访问完成后才被产出，逆后序天然就是 DAG 的拓扑序；
+ * - 内部维护栈帧 `(node, iter)`，无递归调用，深图也不会栈溢出。
+ *
+ * @example
+ * ```ts
+ * const post = DfsPostorder.start(graph, root);
+ * while (true) {
+ *   const node = post.next(graph);
+ *   if (node === undefined) break;
+ *   // node 已完成所有后代访问
+ * }
+ * ```
+ */
+export class DfsPostorder {
+  /** 当前 DFS 调用栈：每帧持有节点与其后继迭代器。 */
+  public readonly stack: Array<{ node: NodeId; iter: Iterator<NodeId> }>;
+
+  /** 已 discover 的节点集合（含已 finish）。 */
+  public readonly discovered: Set<NodeId>;
+
+  /** 已 finish 的节点集合。 */
+  public readonly finished: Set<NodeId>;
+
+  /** 待 lazy 推入栈的起点（首次 `next()` 时消费）。 */
+  private _initial: NodeId | undefined;
+
+  /**
+   * @param start 起点节点 ID（lazy 入栈，等到首次 `next(graph)` 时再用 graph 拿迭代器）
+   */
+  public constructor(start?: NodeId) {
+    this.stack = [];
+    this.discovered = new Set();
+    this.finished = new Set();
+    this._initial = start;
+  }
+
+  /**
+   * 工厂方法：从指定起点构造遍历器（即时入栈，直接持有 graph 拿到的子迭代器）。
+   *
+   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @param graph 图实例
+   * @param start 起点节点 ID
+   */
+  public static start<G extends IntoNeighbors>(graph: G, start: NodeId): DfsPostorder {
+    const inst = new DfsPostorder();
+    inst.discovered.add(start);
+    inst.stack.push({ node: start, iter: graph.outgoingNeighbors(start)[Symbol.iterator]() });
+    return inst;
+  }
+
+  /**
+   * 推进一步，返回下一个 finish 节点；遍历结束返回 `undefined`。
+   *
+   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @param graph 图实例
+   */
+  public next<G extends IntoNeighbors>(graph: G): NodeId | undefined {
+    if (this._initial !== undefined) {
+      const start = this._initial;
+      this._initial = undefined;
+      this.discovered.add(start);
+      this.stack.push({ node: start, iter: graph.outgoingNeighbors(start)[Symbol.iterator]() });
+    }
+
+    while (this.stack.length > 0) {
+      const frame = this.stack[this.stack.length - 1]!;
+
+      let pushed = false;
+      while (true) {
+        const r = frame.iter.next();
+        if (r.done) break;
+        const child = r.value;
+        if (this.discovered.has(child)) continue;
+        this.discovered.add(child);
+        this.stack.push({
+          node: child,
+          iter: graph.outgoingNeighbors(child)[Symbol.iterator](),
+        });
+        pushed = true;
+        break;
+      }
+
+      if (pushed) continue;
+
+      this.stack.pop();
+      this.finished.add(frame.node);
+      return frame.node;
+    }
+    return undefined;
+  }
+
+  /**
+   * 跳转到新的起点（保留 discovered / finished 集合）。
+   *
+   * @param start 新起点
+   */
+  public moveTo(start: NodeId): void {
+    this.stack.length = 0;
+    this._initial = start;
+  }
+
+  /** 清空状态，从头开始。 */
+  public reset(): void {
+    this.stack.length = 0;
+    this.discovered.clear();
+    this.finished.clear();
+    this._initial = undefined;
+  }
+
+  /**
+   * 适配为可迭代对象。
+   *
+   * @template G 实现 {@link IntoNeighbors} 的图类型
+   * @param graph 图实例
+   */
+  public iter<G extends IntoNeighbors>(graph: G): IterableIterator<NodeId> {
+    const self = this;
+    const iter: IterableIterator<NodeId> = {
+      [Symbol.iterator]() {
+        return iter;
+      },
+      next() {
+        const value = self.next(graph);
+        return value === undefined
+          ? { value: undefined as unknown as NodeId, done: true }
+          : { value, done: false };
+      },
+    };
+    return iter;
+  }
+}
+
+/**
  * 拓扑序状态化遍历器（Kahn 算法的可暂停版）。
  *
  * @remarks
@@ -311,9 +448,13 @@ export class Topo {
         pending.set(nodeId, 0);
         total++;
       }
+      // 仅对 nodeIds 中的节点累计入度；`outgoingNeighbors` 偶发返回的孤儿节点
+      // (不在 nodeIds 中) 不应被算入拓扑空间，否则会出现 emit count > total 的不一致。
       for (const nodeId of graph.nodeIds) {
         for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-          pending.set(neighbor, (pending.get(neighbor) ?? 0) + 1);
+          if (pending.has(neighbor)) {
+            pending.set(neighbor, pending.get(neighbor)! + 1);
+          }
         }
       }
     }
@@ -332,7 +473,11 @@ export class Topo {
     const nodeId = this.queue[this._head++]!;
     this._emitted++;
     for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-      const remaining = (this._pending.get(neighbor) ?? 1) - 1;
+      // 跳过孤儿邻居（不在 nodeIds 拓扑空间内的节点）。否则会因 `?? 1 - 1 = 0`
+      // 把它意外纳入队列，最终被 next() 输出。
+      const current = this._pending.get(neighbor);
+      if (current === undefined) continue;
+      const remaining = current - 1;
       this._pending.set(neighbor, remaining);
       if (remaining === 0) this.queue.push(neighbor);
     }
@@ -435,46 +580,35 @@ export function dfsVisit<G extends GraphBase & IntoNeighbors>(
   const color = new Map<NodeId, number>();
   let timer = 0;
 
-  type Frame = { node: NodeId; iter: Iterator<NodeId>; pendingTreeChild: NodeId | null };
+  type Frame = { node: NodeId; iter: Iterator<NodeId> };
   const stack: Frame[] = [];
 
   const push = (node: NodeId): Control => {
     color.set(node, GRAY);
-    const event: DfsEvent = { kind: 'discover', node, time: timer++ };
-    const result = visitor.discover?.(event) ?? 'continue';
+    const result = visitor.discover?.({ kind: 'discover', node, time: timer++ }) ?? 'continue';
     if (result === 'break') return 'break';
     if (result === 'prune') {
       // discover 通过、立即 finish。
       color.set(node, BLACK);
       return visitor.finish?.({ kind: 'finish', node, time: timer++ }) ?? 'continue';
     }
-    stack.push({
-      node,
-      iter: graph.outgoingNeighbors(node)[Symbol.iterator](),
-      pendingTreeChild: null,
-    });
+    stack.push({ node, iter: graph.outgoingNeighbors(node)[Symbol.iterator]() });
     return 'continue';
   };
 
   const sources = starts ?? graph.nodeIds;
   for (const root of sources) {
     if ((color.get(root) ?? WHITE) !== WHITE) continue;
-    const r = push(root);
-    if (r === 'break') return 'break';
+    if (push(root) === 'break') return 'break';
 
     while (stack.length > 0) {
       const frame = stack[stack.length - 1]!;
-
-      if (frame.pendingTreeChild !== null) {
-        // 子节点已被访问 / 剪枝；这里清理标记。
-        frame.pendingTreeChild = null;
-      }
-
       const next = frame.iter.next();
+
       if (next.done) {
-        const finishEvt: DfsEvent = { kind: 'finish', node: frame.node, time: timer++ };
         color.set(frame.node, BLACK);
-        const result = visitor.finish?.(finishEvt) ?? 'continue';
+        const result =
+          visitor.finish?.({ kind: 'finish', node: frame.node, time: timer++ }) ?? 'continue';
         stack.pop();
         if (result === 'break') return 'break';
         continue;
@@ -488,9 +622,7 @@ export function dfsVisit<G extends GraphBase & IntoNeighbors>(
           visitor.treeEdge?.({ kind: 'treeEdge', node: frame.node, target }) ?? 'continue';
         if (result === 'break') return 'break';
         if (result === 'prune') continue;
-        frame.pendingTreeChild = target;
-        const r = push(target);
-        if (r === 'break') return 'break';
+        if (push(target) === 'break') return 'break';
       } else if (targetColor === GRAY) {
         const result =
           visitor.backEdge?.({ kind: 'backEdge', node: frame.node, target }) ?? 'continue';
@@ -511,12 +643,14 @@ export function dfsVisit<G extends GraphBase & IntoNeighbors>(
 }
 
 /**
- * `IntoNeighborsDirected` 适配辅助：把不带 `neighborsDirected` 的图升级为带方向化邻居查询的视图。
+ * 把不带 `neighborsDirected` 的图升级为方向化邻居查询的视图。
+ *
+ * @remarks 已实现 {@link IntoNeighborsDirected} 的图原样返回；其余图通过 `Object.create` 浅包一层。
  *
  * @template G 至少满足 {@link IntoNeighbors} 的图类型
  * @param graph 图实例
  */
-export function withDirected<G extends IntoNeighbors>(graph: G): G & IntoNeighborsDirected {
+export function directed<G extends IntoNeighbors>(graph: G): G & IntoNeighborsDirected {
   if (typeof (graph as G & Partial<IntoNeighborsDirected>).neighborsDirected === 'function') {
     return graph as G & IntoNeighborsDirected;
   }

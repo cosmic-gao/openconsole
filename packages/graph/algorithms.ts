@@ -9,9 +9,11 @@
  */
 
 import type {
+  EdgeRef,
   GraphBase,
   GraphRef,
   IntoDegree,
+  IntoEdgeRefs,
   IntoEdges,
   IntoNeighbors,
   NodeId,
@@ -556,7 +558,7 @@ export function descendants<G extends IntoNeighbors>(graph: G, node: NodeId): No
  * @param graph 图实例
  * @param starts 起点序列；省略时按 `graph.nodeIds` 全图扫描
  */
-export function postOrder<G extends GraphBase & IntoNeighbors>(
+export function postorder<G extends GraphBase & IntoNeighbors>(
   graph: G,
   starts?: Iterable<NodeId>,
 ): NodeId[] {
@@ -582,19 +584,28 @@ export function postOrder<G extends GraphBase & IntoNeighbors>(
  * @returns 各分量的节点 ID 数组
  */
 export function kosarajuScc<G extends GraphBase & IntoNeighbors>(graph: G): NodeId[][] {
-  const order = postOrder(graph);
+  const order = postorder(graph);
   const reversedGraph = reversed(graph);
   const components: NodeId[][] = [];
   const visited = new Set<NodeId>();
 
+  // 内联 DFS 以共享外层 `visited`，否则每次调用 `dfs(reversedGraph, root)`
+  // 都会在已分配分量的节点上重新走一遍，把整体复杂度从 O(V+E) 抬到 O(V·E)。
+  const stack: NodeId[] = [];
   for (let i = order.length - 1; i >= 0; i--) {
     const root = order[i]!;
     if (visited.has(root)) continue;
     const component: NodeId[] = [];
-    for (const node of dfs(reversedGraph, root)) {
+    stack.length = 0;
+    stack.push(root);
+    while (stack.length > 0) {
+      const node = stack.pop()!;
       if (visited.has(node)) continue;
       visited.add(node);
       component.push(node);
+      for (const neighbor of reversedGraph.outgoingNeighbors(node)) {
+        if (!visited.has(neighbor)) stack.push(neighbor);
+      }
     }
     if (component.length > 0) components.push(component);
   }
@@ -602,20 +613,55 @@ export function kosarajuScc<G extends GraphBase & IntoNeighbors>(graph: G): Node
 }
 
 /**
- * 检测是否含环（基于 {@link dfsVisit} 的 `backEdge` 事件，O(N + E) 早停）。
+ * Dijkstra 单源最短路径（非负权重）。
  *
- * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @remarks
+ * - 仅依赖 {@link IntoEdgeRefs}；同一份算法可跑在 `Graph` / `MapGraph` / `MatrixGraph` 上；
+ * - 返回 `start` 到所有可达节点的最短距离；可选 `end` 提前终止；
+ * - 当前实现为 O(V²) 线性扫描（无堆），节点规模较大且性能敏感时再上二叉堆；
+ * - 不支持负权边；若 `edgeCost` 返回负数行为未定义。
+ *
+ * @template E 边权重类型
+ * @template G 满足 {@link GraphBase} + {@link IntoEdgeRefs}<E> 的图类型
  * @param graph 图实例
+ * @param start 起点
+ * @param end 提前终止的目标节点；传 `undefined` 计算到所有可达节点的距离
+ * @param edgeCost 边代价函数，接收 {@link EdgeRef} 返回非负数
+ * @returns 节点 ID → 从 `start` 出发的最短距离；不可达节点不出现在 Map 中
  */
-export function hasCycle<G extends GraphBase & IntoNeighbors>(graph: G): boolean {
-  let found = false;
-  dfsVisit(graph, null, {
-    backEdge() {
-      found = true;
-      return 'break';
-    },
-  });
-  return found;
+export function dijkstra<E, G extends GraphBase & IntoEdgeRefs<E>>(
+  graph: G,
+  start: NodeId,
+  end: NodeId | undefined,
+  edgeCost: (edge: EdgeRef<E>) => number,
+): Map<NodeId, number> {
+  const distances = new Map<NodeId, number>();
+  const visited = new Set<NodeId>();
+  distances.set(start, 0);
+
+  while (true) {
+    let current: NodeId | undefined;
+    let smallest = Infinity;
+    for (const [node, dist] of distances) {
+      if (visited.has(node)) continue;
+      if (dist < smallest) {
+        smallest = dist;
+        current = node;
+      }
+    }
+    if (current === undefined) break;
+    visited.add(current);
+    if (current === end) break;
+
+    for (const edge of graph.outgoingEdgeRefs(current)) {
+      if (visited.has(edge.target)) continue;
+      const next = smallest + edgeCost(edge);
+      const prev = distances.get(edge.target) ?? Infinity;
+      if (next < prev) distances.set(edge.target, next);
+    }
+  }
+
+  return distances;
 }
 
 /**
