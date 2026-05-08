@@ -7,10 +7,10 @@
  */
 
 import type {
-  EdgeRef,
+  EdgeView,
   Catalog,
   IntoDegree,
-  IntoEdgeRefs,
+  IntoEdgeViews,
   Neighbors,
   NodeId,
   Walkable,
@@ -50,7 +50,7 @@ export function toposort<G extends Walkable>(
     throw new CycleError(cycle);
   },
 ): NodeId[] {
-  return toposortFull(graph, onCycle).order;
+  return topology(graph, onCycle).order;
 }
 
 /**
@@ -61,7 +61,7 @@ export function toposort<G extends Walkable>(
  * @param onCycle 检测到环时的回调，默认按原始顺序追加环上节点
  * @returns 排序结果与环路信息
  */
-export function toposortFull<G extends Walkable>(
+export function topology<G extends Walkable>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => cycle,
 ): Topology {
@@ -129,7 +129,7 @@ export function toposortFull<G extends Walkable>(
  * @returns 环路信息
  */
 export function cycles<G extends Walkable>(graph: G): Cycles {
-  return toposortFull(graph).cycles;
+  return topology(graph).cycles;
 }
 
 /**
@@ -292,12 +292,12 @@ export function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
  * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边引用（O(N + E)）。
  *
  * @template E 边权重类型
- * @template G 至少满足 `Catalog & IntoEdgeRefs<E>`，可选实现 {@link IntoDegree}；
+ * @template G 至少满足 `Catalog & IntoEdgeViews<E>`，可选实现 {@link IntoDegree}；
  *   三种存储 (`Graph` / `MapGraph` / `MatrixGraph`) 均自动满足。
  * @param graph 图实例
  * @returns 节点 ID → {@link Degree}
  */
-export function degrees<E, G extends Catalog & IntoEdgeRefs<E>>(
+export function degrees<E, G extends Catalog & IntoEdgeViews<E>>(
   graph: G,
 ): Map<NodeId, Degree> {
   const result = new Map<NodeId, Degree>();
@@ -315,8 +315,8 @@ export function degrees<E, G extends Catalog & IntoEdgeRefs<E>>(
 
   for (const nodeId of graph.nodeIds) {
     result.set(nodeId, {
-      inDegree: count(graph.incomingEdgeRefs(nodeId)),
-      outDegree: count(graph.outgoingEdgeRefs(nodeId)),
+      inDegree: count(graph.getIncomingEdges(nodeId)),
+      outDegree: count(graph.getOutgoingEdges(nodeId)),
     });
   }
   return result;
@@ -477,14 +477,14 @@ export function reachable<G extends Neighbors>(
 }
 
 /**
- * 把任意边引用映射为带默认权重的 {@link EdgeRef}（`undefined` 处填 `defaultWeight`）。
+ * 把任意边引用映射为带默认权重的 {@link EdgeView}（`undefined` 处填 `defaultWeight`）。
  *
  * @template E 边的原始权重类型
  * @template W 默认权重类型
- * @param edge 原始边引用（来自 {@link Graph.edgeRefs} / {@link MapGraph} / {@link MatrixGraph} 等）
+ * @param edge 原始边引用（来自 {@link Graph.getEdges} / {@link MapGraph} / {@link MatrixGraph} 等）
  * @param defaultWeight `edge.weight` 为 `undefined` 时使用的默认值
  */
-export function weighted<E, W>(edge: EdgeRef<E>, defaultWeight: W): EdgeRef<E | W> {
+export function weighted<E, W>(edge: EdgeView<E>, defaultWeight: W): EdgeView<E | W> {
   return {
     id: edge.id,
     source: edge.source,
@@ -571,7 +571,7 @@ export function postorder<G extends Catalog & Neighbors>(
  * @param graph 图实例
  * @returns 各分量的节点 ID 数组
  */
-export function kosarajuScc<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
+export function kosaraju<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
   const order = postorder(graph);
   const reversedGraph = reversed(graph);
   const components: NodeId[][] = [];
@@ -604,24 +604,24 @@ export function kosarajuScc<G extends Catalog & Neighbors>(graph: G): NodeId[][]
  * Dijkstra 单源最短路径（非负权重）。
  *
  * @remarks
- * - 仅依赖 {@link IntoEdgeRefs}；同一份算法可跑在 `Graph` / `MapGraph` / `MatrixGraph` 上；
+ * - 仅依赖 {@link IntoEdgeViews}；同一份算法可跑在 `Graph` / `MapGraph` / `MatrixGraph` 上；
  * - 返回 `start` 到所有可达节点的最短距离；可选 `end` 提前终止；
  * - 当前实现为 O(V²) 线性扫描（无堆），节点规模较大且性能敏感时再上二叉堆；
  * - 不支持负权边；若 `edgeCost` 返回负数行为未定义。
  *
  * @template E 边权重类型
- * @template G 满足 {@link Catalog} + {@link IntoEdgeRefs}<E> 的图类型
+ * @template G 满足 {@link Catalog} + {@link IntoEdgeViews}<E> 的图类型
  * @param graph 图实例
  * @param start 起点
  * @param end 提前终止的目标节点；传 `undefined` 计算到所有可达节点的距离
- * @param edgeCost 边代价函数，接收 {@link EdgeRef} 返回非负数
+ * @param edgeCost 边代价函数，接收 {@link EdgeView} 返回非负数
  * @returns 节点 ID → 从 `start` 出发的最短距离；不可达节点不出现在 Map 中
  */
-export function dijkstra<E, G extends Catalog & IntoEdgeRefs<E>>(
+export function dijkstra<E, G extends Catalog & IntoEdgeViews<E>>(
   graph: G,
   start: NodeId,
   end: NodeId | undefined,
-  edgeCost: (edge: EdgeRef<E>) => number,
+  edgeCost: (edge: EdgeView<E>) => number,
 ): Map<NodeId, number> {
   const distances = new Map<NodeId, number>();
   const visited = new Set<NodeId>();
@@ -641,7 +641,7 @@ export function dijkstra<E, G extends Catalog & IntoEdgeRefs<E>>(
     visited.add(current);
     if (current === end) break;
 
-    for (const edge of graph.outgoingEdgeRefs(current)) {
+    for (const edge of graph.getOutgoingEdges(current)) {
       if (visited.has(edge.target)) continue;
       const next = smallest + edgeCost(edge);
       const prev = distances.get(edge.target) ?? Infinity;

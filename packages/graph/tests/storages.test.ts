@@ -92,15 +92,15 @@ describe('MapGraph 基础 CRUD', () => {
 });
 
 describe('MapGraph trait 一致性', () => {
-  it('IntoEdgeRefs 三种形式正确产出', () => {
+  it('IntoEdgeViews 三种形式正确产出', () => {
     const g = MapGraph.from(id<GraphId>('m'), [
       [id<NodeId>('a'), id<NodeId>('b'), 1],
       [id<NodeId>('b'), id<NodeId>('c'), 2],
     ]);
-    const all = [...g.edgeRefs()].map(r => `${r.source}→${r.target}=${r.weight as number}`);
+    const all = [...g.getEdges()].map(r => `${r.source}→${r.target}=${r.weight as number}`);
     expect(all.sort()).toEqual(['a→b=1', 'b→c=2']);
-    expect([...g.outgoingEdgeRefs(id<NodeId>('a'))].length).toBe(1);
-    expect([...g.incomingEdgeRefs(id<NodeId>('c'))].length).toBe(1);
+    expect([...g.getOutgoingEdges(id<NodeId>('a'))].length).toBe(1);
+    expect([...g.getIncomingEdges(id<NodeId>('c'))].length).toBe(1);
   });
 
   it('IntoDegree O(1) 返回入/出度', () => {
@@ -177,14 +177,14 @@ describe('MatrixGraph 基础 CRUD', () => {
     expect(g.adjacent(id<NodeId>('a'), id<NodeId>('b'))).toBe(false);
   });
 
-  it('IntoEdgeRefs 跳过墓碑位（不产出已删节点的边）', () => {
+  it('IntoEdgeViews 跳过墓碑位（不产出已删节点的边）', () => {
     const g = MatrixGraph.from(id<GraphId>('mx'),
       [id<NodeId>('a'), id<NodeId>('b')],
       [[id<NodeId>('a'), id<NodeId>('b')]],
     );
     g.removeNode(id<NodeId>('a'));
-    expect([...g.edgeRefs()].length).toBe(0);
-    expect([...g.outgoingEdgeRefs(id<NodeId>('b'))].length).toBe(0);
+    expect([...g.getEdges()].length).toBe(0);
+    expect([...g.getOutgoingEdges(id<NodeId>('b'))].length).toBe(0);
   });
 });
 

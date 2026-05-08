@@ -4,17 +4,17 @@
  * @remarks
  * 借鉴 petgraph 的 `Reversed` / `NodeFiltered` / `EdgeFiltered`：
  * - 适配器只做 trait 转发与方向 / 过滤翻译，不持有节点 / 边的副本；
- * - 任意实现 {@link Neighbors} / {@link IntoEdgeRefs} 等 trait 的图都能被包装；
+ * - 任意实现 {@link Neighbors} / {@link IntoEdgeViews} 等 trait 的图都能被包装；
  * - 适配后的实例本身仍满足相同 trait，因此可层层嵌套（如 `Reversed(NodeFiltered(g, p))`）。
  */
 
 import type {
   Direction,
   EdgeId,
-  EdgeRef,
+  EdgeView,
   Catalog,
   IntoDegree,
-  IntoEdgeRefs,
+  IntoEdgeViews,
   Neighbors,
   NodeId,
   NodeIndexable,
@@ -26,7 +26,7 @@ import type {
  *
  * @remarks
  * - 对 `outgoingNeighbors` 调用，返回内层的 `incomingNeighbors`，反之亦然；
- * - 同样翻转 `incomingEdgeRefs` / `outgoingEdgeRefs`，并交换每条边引用的 `source` / `target`；
+ * - 同样翻转 `getIncomingEdges` / `getOutgoingEdges`，并交换每条边引用的 `source` / `target`；
  * - 入 / 出度互换；
  * - 不复制底层数据，包装本身是 O(1) 内存。
  *
@@ -40,7 +40,7 @@ import type {
 export class Reversed<
   G extends Catalog &
     Neighbors &
-    Partial<IntoEdgeRefs<unknown>> &
+    Partial<IntoEdgeViews<unknown>> &
     Partial<IntoDegree> &
     Partial<Visitable> &
     Partial<NodeIndexable>,
@@ -48,7 +48,7 @@ export class Reversed<
 implements
     Catalog,
     Neighbors,
-    IntoEdgeRefs<unknown>,
+    IntoEdgeViews<unknown>,
     IntoDegree,
     Visitable,
     NodeIndexable {
@@ -98,21 +98,21 @@ implements
   }
 
   /** 全图边引用（source/target 已互换）。 */
-  public *edgeRefs(): Iterable<EdgeRef<unknown>> {
-    if (typeof this.inner.edgeRefs !== 'function') return;
-    for (const ref of this.inner.edgeRefs()) yield flipEdgeRef(ref);
+  public *getEdges(): Iterable<EdgeView<unknown>> {
+    if (typeof this.inner.getEdges !== 'function') return;
+    for (const ref of this.inner.getEdges()) yield flipEdgeView(ref);
   }
 
   /** 反向后的入边 = 原图的出边（已翻转 source/target）。 */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<unknown>> {
-    if (typeof this.inner.outgoingEdgeRefs !== 'function') return;
-    for (const ref of this.inner.outgoingEdgeRefs(nodeId)) yield flipEdgeRef(ref);
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+    if (typeof this.inner.getOutgoingEdges !== 'function') return;
+    for (const ref of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(ref);
   }
 
   /** 反向后的出边 = 原图的入边（已翻转 source/target）。 */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<unknown>> {
-    if (typeof this.inner.incomingEdgeRefs !== 'function') return;
-    for (const ref of this.inner.incomingEdgeRefs(nodeId)) yield flipEdgeRef(ref);
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+    if (typeof this.inner.getIncomingEdges !== 'function') return;
+    for (const ref of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(ref);
   }
 
   /**
@@ -204,7 +204,7 @@ implements
 export function reversed<
   G extends Catalog &
     Neighbors &
-    Partial<IntoEdgeRefs<unknown>> &
+    Partial<IntoEdgeViews<unknown>> &
     Partial<IntoDegree> &
     Partial<Visitable> &
     Partial<NodeIndexable>,
@@ -217,14 +217,14 @@ export function reversed<
  *
  * @internal
  */
-function flipEdgeRef<E>(ref: EdgeRef<E>): EdgeRef<E> {
+function flipEdgeView<E>(ref: EdgeView<E>): EdgeView<E> {
   return { id: ref.id, source: ref.target, target: ref.source, weight: ref.weight };
 }
 
 /**
  * 通用谓词：返回 `true` 保留，`false` 从视图中隐去。
  *
- * @template T 被过滤的值的类型（节点过滤用 {@link NodeId}；边过滤用 {@link EdgeRef}）
+ * @template T 被过滤的值的类型（节点过滤用 {@link NodeId}；边过滤用 {@link EdgeView}）
  */
 export type Predicate<T> = (value: T) => boolean;
 
@@ -241,10 +241,10 @@ export type Predicate<T> = (value: T) => boolean;
 export class NodeFiltered<
   G extends Catalog &
     Neighbors &
-    Partial<IntoEdgeRefs<unknown>> &
+    Partial<IntoEdgeViews<unknown>> &
     Partial<IntoDegree>,
 >
-implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
+implements Catalog, Neighbors, IntoEdgeViews<unknown> {
   /**
    * @param inner 原始图
    * @param predicate 节点保留谓词
@@ -269,16 +269,16 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
    * {@inheritdoc Catalog.edgeIds}
    *
    * @remarks
-   * 当 inner 未实现 `edgeRefs` 时，无法按谓词过滤边的两端，因此返回空序列
-   * （与本类的 {@link edgeRefs} / {@link incomingEdgeRefs} / {@link outgoingEdgeRefs}
-   * 在同等情况下行为一致）。需要边过滤的视图请使用实现了 {@link IntoEdgeRefs} 的图
+   * 当 inner 未实现 `getEdges` 时，无法按谓词过滤边的两端，因此返回空序列
+   * （与本类的 {@link getEdges} / {@link getIncomingEdges} / {@link getOutgoingEdges}
+   * 在同等情况下行为一致）。需要边过滤的视图请使用实现了 {@link IntoEdgeViews} 的图
    * （`Graph` / `MapGraph` / `MatrixGraph` 均已实现）。
    */
   public get edgeIds(): Iterable<EdgeId> {
-    if (typeof this.inner.edgeRefs !== 'function') {
+    if (typeof this.inner.getEdges !== 'function') {
       return { [Symbol.iterator]: () => [][Symbol.iterator]() };
     }
-    const refs = this.inner.edgeRefs.bind(this.inner);
+    const refs = this.inner.getEdges.bind(this.inner);
     const predicate = this.predicate;
     return {
       *[Symbol.iterator]() {
@@ -322,25 +322,25 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
   }
 
   /** 全图边引用（两端都需保留）。 */
-  public *edgeRefs(): Iterable<EdgeRef<unknown>> {
-    if (typeof this.inner.edgeRefs !== 'function') return;
-    for (const ref of this.inner.edgeRefs()) {
+  public *getEdges(): Iterable<EdgeView<unknown>> {
+    if (typeof this.inner.getEdges !== 'function') return;
+    for (const ref of this.inner.getEdges()) {
       if (this.predicate(ref.source) && this.predicate(ref.target)) yield ref;
     }
   }
 
   /** 入边（来源端需保留）。 */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<unknown>> {
-    if (!this.predicate(nodeId) || typeof this.inner.incomingEdgeRefs !== 'function') return;
-    for (const ref of this.inner.incomingEdgeRefs(nodeId)) {
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+    if (!this.predicate(nodeId) || typeof this.inner.getIncomingEdges !== 'function') return;
+    for (const ref of this.inner.getIncomingEdges(nodeId)) {
       if (this.predicate(ref.source)) yield ref;
     }
   }
 
   /** 出边（终点端需保留）。 */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<unknown>> {
-    if (!this.predicate(nodeId) || typeof this.inner.outgoingEdgeRefs !== 'function') return;
-    for (const ref of this.inner.outgoingEdgeRefs(nodeId)) {
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+    if (!this.predicate(nodeId) || typeof this.inner.getOutgoingEdges !== 'function') return;
+    for (const ref of this.inner.getOutgoingEdges(nodeId)) {
       if (this.predicate(ref.target)) yield ref;
     }
   }
@@ -349,23 +349,23 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
 /**
  * 边过滤视图：节点不变，仅过滤边。
  *
- * @remarks 必须依赖 {@link IntoEdgeRefs}，因为只有边引用才能高效地按谓词过滤。
+ * @remarks 必须依赖 {@link IntoEdgeViews}，因为只有边引用才能高效地按谓词过滤。
  *
  * @template E 边权重类型
- * @template G 至少满足 {@link Catalog} + {@link IntoEdgeRefs}<E> 的图类型
+ * @template G 至少满足 {@link Catalog} + {@link IntoEdgeViews}<E> 的图类型
  */
 export class EdgeFiltered<
   E,
-  G extends Catalog & Neighbors & IntoEdgeRefs<E>,
+  G extends Catalog & Neighbors & IntoEdgeViews<E>,
 >
-implements Catalog, Neighbors, IntoEdgeRefs<E> {
+implements Catalog, Neighbors, IntoEdgeViews<E> {
   /**
    * @param inner 原始图
    * @param predicate 边保留谓词
    */
   public constructor(
     public readonly inner: G,
-    public readonly predicate: Predicate<EdgeRef<E>>,
+    public readonly predicate: Predicate<EdgeView<E>>,
   ) {}
 
   /** {@inheritdoc Catalog.nodeIds} */
@@ -375,7 +375,7 @@ implements Catalog, Neighbors, IntoEdgeRefs<E> {
 
   /** {@inheritdoc Catalog.edgeIds} */
   public get edgeIds(): Iterable<EdgeId> {
-    const refs = this.inner.edgeRefs.bind(this.inner);
+    const refs = this.inner.getEdges.bind(this.inner);
     const predicate = this.predicate;
     return {
       *[Symbol.iterator]() {
@@ -392,7 +392,7 @@ implements Catalog, Neighbors, IntoEdgeRefs<E> {
   /** {@inheritdoc Catalog.edgeCount} */
   public edgeCount(): number {
     let n = 0;
-    for (const _ of this.edgeRefs()) n++;
+    for (const _ of this.getEdges()) n++;
     return n;
   }
 
@@ -404,31 +404,31 @@ implements Catalog, Neighbors, IntoEdgeRefs<E> {
 
   /** 入邻居：根据保留的入边推导。 */
   public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    for (const ref of this.inner.incomingEdgeRefs(nodeId)) {
+    for (const ref of this.inner.getIncomingEdges(nodeId)) {
       if (this.predicate(ref)) yield ref.source;
     }
   }
 
   /** 出邻居：根据保留的出边推导。 */
   public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    for (const ref of this.inner.outgoingEdgeRefs(nodeId)) {
+    for (const ref of this.inner.getOutgoingEdges(nodeId)) {
       if (this.predicate(ref)) yield ref.target;
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
-  public *edgeRefs(): Iterable<EdgeRef<E>> {
-    for (const ref of this.inner.edgeRefs()) if (this.predicate(ref)) yield ref;
+  /** {@inheritdoc IntoEdgeViews.getEdges} */
+  public *getEdges(): Iterable<EdgeView<E>> {
+    for (const ref of this.inner.getEdges()) if (this.predicate(ref)) yield ref;
   }
 
-  /** {@inheritdoc IntoEdgeRefs.incomingEdgeRefs} */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
-    for (const ref of this.inner.incomingEdgeRefs(nodeId)) if (this.predicate(ref)) yield ref;
+  /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
+    for (const ref of this.inner.getIncomingEdges(nodeId)) if (this.predicate(ref)) yield ref;
   }
 
-  /** {@inheritdoc IntoEdgeRefs.outgoingEdgeRefs} */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
-    for (const ref of this.inner.outgoingEdgeRefs(nodeId)) if (this.predicate(ref)) yield ref;
+  /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
+    for (const ref of this.inner.getOutgoingEdges(nodeId)) if (this.predicate(ref)) yield ref;
   }
 }
 

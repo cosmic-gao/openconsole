@@ -511,7 +511,7 @@ export class Topo {
     return remaining;
   }
 
-  /** 一次性 drain 出全部拓扑序与环路信息（与 algorithms.toposortFull 等价）。 */
+  /** 一次性 drain 出全部拓扑序与环路信息（与 algorithms.topology 等价）。 */
   public collect<G extends Neighbors>(graph: G): Topology {
     const order: NodeId[] = [];
     while (true) {

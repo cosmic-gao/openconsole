@@ -3,15 +3,18 @@
  *
  * @remarks
  * 命名约定：
- * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`、`EdgeRef`）。
+ * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`、`EdgeView`）。
  * - 能力型 trait 用集合 / 动作的单数名词命名（{@link Catalog}、{@link Neighbors}、{@link Edges}、
  *   {@link Visitable}、{@link Walkable}）；挑不出贴切单词时保留 `Into*` 前缀
- *   （如 {@link IntoEdgeRefs}、{@link IntoDegree}）。
+ *   （如 {@link IntoEdgeViews}、{@link IntoDegree}）。
  * - trait 方法亦优先单词形：`bound` / `at` / `marks` / `reset` / `neighbors`，
  *   方向语义通过可选 `direction` 参数传入而不是新方法。
  */
 
 declare const __brand: unique symbol;
+
+// 运行时类位于 ./classic；这里只用 `import type` 引入它们的类型形状，避免循环并保持 types.ts 仅类型。
+import type { Edge, Input, Node, Output, Port, Socket } from './classic';
 
 /**
  * 在结构类型上叠加品牌标记，制造名义类型 (nominal typing)。
@@ -42,9 +45,6 @@ export type GraphId = Brand<string, 'GraphId'>;
  * - 边相对某个节点的方向（流入方为 `'input'`，流出方为 `'output'`）。
  */
 export type Direction = 'input' | 'output';
-
-// 运行时类位于 ./classic；这里只用 `import type` 引入它们的类型形状，避免循环并保持 types.ts 仅类型。
-import type { Edge, Input, Node, Output, Port, Socket } from './classic';
 
 /** 节点端口名 → Socket 的映射，用于声明节点的输入/输出形态。 */
 export type Sockets = { readonly [key: string]: Socket };
@@ -108,12 +108,12 @@ export interface Degree {
  * 边的轻量值视图，与具体存储解耦。
  *
  * @remarks
- * - 算法层只依赖 `EdgeRef<E>` 即可遍历边；具体图实现不需要暴露 {@link Edge} 类。
+ * - 算法层只依赖 `EdgeView<E>` 即可遍历边；具体图实现不需要暴露 {@link Edge} 类。
  * - 翻转视图（{@link Reversed}）等零成本适配器仅交换 `source` / `target`，无需重新构造重型 {@link Edge}。
  *
  * @template E 边权重类型
  */
-export interface EdgeRef<E = unknown> {
+export interface EdgeView<E = unknown> {
   /** 边唯一标识。 */
   readonly id: EdgeId;
   /** 起点节点 ID。 */
@@ -173,7 +173,7 @@ export interface Edges<E = unknown> {
 }
 
 /**
- * 能列举边的轻量引用 ({@link EdgeRef})。
+ * 能列举边的轻量视图 ({@link EdgeView})。
  *
  * @remarks
  * petgraph 的 `IntoEdgeReferences` 类比物。任意存储（`Graph`、`MapGraph`、`MatrixGraph`、`Reversed`）
@@ -181,13 +181,13 @@ export interface Edges<E = unknown> {
  *
  * @template E 边权重类型
  */
-export interface IntoEdgeRefs<E = unknown> {
-  /** 全图所有边引用。 */
-  edgeRefs(): Iterable<EdgeRef<E>>;
-  /** 流入节点的边引用。 */
-  incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>>;
-  /** 流出节点的边引用。 */
-  outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>>;
+export interface IntoEdgeViews<E = unknown> {
+  /** 全图所有边视图。 */
+  getEdges(): Iterable<EdgeView<E>>;
+  /** 流入节点的边视图。 */
+  getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>>;
+  /** 流出节点的边视图。 */
+  getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>>;
 }
 
 /**
@@ -237,12 +237,12 @@ export interface IntoDegree {
  * @template N 节点权重类型
  * @template E 边权重类型
  */
-export interface GraphRef<N = unknown, E = unknown>
+export interface GraphView<N = unknown, E = unknown>
   extends Catalog,
-    Neighbors,
-    Edges<E>,
-    NodeIndexable,
-    Visitable {
+  Neighbors,
+  Edges<E>,
+  NodeIndexable,
+  Visitable {
   /** 按 ID 取节点；不存在返回 `undefined`。 */
   getNode(nodeId: NodeId): StoredNode<N> | undefined;
   /** 按 ID 取边；不存在返回 `undefined`。 */

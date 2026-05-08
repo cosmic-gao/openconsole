@@ -15,7 +15,7 @@ import {
   dijkstra,
   isCyclic,
   isolated,
-  kosarajuScc,
+  kosaraju,
   MapGraph,
   neighborhood,
   postorder,
@@ -25,7 +25,7 @@ import {
   sinks,
   sources,
   toposort,
-  toposortFull,
+  topology,
   weighted,
   type GraphId,
   type NodeId,
@@ -80,7 +80,7 @@ describe('toposort', () => {
     expect(order.sort()).toEqual(['x', 'y', 'z']);
   });
 
-  // 1.1 回归：toposortFull 不应把 outgoingNeighbors 返回的孤儿节点纳入 order
+  // 1.1 回归：topology 不应把 outgoingNeighbors 返回的孤儿节点纳入 order
   it('1.1 fix: outgoingNeighbors 返回的孤儿节点不会污染 order', () => {
     const g = new MapGraph<unknown, unknown>(id<GraphId>('orphan'));
     g.addNode(id<NodeId>('a'));
@@ -91,7 +91,7 @@ describe('toposort', () => {
         yield* real(n);
         if (n === 'a') yield id<NodeId>('ghost');
       };
-    const result = toposortFull(g);
+    const result = topology(g);
     expect(result.order.includes(id<NodeId>('ghost'))).toBe(false);
     expect(result.order.sort()).toEqual(['a', 'b']);
     expect(result.cycles.hasCycle).toBe(false);
@@ -112,7 +112,7 @@ describe('cycles / isCyclic', () => {
   });
 });
 
-describe('scc / kosarajuScc', () => {
+describe('scc / kosaraju', () => {
   it('无环图：每个节点自成一个分量', () => {
     const components = scc(linear()).map(c => c.sort());
     expect(components.length).toBe(4);
@@ -140,14 +140,14 @@ describe('scc / kosarajuScc', () => {
     expect(sets.flat().sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  it('kosarajuScc 与 scc 在划分上一致', () => {
+  it('kosaraju 与 scc 在划分上一致', () => {
     const norm = (cs: NodeId[][]) => cs.map(c => [...c].sort()).map(c => c.join(',')).sort();
     const g = MapGraph.from(id<GraphId>('mix'), [
       [id<NodeId>('a'), id<NodeId>('b')],
       [id<NodeId>('b'), id<NodeId>('a')],
       [id<NodeId>('b'), id<NodeId>('c')],
     ]);
-    expect(norm(scc(g))).toEqual(norm(kosarajuScc(g)));
+    expect(norm(scc(g))).toEqual(norm(kosaraju(g)));
   });
 });
 

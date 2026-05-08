@@ -145,7 +145,7 @@ describe('Topo', () => {
     expect(result.cycles.cycleNodes.length).toBe(3);
   });
 
-  it('Topo 已防孤儿邻居（与 toposortFull 1.1 修复同源）', () => {
+  it('Topo 已防孤儿邻居（与 topology 1.1 修复同源）', () => {
     const g = new MapGraph<unknown, unknown>(id<GraphId>('orphan'));
     g.addNode(id<NodeId>('a'));
     const real = g.outgoingNeighbors.bind(g);

@@ -7,18 +7,18 @@
  * - {@link MapGraph}：基于 `Map<NodeId, ...>` 的轻量稀疏图，无端口，纯拓扑算法用；
  * - {@link MatrixGraph}：基于位图 / 邻接矩阵的稠密图，O(1) 邻接查询。
  *
- * 三者都实现同一组访问者 trait（{@link Catalog}、{@link Neighbors}、{@link IntoEdgeRefs}、
+ * 三者都实现同一组访问者 trait（{@link Catalog}、{@link Neighbors}、{@link IntoEdgeViews}、
  * {@link IntoDegree}、{@link Visitable}、{@link NodeIndexable}），因此可以被同一份算法消费。
  */
 
 import type {
   Direction,
   EdgeId,
-  EdgeRef,
+  EdgeView,
   Catalog,
   GraphId,
   IntoDegree,
-  IntoEdgeRefs,
+  IntoEdgeViews,
   Neighbors,
   NodeId,
   NodeIndexable,
@@ -48,7 +48,7 @@ export class MapGraph<N = unknown, E = unknown>
 implements
     Catalog,
     Neighbors,
-    IntoEdgeRefs<E>,
+    IntoEdgeViews<E>,
     IntoDegree,
     Visitable,
     NodeIndexable {
@@ -275,21 +275,21 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
-  public *edgeRefs(): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getEdges} */
+  public *getEdges(): Iterable<EdgeView<E>> {
     for (const edge of this.edges.values()) yield edge;
   }
 
-  /** {@inheritdoc IntoEdgeRefs.incomingEdgeRefs} */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     for (const id of this._in.get(nodeId) ?? []) {
       const edge = this.edges.get(id);
       if (edge) yield edge;
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.outgoingEdgeRefs} */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     for (const id of this._out.get(nodeId) ?? []) {
       const edge = this.edges.get(id);
       if (edge) yield edge;
@@ -369,7 +369,7 @@ export class MatrixGraph<N = unknown, E = unknown>
 implements
     Catalog,
     Neighbors,
-    IntoEdgeRefs<E>,
+    IntoEdgeViews<E>,
     IntoDegree,
     Visitable,
     NodeIndexable {
@@ -643,8 +643,8 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
-  public *edgeRefs(): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getEdges} */
+  public *getEdges(): Iterable<EdgeView<E>> {
     for (const edge of this.edges.values()) {
       const source = this._indexToNode[edge.sourceIndex];
       const target = this._indexToNode[edge.targetIndex];
@@ -654,8 +654,8 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.incomingEdgeRefs} */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     const targetIndex = this._nodeToIndex.get(nodeId);
     if (targetIndex === undefined) return;
     for (let i = 0; i < this._indexToNode.length; i++) {
@@ -670,8 +670,8 @@ implements
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.outgoingEdgeRefs} */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     const sourceIndex = this._nodeToIndex.get(nodeId);
     if (sourceIndex === undefined) return;
     const base = sourceIndex * this._capacity;

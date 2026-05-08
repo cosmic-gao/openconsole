@@ -48,9 +48,9 @@ describe('Reversed', () => {
     expect(r.outDegree(id<NodeId>('b'))).toBe(1); // 原图 b 入度 1
   });
 
-  it('edgeRefs 翻转 source / target', () => {
+  it('getEdges 翻转 source / target', () => {
     const r = reversed(linear());
-    const refs = [...r.edgeRefs()].map(ref => `${ref.source}→${ref.target}`).sort();
+    const refs = [...r.getEdges()].map(ref => `${ref.source}→${ref.target}`).sort();
     expect(refs).toEqual(['b→a', 'c→b', 'd→c']);
   });
 
@@ -95,8 +95,8 @@ describe('NodeFiltered', () => {
     expect([...view.neighbors(id<NodeId>('b'))]).toEqual([]);
   });
 
-  // 1.2 回归：inner 缺 edgeRefs 时 edgeIds 应返回空而非泄漏未过滤序列
-  it('1.2 fix: inner 缺 edgeRefs 时 edgeIds 返回空（避免泄漏未过滤的 inner.edgeIds）', () => {
+  // 1.2 回归：inner 缺 getEdges 时 edgeIds 应返回空而非泄漏未过滤序列
+  it('1.2 fix: inner 缺 getEdges 时 edgeIds 返回空（避免泄漏未过滤的 inner.edgeIds）', () => {
     const stub = {
       nodeIds: [id<NodeId>('a'), id<NodeId>('b')] as Iterable<NodeId>,
       edgeIds: [id<EdgeId>('leaked1'), id<EdgeId>('leaked2')] as Iterable<EdgeId>,
@@ -117,12 +117,12 @@ describe('NodeFiltered', () => {
 });
 
 describe('EdgeFiltered', () => {
-  it('节点不变；edgeRefs 按谓词过滤', () => {
+  it('节点不变；getEdges 按谓词过滤', () => {
     const inner = linear();
     const view = new EdgeFiltered(inner, ref => (ref.weight as number) >= 2);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c', 'd']);
     expect(view.nodeCount()).toBe(4);
-    const refs = [...view.edgeRefs()].map(r => `${r.source}→${r.target}`);
+    const refs = [...view.getEdges()].map(r => `${r.source}→${r.target}`);
     expect(refs.sort()).toEqual(['b→c', 'c→d']);
     expect(view.edgeCount()).toBe(2);
   });
@@ -147,7 +147,7 @@ describe('EdgeFiltered', () => {
 });
 
 describe('适配器嵌套', () => {
-  it('reversed(NodeFiltered(g)) 仍是 GraphRef-兼容的视图', () => {
+  it('reversed(NodeFiltered(g)) 仍是 GraphView-兼容的视图', () => {
     const filtered = new NodeFiltered(linear(), id => id !== 'd');
     const view = reversed(filtered);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c']);

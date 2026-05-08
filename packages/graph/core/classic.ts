@@ -8,7 +8,7 @@
 import type {
   Direction,
   EdgeId,
-  EdgeRef,
+  EdgeView,
   GraphId,
   Inputs,
   NodeId,
@@ -424,7 +424,7 @@ export class Edge<W = unknown> {
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
  * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
- *   {@link toposortFull} / {@link scc} 等独立函数（仅依赖访问者 trait，
+ *   {@link topology} / {@link scc} 等独立函数（仅依赖访问者 trait，
  *   三种存储 Graph / MapGraph / MatrixGraph 共用）。
  *
  * @template N 节点附带的数据载荷类型
@@ -534,11 +534,6 @@ export class Graph<N = unknown, E = unknown> {
     return this.nodes.has(nodeId);
   }
 
-  /** 遍历所有节点。 */
-  public getNodes(): IterableIterator<StoredNode<N>> {
-    return this.nodes.values();
-  }
-
   /**
    * 按 ID 获取边。
    *
@@ -556,11 +551,6 @@ export class Graph<N = unknown, E = unknown> {
    */
   public hasEdge(edgeId: EdgeId): boolean {
     return this.edges.has(edgeId);
-  }
-
-  /** 遍历所有边。 */
-  public getEdges(): IterableIterator<Edge<E>> {
-    return this.edges.values();
   }
 
   /**
@@ -909,8 +899,8 @@ export class Graph<N = unknown, E = unknown> {
     return this.successors(nodeId);
   }
 
-  /** {@inheritdoc IntoEdgeRefs.edgeRefs} */
-  public *edgeRefs(): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getEdges} */
+  public *getEdges(): Iterable<EdgeView<E>> {
     for (const edge of this.edges.values()) {
       yield {
         id: edge.id,
@@ -921,8 +911,8 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.incomingEdgeRefs} */
-  public *incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     for (const id of this._inEdgeIds(nodeId)) {
       const edge = this.edges.get(id);
       if (!edge) continue;
@@ -935,8 +925,8 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  /** {@inheritdoc IntoEdgeRefs.outgoingEdgeRefs} */
-  public *outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>> {
+  /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     for (const id of this._outEdgeIds(nodeId)) {
       const edge = this.edges.get(id);
       if (!edge) continue;
