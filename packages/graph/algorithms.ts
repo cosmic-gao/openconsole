@@ -366,7 +366,12 @@ export function isolated<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
 }
 
 /**
- * 反向邻接信息。
+ * 一次性快照所有节点的邻域（前驱 + 后继）。
+ *
+ * @remarks
+ * 仅遍历 `outgoingNeighbors` 一次即可同步推出 `predecessors`，
+ * 适用于只暴露出边却需要双向访问的图实现。注意这不是 petgraph 风格的
+ * `Reversed<G>` 视图（那是一个零成本边翻转适配器）。
  *
  * @template N 节点权重类型
  * @template E 边权重类型
@@ -374,7 +379,7 @@ export function isolated<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
  * @param graph 图实例
  * @returns 节点 ID → `{ predecessors, successors }`
  */
-export function reverse<N, E, G extends GraphRef<N, E>>(
+export function neighborhood<N, E, G extends GraphRef<N, E>>(
   graph: G,
 ): Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }> {
   const result = new Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }>();
@@ -393,6 +398,57 @@ export function reverse<N, E, G extends GraphRef<N, E>>(
   }
 
   return result;
+}
+
+/**
+ * 检测图是否含环（{@link cycles} 的布尔快捷形式）。
+ *
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ */
+export function isCyclic<G extends Walkable>(graph: G): boolean {
+  return cycles(graph).hasCycle;
+}
+
+/**
+ * 缩点：把每个强连通分量折叠为一个超节点，输出对应的 DAG 描述。
+ *
+ * @remarks
+ * 仅返回纯数据描述，不构造新的 {@link Graph} 实例；调用方可根据需要进一步建图。
+ *
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ * @returns 各分量数组、节点 → 分量序号映射、以及分量间的有向边
+ */
+export function condensation<G extends Walkable>(
+  graph: G,
+): {
+  components: NodeId[][];
+  componentOf: Map<NodeId, number>;
+  edges: Array<{ from: number; to: number }>;
+} {
+  const components = scc(graph);
+  const componentOf = new Map<NodeId, number>();
+  for (let i = 0; i < components.length; i++) {
+    for (const nodeId of components[i]!) componentOf.set(nodeId, i);
+  }
+
+  const seen = new Set<string>();
+  const edges: Array<{ from: number; to: number }> = [];
+  for (const nodeId of graph.nodeIds) {
+    const from = componentOf.get(nodeId);
+    if (from === undefined) continue;
+    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+      const to = componentOf.get(neighbor);
+      if (to === undefined || to === from) continue;
+      const key = `${from}->${to}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from, to });
+    }
+  }
+
+  return { components, componentOf, edges };
 }
 
 /**

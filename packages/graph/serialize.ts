@@ -9,9 +9,8 @@
  * - 边元组：`[id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, weight]`。
  */
 
-import { Edge, Endpoint, Graph, Node, Socket } from './classic';
+import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from './classic';
 import type { EdgeId, GraphId, NodeId, PortId, StoredNode } from './types';
-import type { Input, Output } from './classic';
 
 /** 节点压缩元组。 */
 export type CompactNode = [

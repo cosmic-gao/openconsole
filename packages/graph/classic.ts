@@ -603,6 +603,36 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
+   * 查找从 `source` 直接指向 `target` 的第一条边（petgraph `find_edge` 等价物）。
+   *
+   * @remarks 存在多重边时只返回首条；如需全部请用 {@link edgesBetween}。
+   *
+   * @param source 起点节点 ID
+   * @param target 终点节点 ID
+   * @returns 边实例；不存在时返回 `undefined`
+   */
+  public findEdge(source: NodeId, target: NodeId): Edge<E> | undefined {
+    const ids = this._adj().outgoingEdges.get(source);
+    if (!ids?.length) return undefined;
+    for (const id of ids) {
+      const edge = this.edges.get(id);
+      if (edge && edge.targetId === target) return edge;
+    }
+    return undefined;
+  }
+
+  /**
+   * 取边的两端节点 ID（petgraph `edge_endpoints` 等价物）。
+   *
+   * @param edgeId 边 ID
+   * @returns `[sourceId, targetId]`；边不存在时返回 `undefined`
+   */
+  public edgeEndpoints(edgeId: EdgeId): [NodeId, NodeId] | undefined {
+    const edge = this.edges.get(edgeId);
+    return edge ? [edge.sourceId, edge.targetId] : undefined;
+  }
+
+  /**
    * 加入一条边，并将其登记到目标输入端口的连接列表中。
    *
    * @param edge 待加入的边
@@ -843,13 +873,7 @@ export class Graph<N = unknown, E = unknown> {
    * @param target 终点节点 ID
    */
   public adjacent(source: NodeId, target: NodeId): boolean {
-    const ids = this._adj().outgoingEdges.get(source);
-    if (!ids?.length) return false;
-    for (const id of ids) {
-      const edge = this.edges.get(id);
-      if (edge && edge.targetId === target) return true;
-    }
-    return false;
+    return this.findEdge(source, target) !== undefined;
   }
 
   /** 图是否为空（不含任何节点）。 */
@@ -925,21 +949,6 @@ export class Graph<N = unknown, E = unknown> {
   /** {@inheritdoc IntoNeighbors.outgoingNeighbors} */
   public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.successors(nodeId);
-  }
-
-  /** {@inheritdoc IntoEdges.edges} */
-  public edgesOf(nodeId: NodeId): Iterable<Edge<E>> {
-    return this.incidentEdges(nodeId);
-  }
-
-  /** {@inheritdoc IntoEdges.incomingEdges} */
-  public incomingEdgesOf(nodeId: NodeId): Iterable<Edge<E>> {
-    return this.incomingEdges(nodeId);
-  }
-
-  /** {@inheritdoc IntoEdges.outgoingEdges} */
-  public outgoingEdgesOf(nodeId: NodeId): Iterable<Edge<E>> {
-    return this.outgoingEdges(nodeId);
   }
 
   /** {@inheritdoc NodeIndexable.nodeIdAt} */
