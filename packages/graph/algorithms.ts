@@ -22,6 +22,8 @@ import type {
   DegreeInfo,
 } from './types';
 import type { Edge } from './classic';
+import { reversed } from './adapters';
+import { dfsVisit } from './visitors';
 
 /** 拓扑排序检测到环时抛出的错误。 */
 export class CycleError extends Error {
@@ -499,6 +501,121 @@ export function weighted<E, W>(edge: Edge<E>, defaultWeight: W): WeightedEdge<E 
     target: edge.targetId,
     weight: edge.weight ?? defaultWeight,
   };
+}
+
+/**
+ * 收集 `node` 的全部祖先（沿入边可达的节点，不含 `node` 本身）。
+ *
+ * @remarks 通过 {@link reversed} 在反向视图上跑 DFS，与正向 {@link dfs} 共享同一份算法。
+ *
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ * @param node 起点
+ */
+export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] {
+  const result: NodeId[] = [];
+  let first = true;
+  for (const visited of dfs(reversed(graph), node)) {
+    if (first) {
+      first = false;
+      continue;
+    }
+    result.push(visited);
+  }
+  return result;
+}
+
+/**
+ * 收集 `node` 的全部后代（沿出边可达的节点，不含 `node` 本身）。
+ *
+ * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
+ * @param node 起点
+ */
+export function descendants<G extends IntoNeighbors>(graph: G, node: NodeId): NodeId[] {
+  const result: NodeId[] = [];
+  let first = true;
+  for (const visited of dfs(graph, node)) {
+    if (first) {
+      first = false;
+      continue;
+    }
+    result.push(visited);
+  }
+  return result;
+}
+
+/**
+ * DFS 后序（finish-time）遍历，返回节点 ID 列表。
+ *
+ * @remarks
+ * - 利用 {@link dfsVisit} 收集 `finish` 事件即得到后序；
+ * - 后序的逆序就是 DAG 的拓扑序，常用于实现 Kosaraju SCC、构造支配树等。
+ *
+ * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
+ * @param starts 起点序列；省略时按 `graph.nodeIds` 全图扫描
+ */
+export function postOrder<G extends GraphBase & IntoNeighbors>(
+  graph: G,
+  starts?: Iterable<NodeId>,
+): NodeId[] {
+  const order: NodeId[] = [];
+  dfsVisit(graph, starts ?? null, {
+    finish(event) {
+      order.push(event.node);
+    },
+  });
+  return order;
+}
+
+/**
+ * Kosaraju 算法求强连通分量，与 {@link scc} 互为参照实现。
+ *
+ * @remarks
+ * 流程：
+ * 1. 在原图上跑 DFS，按 finish-time 收集后序栈；
+ * 2. 在 {@link reversed} 视图上按 1) 的逆序跑 DFS；每棵 DFS 树即一个强连通分量。
+ *
+ * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
+ * @returns 各分量的节点 ID 数组
+ */
+export function kosarajuScc<G extends GraphBase & IntoNeighbors>(graph: G): NodeId[][] {
+  const order = postOrder(graph);
+  const reversedGraph = reversed(graph);
+  const components: NodeId[][] = [];
+  const visited = new Set<NodeId>();
+
+  for (let i = order.length - 1; i >= 0; i--) {
+    const root = order[i]!;
+    if (visited.has(root)) continue;
+    const component: NodeId[] = [];
+    for (const node of dfs(reversedGraph, root)) {
+      if (visited.has(node)) continue;
+      visited.add(node);
+      component.push(node);
+    }
+    if (component.length > 0) components.push(component);
+  }
+  return components;
+}
+
+/**
+ * 检测是否含环（基于 {@link dfsVisit} 的 `backEdge` 事件，O(N + E) 早停）。
+ *
+ * @template G 实现 {@link GraphBase} + {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
+ */
+export function hasCycle<G extends GraphBase & IntoNeighbors>(graph: G): boolean {
+  let found = false;
+  dfsVisit(graph, null, {
+    backEdge() {
+      found = true;
+      return 'break';
+    },
+  });
+  return found;
 }
 
 /**

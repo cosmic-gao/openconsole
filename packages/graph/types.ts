@@ -104,11 +104,15 @@ export interface DegreeInfo {
 }
 
 /**
- * 带权重的边引用 - 用于最短路径等算法。
+ * 边的轻量值视图，与具体存储解耦。
+ *
+ * @remarks
+ * - 算法层只依赖 `EdgeRef<E>` 即可遍历边；具体图实现不需要暴露 {@link Edge} 类。
+ * - 翻转视图（{@link Reversed}）等零成本适配器仅交换 `source` / `target`，无需重新构造重型 {@link Edge}。
  *
  * @template E 边权重类型
  */
-export interface WeightedEdge<E = unknown> {
+export interface EdgeRef<E = unknown> {
   /** 边唯一标识。 */
   readonly id: EdgeId;
   /** 起点节点 ID。 */
@@ -118,6 +122,13 @@ export interface WeightedEdge<E = unknown> {
   /** 边权重；缺省时为 `undefined`。 */
   readonly weight: E | undefined;
 }
+
+/**
+ * 带权重的边引用 - {@link EdgeRef} 的旧名别名，保留以兼容 `weighted()` 等既有用法。
+ *
+ * @template E 边权重类型
+ */
+export type WeightedEdge<E = unknown> = EdgeRef<E>;
 
 /**
  * 邻接缓存 - 节点 ID → 出/入邻居与度数。
@@ -179,6 +190,41 @@ export interface IntoEdges<E = unknown> {
   outgoingEdges(nodeId: NodeId): Iterable<Edge<E>>;
 }
 
+/**
+ * 能列举边的轻量引用 ({@link EdgeRef})。
+ *
+ * @remarks
+ * petgraph 的 `IntoEdgeReferences` 类比物。任意存储（`Graph`、`MapGraph`、`MatrixGraph`、`Reversed`）
+ * 都可以低成本地实现该 trait，从而被同一份算法消费。
+ *
+ * @template E 边权重类型
+ */
+export interface IntoEdgeRefs<E = unknown> {
+  /** 全图所有边引用。 */
+  edgeRefs(): Iterable<EdgeRef<E>>;
+  /** 流入节点的边引用。 */
+  incomingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>>;
+  /** 流出节点的边引用。 */
+  outgoingEdgeRefs(nodeId: NodeId): Iterable<EdgeRef<E>>;
+}
+
+/**
+ * 同时提供方向化邻居查询，类比 petgraph 的 `IntoNeighborsDirected`。
+ *
+ * @remarks
+ * 已在 {@link IntoNeighbors} 中拆分出 `incomingNeighbors` / `outgoingNeighbors`，本接口提供统一入口
+ * 以方便适配器（如 {@link Reversed}）和泛型算法按 {@link Direction} 分派。
+ */
+export interface IntoNeighborsDirected extends IntoNeighbors {
+  /**
+   * 按方向返回邻居。
+   *
+   * @param nodeId 节点 ID
+   * @param direction `'input'` 取前驱；`'output'` 取后继
+   */
+  neighborsDirected(nodeId: NodeId, direction: Direction): Iterable<NodeId>;
+}
+
 /** 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组）。 */
 export interface NodeIndexable {
   /** 按索引获取节点 ID；越界返回 `undefined`。 */
@@ -223,3 +269,52 @@ export interface GraphRef<N = unknown, E = unknown>
 
 /** 算法常用的最小约束：可枚举节点 + 列举出邻居。 */
 export type Walkable = GraphBase & IntoNeighbors;
+
+/**
+ * 通用拓扑约束：除 {@link Walkable} 外还能列举边引用，可被任意存储实现。
+ *
+ * @template E 边权重类型
+ */
+export type WalkableRefs<E = unknown> = Walkable & IntoEdgeRefs<E>;
+
+// ============================================================
+// Visitor 控制流
+// ============================================================
+
+/**
+ * 访问者回调返回值，模仿 petgraph 的 `Control<B>`。
+ *
+ * @remarks
+ * - `'continue'`：继续访问；
+ * - `'prune'`：保留当前节点的访问，但不再下钻其后继；
+ * - `'break'`：立即中止整次遍历。
+ */
+export type Control = 'continue' | 'prune' | 'break';
+
+/**
+ * DFS 访问事件类型。
+ *
+ * @remarks 与 petgraph `DfsEvent` 对齐，便于 dominator/topo/SCC 等算法基于事件流编写。
+ */
+export type DfsEventKind =
+  | 'discover'
+  | 'finish'
+  | 'treeEdge'
+  | 'backEdge'
+  | 'crossForwardEdge';
+
+/**
+ * DFS 访问事件。
+ *
+ * @template T 用户载荷类型，预留给计时器（discover/finish 时间戳）等扩展使用
+ */
+export interface DfsEvent<T = number> {
+  /** 事件种类。 */
+  readonly kind: DfsEventKind;
+  /** 主节点 ID（discover/finish 时即当前节点；treeEdge 等事件时即源节点）。 */
+  readonly node: NodeId;
+  /** 边事件的目标节点 ID；非边事件时为 `undefined`。 */
+  readonly target?: NodeId;
+  /** 事件发生时的时间戳（discover/finish 计数）。 */
+  readonly time?: T;
+}
