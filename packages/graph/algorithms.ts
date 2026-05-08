@@ -1,6 +1,7 @@
 /**
  * 图算法模块
  *
+ * @remarks
  * 参考 petgraph 风格，算法与存储解耦。
  * 任何实现 GraphBase / IntoNeighbors / IntoEdges / IntoDegree 等 trait 的图都可以使用这些算法。
  *
@@ -24,8 +25,12 @@ import type { Edge } from './classic';
 
 /** 拓扑排序检测到环时抛出的错误。 */
 export class CycleError extends Error {
+  /** 环上的节点 ID 列表，按 Kahn 算法残余顺序记录。 */
   public readonly cycleNodes: NodeId[];
 
+  /**
+   * @param cycleNodes 环上的节点 ID 列表
+   */
   public constructor(cycleNodes: NodeId[]) {
     super(`Cycle detected involving nodes: ${cycleNodes.map(String).join(' -> ')}`);
     this.name = 'CycleError';
@@ -36,7 +41,8 @@ export class CycleError extends Error {
 /**
  * Kahn 算法拓扑排序。
  *
- * @param graph 任何满足 {@link Walkable} 约束的图
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
  * @param onCycle 检测到环时的回调，默认抛出 {@link CycleError}
  * @returns 拓扑顺序的节点 ID 序列
  */
@@ -52,9 +58,10 @@ export function toposort<G extends Walkable>(
 /**
  * 带环路信息的拓扑排序。
  *
- * @param graph 任何满足 {@link Walkable} 约束的图
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
  * @param onCycle 检测到环时的回调，默认按原始顺序追加环上节点
- * @returns 包含排序结果与环路信息
+ * @returns 排序结果与环路信息
  */
 export function toposortFull<G extends Walkable>(
   graph: G,
@@ -116,7 +123,9 @@ export function toposortFull<G extends Walkable>(
 /**
  * 检测图中是否存在环路。
  *
- * @param graph 任何满足 {@link Walkable} 约束的图
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ * @returns 环路信息
  */
 export function cycles<G extends Walkable>(graph: G): CycleInfo {
   return toposortFull(graph).cycleInfo;
@@ -125,7 +134,8 @@ export function cycles<G extends Walkable>(graph: G): CycleInfo {
 /**
  * 强连通分量 (Tarjan 算法，迭代实现避免深图栈溢出)。
  *
- * @param graph 任何满足 {@link Walkable} 约束的图
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
  * @returns 各分量的节点 ID 数组
  */
 export function scc<G extends Walkable>(graph: G): NodeId[][] {
@@ -203,8 +213,10 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
 /**
  * DFS 生成器（迭代版，支持延迟消费）。
  *
- * @param graph 实现 {@link IntoNeighbors} 的图
+ * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
  * @param start 起始节点
+ * @yields 按 DFS 顺序访问到的节点 ID
  */
 export function* dfs<G extends IntoNeighbors>(
   graph: G,
@@ -230,8 +242,10 @@ export function* dfs<G extends IntoNeighbors>(
 /**
  * BFS 生成器。使用游标推进队列以避免 `Array#shift` 的 O(n) 拷贝。
  *
- * @param graph 实现 {@link IntoNeighbors} 的图
+ * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
  * @param start 起始节点
+ * @yields 按 BFS 顺序访问到的节点 ID
  */
 export function* bfs<G extends IntoNeighbors>(
   graph: G,
@@ -256,81 +270,108 @@ export function* bfs<G extends IntoNeighbors>(
 
 /**
  * 按拓扑顺序排列指定节点的后继。
+ *
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ * @param nodeId 起点节点 ID
+ * @returns 按拓扑顺序排好的后继 ID 列表
  */
 export function topoSuccessors<G extends Walkable>(graph: G, nodeId: NodeId): NodeId[] {
-  const order = toposort(graph, (cycle) => cycle);
-  const indexMap = new Map<NodeId, number>();
-  for (let i = 0; i < order.length; i++) indexMap.set(order[i]!, i);
-
+  const order = ranks(graph);
   const successors = Array.from(graph.outgoingNeighbors(nodeId));
   return successors.sort(
     (a, b) =>
-      (indexMap.get(a) ?? Number.MAX_SAFE_INTEGER) -
-      (indexMap.get(b) ?? Number.MAX_SAFE_INTEGER),
+      (order.get(a) ?? Number.MAX_SAFE_INTEGER) -
+      (order.get(b) ?? Number.MAX_SAFE_INTEGER),
   );
 }
 
 /**
  * 按逆拓扑顺序排列指定节点的前驱。
+ *
+ * @template G 满足 {@link Walkable} 约束的图类型
+ * @param graph 图实例
+ * @param nodeId 终点节点 ID
+ * @returns 按逆拓扑顺序排好的前驱 ID 列表
  */
 export function topoPredecessors<G extends Walkable>(graph: G, nodeId: NodeId): NodeId[] {
-  const order = toposort(graph, (cycle) => cycle);
-  const indexMap = new Map<NodeId, number>();
-  for (let i = 0; i < order.length; i++) indexMap.set(order[i]!, i);
-
+  const order = ranks(graph);
   const predecessors = Array.from(graph.incomingNeighbors(nodeId));
-  return predecessors.sort((a, b) => (indexMap.get(b) ?? -1) - (indexMap.get(a) ?? -1));
+  return predecessors.sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1));
 }
 
 /**
  * 计算所有节点的入度与出度。
+ *
+ * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边集合（O(N + E)）。
+ *
+ * @template E 边权重类型
+ * @template G 至少满足 `GraphBase & IntoEdges<E>`，可选实现 {@link IntoDegree}
+ * @param graph 图实例
+ * @returns 节点 ID → {@link DegreeInfo}
  */
 export function degrees<E, G extends GraphBase & IntoEdges<E>>(
   graph: G,
 ): Map<NodeId, DegreeInfo> {
   const result = new Map<NodeId, DegreeInfo>();
+  const withDegree = graph as G & Partial<IntoDegree>;
 
-  for (const nodeId of graph.nodeIds) {
-    let outDegree = 0;
-    for (const _ of graph.outgoingEdges(nodeId)) outDegree++;
-    let inDegree = 0;
-    for (const _ of graph.incomingEdges(nodeId)) inDegree++;
-    result.set(nodeId, { inDegree, outDegree });
+  if (typeof withDegree.inDegree === 'function' && typeof withDegree.outDegree === 'function') {
+    for (const nodeId of graph.nodeIds) {
+      result.set(nodeId, {
+        inDegree: withDegree.inDegree(nodeId),
+        outDegree: withDegree.outDegree(nodeId),
+      });
+    }
+    return result;
   }
 
-  return result;
-}
-
-/** 入度为 0 的源节点。 */
-export function sources<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
-  const result: NodeId[] = [];
   for (const nodeId of graph.nodeIds) {
-    if (graph.inDegree(nodeId) === 0) result.push(nodeId);
-  }
-  return result;
-}
-
-/** 出度为 0 的汇节点。 */
-export function sinks<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
-  const result: NodeId[] = [];
-  for (const nodeId of graph.nodeIds) {
-    if (graph.outDegree(nodeId) === 0) result.push(nodeId);
-  }
-  return result;
-}
-
-/** 入度与出度均为 0 的孤立节点。 */
-export function isolated<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
-  const result: NodeId[] = [];
-  for (const nodeId of graph.nodeIds) {
-    if (graph.inDegree(nodeId) === 0 && graph.outDegree(nodeId) === 0) result.push(nodeId);
+    result.set(nodeId, {
+      inDegree: count(graph.incomingEdges(nodeId)),
+      outDegree: count(graph.outgoingEdges(nodeId)),
+    });
   }
   return result;
 }
 
 /**
+ * 入度为 0 的源节点。
+ *
+ * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @param graph 图实例
+ */
+export function sources<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+  return pick(graph, (id) => graph.inDegree(id) === 0);
+}
+
+/**
+ * 出度为 0 的汇节点。
+ *
+ * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @param graph 图实例
+ */
+export function sinks<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+  return pick(graph, (id) => graph.outDegree(id) === 0);
+}
+
+/**
+ * 入度与出度均为 0 的孤立节点。
+ *
+ * @template G 同时满足 {@link GraphBase} 与 {@link IntoDegree} 的图类型
+ * @param graph 图实例
+ */
+export function isolated<G extends GraphBase & IntoDegree>(graph: G): NodeId[] {
+  return pick(graph, (id) => graph.inDegree(id) === 0 && graph.outDegree(id) === 0);
+}
+
+/**
  * 反向邻接信息。
  *
+ * @template N 节点权重类型
+ * @template E 边权重类型
+ * @template G 满足 {@link GraphRef} 的图类型
+ * @param graph 图实例
  * @returns 节点 ID → `{ predecessors, successors }`
  */
 export function reverse<N, E, G extends GraphRef<N, E>>(
@@ -356,6 +397,12 @@ export function reverse<N, E, G extends GraphRef<N, E>>(
 
 /**
  * `source` 是否能到达 `target`。
+ *
+ * @template G 实现 {@link IntoNeighbors} 的图类型
+ * @param graph 图实例
+ * @param source 起点节点 ID
+ * @param target 终点节点 ID
+ * @returns 是否可达
  */
 export function reachable<G extends IntoNeighbors>(
   graph: G,
@@ -383,6 +430,11 @@ export function reachable<G extends IntoNeighbors>(
 
 /**
  * 将边映射为 {@link WeightedEdge}，缺省时使用 `defaultWeight`。
+ *
+ * @template E 边的原始权重类型
+ * @template W 默认权重类型
+ * @param edge 原始边
+ * @param defaultWeight `edge.weight` 为 `undefined` 时使用的默认值
  */
 export function weighted<E, W>(edge: Edge<E>, defaultWeight: W): WeightedEdge<E | W> {
   return {
@@ -391,4 +443,43 @@ export function weighted<E, W>(edge: Edge<E>, defaultWeight: W): WeightedEdge<E 
     target: edge.targetId,
     weight: edge.weight ?? defaultWeight,
   };
+}
+
+/**
+ * 计算可迭代序列长度。
+ *
+ * @internal
+ */
+function count(iter: Iterable<unknown>): number {
+  let n = 0;
+  for (const _ of iter) n++;
+  return n;
+}
+
+/**
+ * 由拓扑序构建 `nodeId → index` 查表，用于按拓扑顺序对节点进行排序。
+ *
+ * @internal
+ */
+function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
+  const order = toposort(graph, (cycle) => cycle);
+  const map = new Map<NodeId, number>();
+  for (let i = 0; i < order.length; i++) map.set(order[i]!, i);
+  return map;
+}
+
+/**
+ * 按谓词筛选节点 ID 列表；公用 {@link sources}、{@link sinks}、{@link isolated} 的扫描骨架。
+ *
+ * @internal
+ */
+function pick<G extends GraphBase>(
+  graph: G,
+  predicate: (nodeId: NodeId) => boolean,
+): NodeId[] {
+  const result: NodeId[] = [];
+  for (const nodeId of graph.nodeIds) {
+    if (predicate(nodeId)) result.push(nodeId);
+  }
+  return result;
 }

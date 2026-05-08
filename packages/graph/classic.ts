@@ -1,6 +1,7 @@
 /**
  * 基础数据元模型 (classic)
  *
+ * @remarks
  * 这里集中所有运行时类：{@link Socket}、{@link Port}、{@link Input}、{@link Output}、
  * {@link Node}、{@link Endpoint}、{@link Edge}、{@link Graph}。
  * 类型与算法接口在 {@link ./types}，算法在 {@link ./algorithms}。
@@ -25,6 +26,7 @@ import type {
 /**
  * Socket 描述端口承载的数据类型，用于校验边连接的兼容性。
  *
+ * @remarks
  * 内置类型可通过静态字段获取：{@link Socket.number}、{@link Socket.string}、{@link Socket.any} 等。
  *
  * @template T Socket 的字面量名称
@@ -49,6 +51,9 @@ export class Socket<T extends string = string> {
    * 工厂方法：创建一个 Socket。
    *
    * @template T Socket 名称的字面量类型
+   * @param name Socket 名称
+   * @param compatible 可与之互连的兼容 Socket 列表
+   * @returns 新建的 Socket 实例
    */
   public static from<T extends string>(name: T, compatible?: ReadonlyArray<Socket>): Socket<T> {
     return new Socket(name, compatible);
@@ -57,10 +62,14 @@ export class Socket<T extends string = string> {
   /**
    * 判断当前 Socket 是否与另一个 Socket 兼容。
    *
+   * @remarks
    * 兼容规则：
    * 1. 任一方为 `'*'` (any) 时兼容；
    * 2. 名称相同时兼容；
    * 3. 名称在 {@link compatible} 列表中时兼容。
+   *
+   * @param other 要比较的 Socket
+   * @returns 是否兼容
    */
   public matches(other: Socket): boolean {
     if (this.name === '*' || other.name === '*') return true;
@@ -114,6 +123,10 @@ export class Input<S extends Socket = Socket> extends Port<S> {
   /** 已连接到本端口的边 ID 列表。 */
   public readonly edges: EdgeId[] = [];
 
+  /**
+   * @param socket 端口承载的 Socket
+   * @param id 端口唯一标识
+   */
   public constructor(socket: S, id: PortId) {
     super(socket, id);
   }
@@ -154,6 +167,10 @@ export class Input<S extends Socket = Socket> extends Port<S> {
 export class Output<S extends Socket = Socket> extends Port<S> {
   public readonly direction: 'output' = 'output';
 
+  /**
+   * @param socket 端口承载的 Socket
+   * @param id 端口唯一标识
+   */
   public constructor(socket: S, id: PortId) {
     super(socket, id);
   }
@@ -242,6 +259,7 @@ export class Node<
   /**
    * 移除指定输入端口。
    *
+   * @param name 端口名
    * @returns 是否成功移除（端口原本存在则返回 `true`）
    */
   public removeInput(name: string & keyof I): boolean {
@@ -253,6 +271,7 @@ export class Node<
   /**
    * 移除指定输出端口。
    *
+   * @param name 端口名
    * @returns 是否成功移除（端口原本存在则返回 `true`）
    */
   public removeOutput(name: string & keyof O): boolean {
@@ -261,12 +280,20 @@ export class Node<
     return true;
   }
 
-  /** 是否已声明指定名称的输入端口。 */
+  /**
+   * 是否已声明指定名称的输入端口。
+   *
+   * @param name 端口名
+   */
   public hasInput(name: string & keyof I): boolean {
     return name in this.inputs;
   }
 
-  /** 是否已声明指定名称的输出端口。 */
+  /**
+   * 是否已声明指定名称的输出端口。
+   *
+   * @param name 端口名
+   */
   public hasOutput(name: string & keyof O): boolean {
     return name in this.outputs;
   }
@@ -275,6 +302,7 @@ export class Node<
    * 按名称获取输入端口。
    *
    * @template K 端口名
+   * @param name 端口名
    * @returns 端口实例；未声明时返回 `undefined`
    */
   public input<K extends string & keyof I>(name: K): Input<I[K]> | undefined {
@@ -285,6 +313,7 @@ export class Node<
    * 按名称获取输出端口。
    *
    * @template K 端口名
+   * @param name 端口名
    * @returns 端口实例；未声明时返回 `undefined`
    */
   public output<K extends string & keyof O>(name: K): Output<O[K]> | undefined {
@@ -353,7 +382,11 @@ export class Edge<W = unknown> {
     return this.target.nodeId;
   }
 
-  /** 本条边是否与给定节点相关（作为起点或终点）。 */
+  /**
+   * 本条边是否与给定节点相关（作为起点或终点）。
+   *
+   * @param nodeId 节点 ID
+   */
   public connects(nodeId: NodeId): boolean {
     return this.source.nodeId === nodeId || this.target.nodeId === nodeId;
   }
@@ -362,6 +395,7 @@ export class Edge<W = unknown> {
    * 给定方向，返回另一端的节点 ID。
    *
    * @param direction `'input'` 视角（从终点看）返回起点；`'output'` 视角（从起点看）返回终点
+   * @returns 对侧节点的 ID
    */
   public opposite(direction: Direction): NodeId {
     return direction === 'input' ? this.source.nodeId : this.target.nodeId;
@@ -371,6 +405,7 @@ export class Edge<W = unknown> {
 /**
  * 有向图，承载节点 (`Node`) 与边 (`Edge`)，并提供拓扑排序、邻接查询等基础算法。
  *
+ * @remarks
  * 设计要点：
  * - 节点通过 {@link addNode} 加入；不同节点可拥有不同的输入/输出 Sockets 形态。
  * - 边通过 {@link addEdge} 加入，会校验端口存在性与 Socket 兼容性。
@@ -386,17 +421,19 @@ export class Graph<N = unknown, E = unknown> {
   /** 边存储：EdgeId → Edge。 */
   public readonly edges = new Map<EdgeId, Edge<E>>();
 
-  /** 拓扑缓存是否过期。 */
+  /** 拓扑/邻接缓存是否过期。 */
   private _dirty = true;
 
   /** 拓扑排序结果缓存；`null` 表示尚未计算或已失效。 */
   private _topology: NodeId[] | null = null;
 
-  /** 环路信息缓存 */
+  /** 环路信息缓存；`null` 表示尚未计算或已失效。 */
   private _cycleInfo: CycleInfo | null = null;
 
-  /** 邻接缓存；`_adjDirty` 为 true 时需要重建。 */
+  /** 邻接缓存；`_adjDirty` 为 `true` 时需要重建。 */
   private _adjCache: Adjacency | null = null;
+
+  /** 邻接缓存失效标志。 */
   private _adjDirty = true;
 
   /**
@@ -409,8 +446,9 @@ export class Graph<N = unknown, E = unknown> {
   // ============================================================
 
   /**
-   * 确保邻接缓存有效。
+   * 取邻接缓存，必要时重建。
    *
+   * @returns 当前有效的邻接快照
    * @internal
    */
   private _adj(): Adjacency {
@@ -422,45 +460,42 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 构建邻接缓存。
+   * 一次性扫描所有节点与边，构建完整邻接缓存。
    *
+   * @returns 新的 {@link Adjacency} 快照
    * @internal
    */
   private _buildAdj(): Adjacency {
-    const cache: Adjacency = {
-      outgoingEdges: new Map(),
-      incomingEdges: new Map(),
-      successors: new Map(),
-      predecessors: new Map(),
-      inDegree: new Map(),
-      outDegree: new Map(),
-    };
+    const outgoingEdges = new Map<NodeId, EdgeId[]>();
+    const incomingEdges = new Map<NodeId, EdgeId[]>();
+    const successors = new Map<NodeId, NodeId[]>();
+    const predecessors = new Map<NodeId, NodeId[]>();
+    const inDegree = new Map<NodeId, number>();
+    const outDegree = new Map<NodeId, number>();
 
-    // 初始化
     for (const nodeId of this.nodes.keys()) {
-      cache.outgoingEdges.set(nodeId, []);
-      cache.incomingEdges.set(nodeId, []);
-      cache.successors.set(nodeId, []);
-      cache.predecessors.set(nodeId, []);
-      cache.inDegree.set(nodeId, 0);
-      cache.outDegree.set(nodeId, 0);
+      outgoingEdges.set(nodeId, []);
+      incomingEdges.set(nodeId, []);
+      successors.set(nodeId, []);
+      predecessors.set(nodeId, []);
+      inDegree.set(nodeId, 0);
+      outDegree.set(nodeId, 0);
     }
 
-    // 填充
     for (const edge of this.edges.values()) {
-      const sourceId = edge.sourceId;
-      const targetId = edge.targetId;
+      const { sourceId, targetId } = edge;
 
-      cache.outgoingEdges.get(sourceId)!.push(edge.id);
-      cache.successors.get(sourceId)!.push(targetId);
-      cache.outDegree.set(sourceId, (cache.outDegree.get(sourceId) ?? 0) + 1);
+      // 节点初始化时已写入空数组，因此可省去 `??` 兜底。
+      outgoingEdges.get(sourceId)!.push(edge.id);
+      successors.get(sourceId)!.push(targetId);
+      outDegree.set(sourceId, outDegree.get(sourceId)! + 1);
 
-      cache.incomingEdges.get(targetId)!.push(edge.id);
-      cache.predecessors.get(targetId)!.push(sourceId);
-      cache.inDegree.set(targetId, (cache.inDegree.get(targetId) ?? 0) + 1);
+      incomingEdges.get(targetId)!.push(edge.id);
+      predecessors.get(targetId)!.push(sourceId);
+      inDegree.set(targetId, inDegree.get(targetId)! + 1);
     }
 
-    return cache;
+    return { outgoingEdges, incomingEdges, successors, predecessors, inDegree, outDegree };
   }
 
   /**
@@ -478,6 +513,8 @@ export class Graph<N = unknown, E = unknown> {
    *
    * @template I 节点的输入 Sockets 形态
    * @template O 节点的输出 Sockets 形态
+   * @param node 待加入的节点
+   * @returns 当前图实例（链式调用）
    * @throws {Error} 当同 ID 节点已存在时抛出
    */
   public addNode<I extends Sockets, O extends Sockets>(node: Node<I, O, N>): this {
@@ -494,6 +531,7 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 移除节点，并连带删除所有与该节点相关的边。
    *
+   * @param nodeId 节点 ID
    * @returns 被移除的节点；不存在时返回 `undefined`
    */
   public removeNode(nodeId: NodeId): StoredNode<N> | undefined {
@@ -516,12 +554,21 @@ export class Graph<N = unknown, E = unknown> {
     return node;
   }
 
-  /** 按 ID 获取节点；不存在返回 `undefined`。 */
+  /**
+   * 按 ID 获取节点。
+   *
+   * @param nodeId 节点 ID
+   * @returns 节点实例；不存在时返回 `undefined`
+   */
   public getNode(nodeId: NodeId): StoredNode<N> | undefined {
     return this.nodes.get(nodeId);
   }
 
-  /** 是否存在指定 ID 的节点。 */
+  /**
+   * 是否存在指定 ID 的节点。
+   *
+   * @param nodeId 节点 ID
+   */
   public hasNode(nodeId: NodeId): boolean {
     return this.nodes.has(nodeId);
   }
@@ -531,12 +578,21 @@ export class Graph<N = unknown, E = unknown> {
     return this.nodes.values();
   }
 
-  /** 按 ID 获取边；不存在返回 `undefined`。 */
+  /**
+   * 按 ID 获取边。
+   *
+   * @param edgeId 边 ID
+   * @returns 边实例；不存在时返回 `undefined`
+   */
   public getEdge(edgeId: EdgeId): Edge<E> | undefined {
     return this.edges.get(edgeId);
   }
 
-  /** 是否存在指定 ID 的边。 */
+  /**
+   * 是否存在指定 ID 的边。
+   *
+   * @param edgeId 边 ID
+   */
   public hasEdge(edgeId: EdgeId): boolean {
     return this.edges.has(edgeId);
   }
@@ -549,6 +605,8 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 加入一条边，并将其登记到目标输入端口的连接列表中。
    *
+   * @param edge 待加入的边
+   * @returns 当前图实例（链式调用）
    * @throws {Error} 当出现以下任一情况：
    *  - 同 ID 的边已存在
    *  - 起点 / 终点节点不存在
@@ -583,6 +641,7 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 移除一条边，并将其从目标输入端口的连接列表中解除。
    *
+   * @param edgeId 边 ID
    * @returns 被移除的边；不存在时返回 `undefined`
    */
   public removeEdge(edgeId: EdgeId): Edge<E> | undefined {
@@ -595,49 +654,59 @@ export class Graph<N = unknown, E = unknown> {
     return edge;
   }
 
-  /** 流入指定节点的所有边。 */
+  /**
+   * 流入指定节点的所有边。
+   *
+   * @param nodeId 节点 ID
+   */
   public incomingEdges(nodeId: NodeId): Edge<E>[] {
     return this._collectEdges(this._adj().incomingEdges.get(nodeId));
   }
 
-  /** 流出指定节点的所有边。 */
+  /**
+   * 流出指定节点的所有边。
+   *
+   * @param nodeId 节点 ID
+   */
   public outgoingEdges(nodeId: NodeId): Edge<E>[] {
     return this._collectEdges(this._adj().outgoingEdges.get(nodeId));
   }
 
-  /** 与指定节点关联的所有边（流入 + 流出，自环只出现一次）。 */
+  /**
+   * 与指定节点关联的所有边（流入 + 流出，自环只出现一次）。
+   *
+   * @param nodeId 节点 ID
+   */
   public incidentEdges(nodeId: NodeId): Edge<E>[] {
     const adj = this._adj();
     const outgoing = adj.outgoingEdges.get(nodeId);
     const incoming = adj.incomingEdges.get(nodeId);
-    if (!outgoing && !incoming) return [];
+    if (!outgoing?.length && !incoming?.length) return [];
+
     const seen = new Set<EdgeId>();
     const result: Edge<E>[] = [];
-    if (outgoing) {
-      for (const id of outgoing) {
-        const edge = this.edges.get(id);
-        if (edge && !seen.has(id)) {
-          seen.add(id);
-          result.push(edge);
-        }
-      }
-    }
-    if (incoming) {
-      for (const id of incoming) {
-        const edge = this.edges.get(id);
-        if (edge && !seen.has(id)) {
-          seen.add(id);
-          result.push(edge);
-        }
-      }
-    }
+    const push = (id: EdgeId): void => {
+      if (seen.has(id)) return;
+      const edge = this.edges.get(id);
+      if (!edge) return;
+      seen.add(id);
+      result.push(edge);
+    };
+
+    if (outgoing) for (const id of outgoing) push(id);
+    if (incoming) for (const id of incoming) push(id);
     return result;
   }
 
-  /** 从 `source` 直接指向 `target` 的所有有向边。 */
+  /**
+   * 从 `source` 直接指向 `target` 的所有有向边。
+   *
+   * @param source 起点节点 ID
+   * @param target 终点节点 ID
+   */
   public edgesBetween(source: NodeId, target: NodeId): Edge<E>[] {
     const ids = this._adj().outgoingEdges.get(source);
-    if (!ids) return [];
+    if (!ids?.length) return [];
     const result: Edge<E>[] = [];
     for (const id of ids) {
       const edge = this.edges.get(id);
@@ -646,7 +715,12 @@ export class Graph<N = unknown, E = unknown> {
     return result;
   }
 
-  /** 连接 `left` 与 `right` 的所有边（不区分方向）。 */
+  /**
+   * 连接 `left` 与 `right` 的所有边（不区分方向）。
+   *
+   * @param left 一端的节点 ID
+   * @param right 另一端的节点 ID
+   */
   public edgesConnecting(left: NodeId, right: NodeId): Edge<E>[] {
     if (left === right) return this.edgesBetween(left, right);
     const result = this.edgesBetween(left, right);
@@ -658,10 +732,11 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 将一组边 ID 解析为对应的 Edge 对象，跳过已不存在的条目。
    *
+   * @param ids 要解析的边 ID 列表
    * @internal
    */
   private _collectEdges(ids: ReadonlyArray<EdgeId> | undefined): Edge<E>[] {
-    if (!ids || ids.length === 0) return [];
+    if (!ids?.length) return [];
     const result: Edge<E>[] = [];
     for (const id of ids) {
       const edge = this.edges.get(id);
@@ -670,67 +745,106 @@ export class Graph<N = unknown, E = unknown> {
     return result;
   }
 
-  /** 指定节点的前驱节点（直接指向它的节点）。 */
+  /**
+   * 指定节点的前驱节点（直接指向它的节点）。
+   *
+   * @param nodeId 节点 ID
+   */
   public predecessors(nodeId: NodeId): NodeId[] {
     return this._adj().predecessors.get(nodeId) ?? [];
   }
 
-  /** 指定节点的后继节点（被它直接指向的节点）。 */
+  /**
+   * 指定节点的后继节点（被它直接指向的节点）。
+   *
+   * @param nodeId 节点 ID
+   */
   public successors(nodeId: NodeId): NodeId[] {
     return this._adj().successors.get(nodeId) ?? [];
   }
 
-  /** 指定节点的所有邻居（前驱 + 后继）。 */
+  /**
+   * 指定节点的所有邻居（前驱 + 后继）。
+   *
+   * @param nodeId 节点 ID
+   */
   public adjacencies(nodeId: NodeId): NodeId[] {
-    return [...this.predecessors(nodeId), ...this.successors(nodeId)];
+    const adj = this._adj();
+    const predecessors = adj.predecessors.get(nodeId);
+    const successors = adj.successors.get(nodeId);
+    if (!predecessors?.length && !successors?.length) return [];
+    return [...(predecessors ?? []), ...(successors ?? [])];
   }
 
-  /** 入度：流入指定节点的边数。 */
+  /**
+   * 入度：流入指定节点的边数。
+   *
+   * @param nodeId 节点 ID
+   */
   public inDegree(nodeId: NodeId): number {
     return this._adj().inDegree.get(nodeId) ?? 0;
   }
 
-  /** 出度：流出指定节点的边数。 */
+  /**
+   * 出度：流出指定节点的边数。
+   *
+   * @param nodeId 节点 ID
+   */
   public outDegree(nodeId: NodeId): number {
     return this._adj().outDegree.get(nodeId) ?? 0;
   }
 
-  /** 总度数：入度 + 出度。 */
+  /**
+   * 总度数：入度 + 出度。
+   *
+   * @param nodeId 节点 ID
+   */
   public degree(nodeId: NodeId): number {
-    return this.inDegree(nodeId) + this.outDegree(nodeId);
+    const adj = this._adj();
+    return (adj.inDegree.get(nodeId) ?? 0) + (adj.outDegree.get(nodeId) ?? 0);
   }
 
   /** 源节点：入度为 0 的节点。 */
   public sources(): StoredNode<N>[] {
-    const result: StoredNode<N>[] = [];
-    for (const node of this.nodes.values()) {
-      if (this.inDegree(node.id) === 0) result.push(node);
-    }
-    return result;
+    return this._filterByDegree((inDeg) => inDeg === 0);
   }
 
   /** 汇节点：出度为 0 的节点。 */
   public sinks(): StoredNode<N>[] {
-    const result: StoredNode<N>[] = [];
-    for (const node of this.nodes.values()) {
-      if (this.outDegree(node.id) === 0) result.push(node);
-    }
-    return result;
+    return this._filterByDegree((_inDeg, outDeg) => outDeg === 0);
   }
 
   /** 孤立节点：入度与出度均为 0 的节点。 */
   public isolated(): StoredNode<N>[] {
+    return this._filterByDegree((inDeg, outDeg) => inDeg === 0 && outDeg === 0);
+  }
+
+  /**
+   * 按节点的入/出度筛选节点；公用 {@link sources}、{@link sinks}、{@link isolated} 的扫描骨架。
+   *
+   * @param check 判定函数，接收节点的入度和出度
+   * @internal
+   */
+  private _filterByDegree(check: (inDeg: number, outDeg: number) => boolean): StoredNode<N>[] {
+    const adj = this._adj();
     const result: StoredNode<N>[] = [];
     for (const node of this.nodes.values()) {
-      if (this.degree(node.id) === 0) result.push(node);
+      const inDeg = adj.inDegree.get(node.id) ?? 0;
+      const outDeg = adj.outDegree.get(node.id) ?? 0;
+      if (check(inDeg, outDeg)) result.push(node);
     }
     return result;
   }
 
-  /** 是否存在从 `source` 直接到 `target` 的边。 */
+  /**
+   * 是否存在从 `source` 直接到 `target` 的边。
+   *
+   * @param source 起点节点 ID
+   * @param target 终点节点 ID
+   */
   public adjacent(source: NodeId, target: NodeId): boolean {
     const ids = this._adj().outgoingEdges.get(source);
-    if (!ids) return false;
+    if (!ids?.length) return false;
     for (const id of ids) {
       const edge = this.edges.get(id);
       if (edge && edge.targetId === target) return true;
@@ -751,25 +865,19 @@ export class Graph<N = unknown, E = unknown> {
     this._invalidateAdj();
   }
 
-  /** 序列化为可用 `JSON.stringify` 输出的纯对象快照。 */
+  /**
+   * 序列化为可用 `JSON.stringify` 输出的纯对象快照。
+   *
+   * @returns 描述当前图的纯对象
+   */
   public toJson(): object {
     return {
       id: this.id,
       nodes: Array.from(this.nodes.values()).map(node => ({
         id: node.id,
         weight: node.weight,
-        inputs: Object.fromEntries(
-          Object.entries(node.inputs).map(([name, port]) => [
-            name,
-            port ? { id: port.id, socket: port.socket.name } : null,
-          ]),
-        ),
-        outputs: Object.fromEntries(
-          Object.entries(node.outputs).map(([name, port]) => [
-            name,
-            port ? { id: port.id, socket: port.socket.name } : null,
-          ]),
-        ),
+        inputs: portDictToJson(node.inputs),
+        outputs: portDictToJson(node.outputs),
       })),
       edges: Array.from(this.edges.values()).map(edge => ({
         id: edge.id,
@@ -784,59 +892,59 @@ export class Graph<N = unknown, E = unknown> {
   // Visitor Trait 实现 - GraphRef 接口
   // ============================================================
 
-  /** 实现 GraphBase.nodeIds */
+  /** {@inheritdoc GraphBase.nodeIds} */
   public readonly nodeIds: Iterable<NodeId> = {
     [Symbol.iterator]: () => this.nodes.keys(),
   };
 
-  /** 实现 GraphBase.edgeIds */
+  /** {@inheritdoc GraphBase.edgeIds} */
   public readonly edgeIds: Iterable<EdgeId> = {
     [Symbol.iterator]: () => this.edges.keys(),
   };
 
-  /** 实现 GraphBase.nodeCount */
+  /** {@inheritdoc GraphBase.nodeCount} */
   public nodeCount(): number {
     return this.nodes.size;
   }
 
-  /** 实现 GraphBase.edgeCount */
+  /** {@inheritdoc GraphBase.edgeCount} */
   public edgeCount(): number {
     return this.edges.size;
   }
 
-  /** 实现 IntoNeighbors.neighbors */
+  /** {@inheritdoc IntoNeighbors.neighbors} */
   public neighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.adjacencies(nodeId);
   }
 
-  /** 实现 IntoNeighbors.incomingNeighbors */
+  /** {@inheritdoc IntoNeighbors.incomingNeighbors} */
   public incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.predecessors(nodeId);
   }
 
-  /** 实现 IntoNeighbors.outgoingNeighbors */
+  /** {@inheritdoc IntoNeighbors.outgoingNeighbors} */
   public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     return this.successors(nodeId);
   }
 
-  /** 实现 IntoEdges.edges */
+  /** {@inheritdoc IntoEdges.edges} */
   public edgesOf(nodeId: NodeId): Iterable<Edge<E>> {
     return this.incidentEdges(nodeId);
   }
 
-  /** 实现 IntoEdges.incomingEdges */
+  /** {@inheritdoc IntoEdges.incomingEdges} */
   public incomingEdgesOf(nodeId: NodeId): Iterable<Edge<E>> {
     return this.incomingEdges(nodeId);
   }
 
-  /** 实现 IntoEdges.outgoingEdges */
+  /** {@inheritdoc IntoEdges.outgoingEdges} */
   public outgoingEdgesOf(nodeId: NodeId): Iterable<Edge<E>> {
     return this.outgoingEdges(nodeId);
   }
 
-  /** 实现 NodeIndexable.nodeIdAt */
+  /** {@inheritdoc NodeIndexable.nodeIdAt} */
   public nodeIdAt(index: number): NodeId | undefined {
-    if (index < 0) return undefined;
+    if (index < 0 || index >= this.nodes.size) return undefined;
     let i = 0;
     for (const nodeId of this.nodes.keys()) {
       if (i === index) return nodeId;
@@ -845,8 +953,9 @@ export class Graph<N = unknown, E = unknown> {
     return undefined;
   }
 
-  /** 实现 NodeIndexable.indexOf */
+  /** {@inheritdoc NodeIndexable.indexOf} */
   public indexOf(nodeId: NodeId): number {
+    if (!this.nodes.has(nodeId)) return -1;
     let i = 0;
     for (const id of this.nodes.keys()) {
       if (id === nodeId) return i;
@@ -855,12 +964,14 @@ export class Graph<N = unknown, E = unknown> {
     return -1;
   }
 
-  /** 实现 Visitable.visitMap */
+  /** {@inheritdoc Visitable.visitMap} */
   public visitMap(): Map<NodeId, boolean> {
-    return new Map(Array.from(this.nodes.keys()).map(id => [id, false] as [NodeId, boolean]));
+    const map = new Map<NodeId, boolean>();
+    for (const id of this.nodes.keys()) map.set(id, false);
+    return map;
   }
 
-  /** 实现 Visitable.resetMap */
+  /** {@inheritdoc Visitable.resetMap} */
   public resetMap(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
   }
@@ -868,7 +979,10 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 返回拓扑排序后的节点 ID 序列；结果会被缓存直到下次结构变更。
    *
+   * @remarks
    * 当图含环时，环上的节点会按原始顺序追加在末尾。
+   *
+   * @returns 拓扑顺序的节点 ID 序列
    */
   public topology(): NodeId[] {
     return this.topologyWithCycle().order;
@@ -877,7 +991,9 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 返回拓扑排序结果及环路信息。
    *
-   * 结果会被缓存直到下次结构变更。
+   * @remarks 结果会被缓存直到下次结构变更。
+   *
+   * @returns 包含排序结果与环路信息
    */
   public topologyWithCycle(): TopoSortResult {
     if (!this._dirty && this._topology !== null && this._cycleInfo !== null) {
@@ -894,9 +1010,12 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * Kahn 算法实现的拓扑排序，同时返回环路信息。
    *
-   * 复用邻接缓存的 `successors` 与 `inDegree`，避免重新遍历所有边；
-   * 处理队列时使用游标而非 `Array#shift`，将 O(N²) 降为 O(N + E)。
+   * @remarks
+   * 与 `algorithms.ts` 的 `toposortFull` 共享相同算法，但本版本直接复用 {@link Adjacency}
+   * 缓存的 `successors` 与 `inDegree`，省去重新遍历边的开销；处理队列时使用游标而非
+   * `Array#shift`，将 O(N²) 降为 O(N + E)。
    *
+   * @returns 排序结果与环路信息
    * @internal
    */
   private _sort(): TopoSortResult {
@@ -944,8 +1063,9 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 校验边的端口是否在所属节点上注册、方向是否正确、Socket 是否兼容；不通过时抛出带上下文的错误。
    *
-   * 直接使用 {@link Endpoint.port} 引用，省去按 portId 在端口字典里再次查找。
+   * @remarks 直接使用 {@link Endpoint.port} 引用，省去按 portId 在端口字典里再次查找。
    *
+   * @param edge 要校验的边
    * @throws {Error} 当端口未注册、方向错误或 Socket 不兼容
    * @internal
    */
@@ -985,6 +1105,7 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 在目标输入端口上 `attach`/`detach` 一条边。
    *
+   * @param edge 边
    * @param attach `true` 时关联，`false` 时解除
    * @internal
    */
@@ -999,6 +1120,8 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 用引用相等检测端口是否在节点的端口字典中注册。
    *
+   * @param ports 节点的端口字典
+   * @param target 要检查的端口
    * @internal
    */
   private _owns(ports: PortDict, target: Port): boolean {
@@ -1018,4 +1141,19 @@ export class Graph<N = unknown, E = unknown> {
     this._topology = null;
     this._cycleInfo = null;
   }
+}
+
+/**
+ * 将端口字典序列化为 `{ portName: { id, socket } | null }`。
+ *
+ * @internal
+ */
+function portDictToJson(
+  ports: PortDict,
+): Record<string, { id: PortId; socket: string } | null> {
+  const result: Record<string, { id: PortId; socket: string } | null> = {};
+  for (const [name, port] of Object.entries(ports)) {
+    result[name] = port ? { id: port.id, socket: port.socket.name } : null;
+  }
+  return result;
 }

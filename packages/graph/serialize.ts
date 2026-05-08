@@ -1,6 +1,7 @@
 /**
  * 序列化压缩模块
  *
+ * @remarks
  * 参考 LiteGraph.js 的数组压缩格式，显著减少序列化后的字节大小。
  *
  * 压缩格式：
@@ -14,39 +15,39 @@ import type { Input, Output } from './classic';
 
 /** 节点压缩元组。 */
 export type CompactNode = [
-  /** 节点 ID */
+  /** 节点 ID。 */
   NodeId,
-  /** 节点权重 */
+  /** 节点权重。 */
   unknown,
-  /** 输入端口数组（无端口时为 null） */
+  /** 输入端口数组（无端口时为 `null`）。 */
   ReadonlyArray<[string, PortId, string]> | null,
-  /** 输出端口数组（无端口时为 null） */
+  /** 输出端口数组（无端口时为 `null`）。 */
   ReadonlyArray<[string, PortId, string]> | null,
 ];
 
 /** 边压缩元组。 */
 export type CompactEdge = [
-  /** 边 ID */
+  /** 边 ID。 */
   EdgeId,
-  /** 源节点 ID */
+  /** 源节点 ID。 */
   NodeId,
-  /** 源端口 ID */
+  /** 源端口 ID。 */
   PortId,
-  /** 目标节点 ID */
+  /** 目标节点 ID。 */
   NodeId,
-  /** 目标端口 ID */
+  /** 目标端口 ID。 */
   PortId,
-  /** 边权重 */
+  /** 边权重。 */
   unknown,
 ];
 
 /** 整图压缩格式。 */
 export interface Compact {
-  /** 图 ID */
+  /** 图 ID。 */
   g: GraphId;
-  /** 节点数组 */
+  /** 节点数组。 */
   n: CompactNode[];
-  /** 边数组 */
+  /** 边数组。 */
   e: CompactEdge[];
 }
 
@@ -64,11 +65,28 @@ const BUILTINS: ReadonlyMap<string, Socket> = new Map<string, Socket>([
   ['*', Socket.any],
 ]);
 
+/** TextEncoder 接口（避免在仅 ES2022 lib 下引用全局类型）。 */
+interface TextEncoderLike {
+  encode(input: string): { length: number };
+}
+
+/** 复用的 TextEncoder 实例；环境不支持时为 `null`，回退到手算。 */
+const TEXT_ENCODER: TextEncoderLike | null = (() => {
+  const ctor = (globalThis as { TextEncoder?: new () => TextEncoderLike }).TextEncoder;
+  return ctor ? new ctor() : null;
+})();
+
 /**
  * 将图序列化为压缩格式（可用于 `JSON.stringify`）。
  *
+ * @remarks
  * 相比 {@link Graph.toJson}，压缩格式可以减少约 60-70% 的字节数，
  * 适用于大规模图的持久化和网络传输。
+ *
+ * @template N 节点权重类型
+ * @template E 边权重类型
+ * @param graph 待序列化的图
+ * @returns 紧凑表示
  */
 export function pack<N, E>(graph: Graph<N, E>): Compact {
   const nodes: CompactNode[] = [];
@@ -81,9 +99,14 @@ export function pack<N, E>(graph: Graph<N, E>): Compact {
 /**
  * 从压缩格式恢复完整图。
  *
+ * @template N 节点权重类型
+ * @template E 边权重类型
  * @param data 压缩格式数据
+ * @param options 反序列化选项
  * @param options.target 现有图实例 - 提供时会先 `clear()` 再加载
  * @param options.sockets 自定义 Socket 查找；同名时覆盖内置 Socket
+ * @returns 反序列化得到的图
+ * @throws {Error} 当边引用了不存在的节点或端口
  */
 export function unpack<N, E>(
   data: Compact,
@@ -134,6 +157,9 @@ export function unpack<N, E>(
 /**
  * 估算压缩率。
  *
+ * @template N 节点权重类型
+ * @template E 边权重类型
+ * @param graph 待评估的图
  * @returns 原始字节、压缩字节及压缩比 (`originalBytes / compressedBytes`)
  */
 export function compressionRatio<N, E>(graph: Graph<N, E>): {
@@ -158,27 +184,36 @@ export function compressionRatio<N, E>(graph: Graph<N, E>): {
 // 内部工具
 // ============================================================
 
+/**
+ * 把单个节点压缩成 {@link CompactNode} 元组。
+ *
+ * @internal
+ */
 function packNode(node: StoredNode<unknown>): CompactNode {
-  const inputs: [string, PortId, string][] = [];
-  for (const [name, port] of Object.entries(node.inputs)) {
-    if (!port) continue;
-    inputs.push([name, port.id, port.socket.name]);
-  }
-
-  const outputs: [string, PortId, string][] = [];
-  for (const [name, port] of Object.entries(node.outputs)) {
-    if (!port) continue;
-    outputs.push([name, port.id, port.socket.name]);
-  }
-
-  return [
-    node.id,
-    node.weight,
-    inputs.length > 0 ? inputs : null,
-    outputs.length > 0 ? outputs : null,
-  ];
+  return [node.id, node.weight, packPorts(node.inputs), packPorts(node.outputs)];
 }
 
+/**
+ * 把端口字典压缩成元组数组；空字典返回 `null`，与 {@link CompactNode} 的存储约定一致。
+ *
+ * @internal
+ */
+function packPorts(
+  ports: { readonly [k: string]: { id: PortId; socket: Socket } | undefined },
+): ReadonlyArray<[string, PortId, string]> | null {
+  const result: [string, PortId, string][] = [];
+  for (const [name, port] of Object.entries(ports)) {
+    if (!port) continue;
+    result.push([name, port.id, port.socket.name]);
+  }
+  return result.length > 0 ? result : null;
+}
+
+/**
+ * 把单条边压缩成 {@link CompactEdge} 元组。
+ *
+ * @internal
+ */
 function packEdge(edge: Edge<unknown>): CompactEdge {
   return [
     edge.id,
@@ -190,27 +225,49 @@ function packEdge(edge: Edge<unknown>): CompactEdge {
   ];
 }
 
+/**
+ * 还原 {@link CompactNode} 元组到 {@link Node} 实例。
+ *
+ * @param data 压缩节点元组
+ * @param lookup Socket 名 → Socket 实例的查找表
+ * @internal
+ */
 function unpackNode(
   data: CompactNode,
   lookup: ReadonlyMap<string, Socket>,
 ): StoredNode<unknown> {
   const [id, weight, inputs, outputs] = data;
   const node = new Node(id, weight) as StoredNode<unknown>;
-
-  if (inputs) {
-    for (const [name, portId, socketName] of inputs) {
-      node.addInput(name, lookup.get(socketName) ?? Socket.any, portId);
-    }
-  }
-  if (outputs) {
-    for (const [name, portId, socketName] of outputs) {
-      node.addOutput(name, lookup.get(socketName) ?? Socket.any, portId);
-    }
-  }
-
+  unpackPorts(inputs, lookup, (name, socket, portId) => {
+    node.addInput(name, socket, portId);
+  });
+  unpackPorts(outputs, lookup, (name, socket, portId) => {
+    node.addOutput(name, socket, portId);
+  });
   return node;
 }
 
+/**
+ * 还原压缩端口数组到节点；通过 `add` 回调避免重复书写输入/输出分支。
+ *
+ * @internal
+ */
+function unpackPorts(
+  ports: ReadonlyArray<[string, PortId, string]> | null,
+  lookup: ReadonlyMap<string, Socket>,
+  add: (name: string, socket: Socket, id: PortId) => void,
+): void {
+  if (!ports) return;
+  for (const [name, portId, socketName] of ports) {
+    add(name, lookup.get(socketName) ?? Socket.any, portId);
+  }
+}
+
+/**
+ * 把内置 Socket 表与用户自定义表合并；用户表同名 Socket 会覆盖内置版本。
+ *
+ * @internal
+ */
 function mergeLookup(custom?: SocketLookup): ReadonlyMap<string, Socket> {
   if (!custom) return BUILTINS;
   const merged = new Map<string, Socket>(BUILTINS);
@@ -224,6 +281,11 @@ function mergeLookup(custom?: SocketLookup): ReadonlyMap<string, Socket> {
   return merged;
 }
 
+/**
+ * 用引用相等在端口字典中按 ID 查找端口。
+ *
+ * @internal
+ */
 function portById<P extends { id: PortId }>(
   ports: { readonly [key: string]: P | undefined },
   portId: PortId,
@@ -235,8 +297,16 @@ function portById<P extends { id: PortId }>(
   return undefined;
 }
 
-/** 计算字符串的 UTF-8 字节长度（无 `TextEncoder` 依赖）。 */
+/**
+ * 计算字符串的 UTF-8 字节长度。
+ *
+ * @remarks 优先使用 {@link TextEncoder}（O(N) 且能正确处理代理对）；不可用时回退到手算。
+ *
+ * @internal
+ */
 function utf8ByteLength(s: string): number {
+  if (TEXT_ENCODER) return TEXT_ENCODER.encode(s).length;
+
   let bytes = 0;
   for (let i = 0; i < s.length; i++) {
     const code = s.charCodeAt(i);

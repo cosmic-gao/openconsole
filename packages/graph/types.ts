@@ -1,8 +1,9 @@
 /**
  * 类型声明的单一入口。
  *
+ * @remarks
  * 把所有公共类型（品牌 ID、Socket 字典、邻接缓存形状、算法接口等）集中在此处，
- * 实现细节（class、运行时常量）则保留在 {@link ./index} 与算法文件里。
+ * 实现细节（class、运行时常量）则保留在 {@link ./classic} 与 {@link ./algorithms} 里。
  *
  * 命名约定：
  * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`）。
@@ -34,6 +35,7 @@ export type GraphId = Brand<string, 'GraphId'>;
 /**
  * 方向：`'input'` 或 `'output'`。
  *
+ * @remarks
  * 同时用于：
  * - 端口的方向（输入端口 / 输出端口）；
  * - 边相对某个节点的方向（流入方为 `'input'`，流出方为 `'output'`）。
@@ -46,15 +48,24 @@ import type { Edge, Input, Node, Output, Port, Socket } from './classic';
 /** 节点端口名 → Socket 的映射，用于声明节点的输入/输出形态。 */
 export type Sockets = { readonly [key: string]: Socket };
 
-/** 由 {@link Sockets} 推导出的输入端口字典类型。 */
+/**
+ * 由 {@link Sockets} 推导出的输入端口字典类型。
+ *
+ * @template I 端口字典的 Sockets 形态
+ */
 export type Inputs<I extends Sockets> = { [K in keyof I]?: Input<I[K]> };
 
-/** 由 {@link Sockets} 推导出的输出端口字典类型。 */
+/**
+ * 由 {@link Sockets} 推导出的输出端口字典类型。
+ *
+ * @template O 端口字典的 Sockets 形态
+ */
 export type Outputs<O extends Sockets> = { [K in keyof O]?: Output<O[K]> };
 
 /**
  * Graph 内部存储节点时使用的擦除态类型。
  *
+ * @remarks
  * 节点本身可保留具体的 Sockets 形态，但 Graph 不约束这些形态，因此存储层退化为 {@link Sockets}。
  *
  * @template W 节点数据载荷类型
@@ -68,39 +79,63 @@ export type StoredNode<W = unknown> = Node<Sockets, Sockets, W>;
  */
 export type PortDict<P extends Port = Port> = { readonly [key: string]: P | undefined };
 
-/** 环路信息 - 拓扑排序时返回。 */
+/** 拓扑排序时返回的环路信息。 */
 export interface CycleInfo {
+  /** 是否检测到环。 */
   hasCycle: boolean;
+  /** 环上的节点 ID 列表；无环时为空数组。 */
   cycleNodes: NodeId[];
 }
 
 /** 拓扑排序结果。 */
 export interface TopoSortResult {
+  /** 拓扑顺序的节点 ID 序列；含环时环上节点按原始顺序追加在末尾。 */
   order: NodeId[];
+  /** 排序过程中收集的环路信息。 */
   cycleInfo: CycleInfo;
 }
 
 /** 入度/出度信息 - 算法消费用。 */
 export interface DegreeInfo {
+  /** 流入节点的边数。 */
   inDegree: number;
+  /** 流出节点的边数。 */
   outDegree: number;
 }
 
-/** 带权重的边引用 - 用于最短路径等算法。 */
+/**
+ * 带权重的边引用 - 用于最短路径等算法。
+ *
+ * @template E 边权重类型
+ */
 export interface WeightedEdge<E = unknown> {
+  /** 边唯一标识。 */
   readonly id: EdgeId;
+  /** 起点节点 ID。 */
   readonly source: NodeId;
+  /** 终点节点 ID。 */
   readonly target: NodeId;
+  /** 边权重；缺省时为 `undefined`。 */
   readonly weight: E | undefined;
 }
 
-/** 邻接缓存 - 节点 ID → 出/入邻居与度数。 */
+/**
+ * 邻接缓存 - 节点 ID → 出/入邻居与度数。
+ *
+ * @remarks 所有 Map 都以节点 ID 为键，调用方应当只读使用。
+ */
 export interface Adjacency {
+  /** 节点 → 流出边 ID 列表。 */
   outgoingEdges: Map<NodeId, EdgeId[]>;
+  /** 节点 → 流入边 ID 列表。 */
   incomingEdges: Map<NodeId, EdgeId[]>;
+  /** 节点 → 后继节点 ID 列表（与 `outgoingEdges` 一一对应）。 */
   successors: Map<NodeId, NodeId[]>;
+  /** 节点 → 前驱节点 ID 列表（与 `incomingEdges` 一一对应）。 */
   predecessors: Map<NodeId, NodeId[]>;
+  /** 节点 → 入度。 */
   inDegree: Map<NodeId, number>;
+  /** 节点 → 出度。 */
   outDegree: Map<NodeId, number>;
 }
 
@@ -110,16 +145,23 @@ export interface Adjacency {
 
 /** 最小图接口 - 所有图实现必须提供的能力。 */
 export interface GraphBase {
+  /** 节点 ID 的可迭代视图。 */
   readonly nodeIds: Iterable<NodeId>;
+  /** 边 ID 的可迭代视图。 */
   readonly edgeIds: Iterable<EdgeId>;
+  /** 当前节点总数。 */
   nodeCount(): number;
+  /** 当前边总数。 */
   edgeCount(): number;
 }
 
 /** 能列举直接邻居（出/入邻居）。 */
 export interface IntoNeighbors {
+  /** 所有邻居（前驱 + 后继，可能含重复）。 */
   neighbors(nodeId: NodeId): Iterable<NodeId>;
+  /** 仅前驱（流入侧邻居）。 */
   incomingNeighbors(nodeId: NodeId): Iterable<NodeId>;
+  /** 仅后继（流出侧邻居）。 */
   outgoingNeighbors(nodeId: NodeId): Iterable<NodeId>;
 }
 
@@ -129,26 +171,35 @@ export interface IntoNeighbors {
  * @template E 边权重类型
  */
 export interface IntoEdges<E = unknown> {
+  /** 与节点关联的所有边（流入 + 流出）。 */
   edges(nodeId: NodeId): Iterable<Edge<E>>;
+  /** 流入节点的边。 */
   incomingEdges(nodeId: NodeId): Iterable<Edge<E>>;
+  /** 流出节点的边。 */
   outgoingEdges(nodeId: NodeId): Iterable<Edge<E>>;
 }
 
 /** 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组）。 */
 export interface NodeIndexable {
+  /** 按索引获取节点 ID；越界返回 `undefined`。 */
   nodeIdAt(index: number): NodeId | undefined;
+  /** 节点的索引；不存在返回 `-1`。 */
   indexOf(nodeId: NodeId): number;
 }
 
 /** 能维护已访问集合 - 用于遍历算法。 */
 export interface Visitable {
+  /** 创建一张全部初始化为 `false` 的访问位图。 */
   visitMap(): Map<NodeId, boolean>;
+  /** 把传入的访问位图全部重置为 `false`（原地修改）。 */
   resetMap(map: Map<NodeId, boolean>): void;
 }
 
 /** 能直接给出度数 - 拓扑排序、入口分析等算法消费。 */
 export interface IntoDegree {
+  /** 流入边数。 */
   inDegree(nodeId: NodeId): number;
+  /** 流出边数。 */
   outDegree(nodeId: NodeId): number;
 }
 
@@ -164,10 +215,11 @@ export interface GraphRef<N = unknown, E = unknown>
     IntoEdges<E>,
     NodeIndexable,
     Visitable {
+  /** 按 ID 取节点；不存在返回 `undefined`。 */
   getNode(nodeId: NodeId): StoredNode<N> | undefined;
+  /** 按 ID 取边；不存在返回 `undefined`。 */
   getEdge(edgeId: EdgeId): Edge<E> | undefined;
 }
 
 /** 算法常用的最小约束：可枚举节点 + 列举出邻居。 */
 export type Walkable = GraphBase & IntoNeighbors;
-
