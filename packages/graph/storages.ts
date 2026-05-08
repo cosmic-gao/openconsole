@@ -388,8 +388,14 @@ implements
   /** 邻接矩阵（一维存储），`-1` 表示无边，否则为 `EdgeId` 在 `_edgeIdPool` 中的索引。 */
   private _matrix: Int32Array;
 
-  /** 边 ID 池，与矩阵元素相互索引；与 `edges` 内容一一对应。 */
+  /** 边 ID 池，与矩阵元素相互索引；与 `edges` 内容一一对应（已释放槽位等待复用）。 */
   private readonly _edgeIdPool: EdgeId[] = [];
+
+  /** `_edgeIdPool` 已释放的槽位栈（`removeEdge` 释放，`addEdge` 优先复用），避免 pool 单调膨胀。 */
+  private readonly _freeEdgeSlots: number[] = [];
+
+  /** `_indexToNode` 已释放的墓碑槽位栈（`removeNode` 释放，`addNode` 优先复用），O(1) 复用替代 `indexOf(null)`。 */
+  private readonly _freeNodeSlots: number[] = [];
 
   /** 当前矩阵容量（行 / 列数）。 */
   private _capacity: number;
@@ -457,16 +463,17 @@ implements
         `[MatrixGraph "${String(this.id)}"] addNode: node "${String(nodeId)}" already exists.`,
       );
     }
-    // 优先复用墓碑槽位。
-    let index = this._indexToNode.indexOf(null);
-    if (index === -1) {
+    let index: number;
+    if (this._freeNodeSlots.length > 0) {
+      // O(1) 复用墓碑槽。`removeNode` 已经把该索引行/列上的边清零，可以直接写入。
+      index = this._freeNodeSlots.pop()!;
+      this._indexToNode[index] = nodeId;
+      this._nodeWeights[index] = weight;
+    } else {
       index = this._indexToNode.length;
       if (index >= this._capacity) this._grow();
       this._indexToNode.push(nodeId);
       this._nodeWeights.push(weight);
-    } else {
-      this._indexToNode[index] = nodeId;
-      this._nodeWeights[index] = weight;
     }
     this._nodeToIndex.set(nodeId, index);
     this._nodeCount++;
@@ -494,6 +501,7 @@ implements
     this._indexToNode[index] = null;
     this._nodeWeights[index] = undefined;
     this._nodeToIndex.delete(nodeId);
+    this._freeNodeSlots.push(index);
     this._nodeCount--;
     return true;
   }
@@ -538,8 +546,14 @@ implements
         `[MatrixGraph "${String(this.id)}"] addEdge: edge "${String(id)}" already exists.`,
       );
     }
-    const poolIndex = this._edgeIdPool.length;
-    this._edgeIdPool.push(id);
+    let poolIndex: number;
+    if (this._freeEdgeSlots.length > 0) {
+      poolIndex = this._freeEdgeSlots.pop()!;
+      this._edgeIdPool[poolIndex] = id;
+    } else {
+      poolIndex = this._edgeIdPool.length;
+      this._edgeIdPool.push(id);
+    }
     this._matrix[slot] = poolIndex;
     this.edges.set(id, { id, sourceIndex, targetIndex, weight });
     return id;
@@ -555,7 +569,9 @@ implements
     const edge = this.edges.get(edgeId);
     if (!edge) return false;
     const slot = edge.sourceIndex * this._capacity + edge.targetIndex;
+    const poolIndex = this._matrix[slot]!;
     this._matrix[slot] = -1;
+    if (poolIndex !== -1) this._freeEdgeSlots.push(poolIndex);
     this.edges.delete(edgeId);
     return true;
   }

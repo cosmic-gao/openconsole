@@ -129,12 +129,17 @@ export abstract class Port<S extends Socket = Socket> {
   }
 
   /**
-   * 关联一条边到本端口（按 ID 去重）。
+   * 关联一条边到本端口。
+   *
+   * @remarks
+   * 调用约定：`Graph.addEdge` 在 attach 前已经通过 `edges.has(edge.id)` 拒绝重复 ID，
+   * 因此本方法不再做 `includes` 去重检查（O(deg) → O(1)）。直接对外调用 `attach` 时
+   * 调用方自行保证不重复。
    *
    * @param edge 要关联的边 ID
    */
   public attach(edge: EdgeId): void {
-    if (!this.edges.includes(edge)) this.edges.push(edge);
+    this.edges.push(edge);
   }
 
   /**

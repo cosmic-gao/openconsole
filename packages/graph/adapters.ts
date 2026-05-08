@@ -115,14 +115,32 @@ implements
     for (const ref of this.inner.incomingEdgeRefs(nodeId)) yield flipEdgeRef(ref);
   }
 
-  /** {@inheritdoc IntoDegree.inDegree} */
+  /**
+   * {@inheritdoc IntoDegree.inDegree}
+   *
+   * @remarks
+   * 反向后的入度 = 原图的出度。inner 实现了 {@link IntoDegree} 时直接转发；
+   * 否则枚举 `inner.outgoingNeighbors` 计数，与遍历语义一致。
+   */
   public inDegree(nodeId: NodeId): number {
-    return typeof this.inner.outDegree === 'function' ? this.inner.outDegree(nodeId) : 0;
+    if (typeof this.inner.outDegree === 'function') return this.inner.outDegree(nodeId);
+    let count = 0;
+    for (const _ of this.inner.outgoingNeighbors(nodeId)) count++;
+    return count;
   }
 
-  /** {@inheritdoc IntoDegree.outDegree} */
+  /**
+   * {@inheritdoc IntoDegree.outDegree}
+   *
+   * @remarks
+   * 反向后的出度 = 原图的入度。inner 实现了 {@link IntoDegree} 时直接转发；
+   * 否则枚举 `inner.incomingNeighbors` 计数。
+   */
   public outDegree(nodeId: NodeId): number {
-    return typeof this.inner.inDegree === 'function' ? this.inner.inDegree(nodeId) : 0;
+    if (typeof this.inner.inDegree === 'function') return this.inner.inDegree(nodeId);
+    let count = 0;
+    for (const _ of this.inner.incomingNeighbors(nodeId)) count++;
+    return count;
   }
 
   /** {@inheritdoc Visitable.marks} */
@@ -247,9 +265,19 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
     };
   }
 
-  /** {@inheritdoc Catalog.edgeIds} */
+  /**
+   * {@inheritdoc Catalog.edgeIds}
+   *
+   * @remarks
+   * 当 inner 未实现 `edgeRefs` 时，无法按谓词过滤边的两端，因此返回空序列
+   * （与本类的 {@link edgeRefs} / {@link incomingEdgeRefs} / {@link outgoingEdgeRefs}
+   * 在同等情况下行为一致）。需要边过滤的视图请使用实现了 {@link IntoEdgeRefs} 的图
+   * （`Graph` / `MapGraph` / `MatrixGraph` 均已实现）。
+   */
   public get edgeIds(): Iterable<EdgeId> {
-    if (typeof this.inner.edgeRefs !== 'function') return this.inner.edgeIds;
+    if (typeof this.inner.edgeRefs !== 'function') {
+      return { [Symbol.iterator]: () => [][Symbol.iterator]() };
+    }
     const refs = this.inner.edgeRefs.bind(this.inner);
     const predicate = this.predicate;
     return {

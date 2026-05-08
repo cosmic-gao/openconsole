@@ -80,8 +80,11 @@ export function toposortFull<G extends Walkable>(
   for (const nodeId of nodeOrder) {
     const succs = adjacency.get(nodeId)!;
     for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+      // 跳过孤儿邻居（不在 nodeIds 拓扑空间内）。否则会因 inDegree 被意外创建为 1，
+      // 后续在 adjacency 处理时被 dec 到 0 推入 queue，最终混进 order。
+      if (!inDegree.has(neighbor)) continue;
       succs.push(neighbor);
-      inDegree.set(neighbor, (inDegree.get(neighbor) ?? 0) + 1);
+      inDegree.set(neighbor, inDegree.get(neighbor)! + 1);
     }
   }
 
