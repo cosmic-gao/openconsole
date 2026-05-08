@@ -9,10 +9,8 @@
 import type {
   EdgeRef,
   Catalog,
-  GraphRef,
   IntoDegree,
   IntoEdgeRefs,
-  Edges,
   Neighbors,
   NodeId,
   Walkable,
@@ -291,14 +289,15 @@ export function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
 /**
  * 计算所有节点的入度与出度。
  *
- * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边集合（O(N + E)）。
+ * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边引用（O(N + E)）。
  *
  * @template E 边权重类型
- * @template G 至少满足 `Catalog & Edges<E>`，可选实现 {@link IntoDegree}
+ * @template G 至少满足 `Catalog & IntoEdgeRefs<E>`，可选实现 {@link IntoDegree}；
+ *   三种存储 (`Graph` / `MapGraph` / `MatrixGraph`) 均自动满足。
  * @param graph 图实例
  * @returns 节点 ID → {@link Degree}
  */
-export function degrees<E, G extends Catalog & Edges<E>>(
+export function degrees<E, G extends Catalog & IntoEdgeRefs<E>>(
   graph: G,
 ): Map<NodeId, Degree> {
   const result = new Map<NodeId, Degree>();
@@ -316,8 +315,8 @@ export function degrees<E, G extends Catalog & Edges<E>>(
 
   for (const nodeId of graph.nodeIds) {
     result.set(nodeId, {
-      inDegree: count(graph.incomingEdges(nodeId)),
-      outDegree: count(graph.outgoingEdges(nodeId)),
+      inDegree: count(graph.incomingEdgeRefs(nodeId)),
+      outDegree: count(graph.outgoingEdgeRefs(nodeId)),
     });
   }
   return result;
@@ -361,13 +360,12 @@ export function isolated<G extends Catalog & IntoDegree>(graph: G): NodeId[] {
  * 适用于只暴露出边却需要双向访问的图实现。注意这不是 petgraph 风格的
  * `Reversed<G>` 视图（那是一个零成本边翻转适配器）。
  *
- * @template N 节点权重类型
- * @template E 边权重类型
- * @template G 满足 {@link GraphRef} 的图类型
+ * @template G 满足 {@link Catalog} + {@link Neighbors} 的图类型；
+ *   不需要节点 / 边权重，因此不再带 N / E 泛型。
  * @param graph 图实例
  * @returns 节点 ID → `{ predecessors, successors }`
  */
-export function neighborhood<N, E, G extends GraphRef<N, E>>(
+export function neighborhood<G extends Catalog & Neighbors>(
   graph: G,
 ): Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }> {
   const result = new Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }>();
