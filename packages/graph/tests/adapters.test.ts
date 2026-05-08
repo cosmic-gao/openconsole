@@ -3,14 +3,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { EdgeFiltered, NodeFiltered, Reversed, MapGraph, reversed, dfs, toposort, type EdgeId, type GraphId, type NodeId } from '../core';
+import { EdgeFiltered, NodeFiltered, Reversed, reversed, dfs, toposort, type EdgeId, type NodeId } from '../core';
+import { buildGraph, id } from './_fixtures';
 
-const id = <T extends string>(v: string) => v as unknown as T;
-
-const linear = () => MapGraph.from(id<GraphId>('lin'), [
-  [id<NodeId>('a'), id<NodeId>('b'), 1],
-  [id<NodeId>('b'), id<NodeId>('c'), 2],
-  [id<NodeId>('c'), id<NodeId>('d'), 3],
+const linear = () => buildGraph('lin', [
+  ['a', 'b', 1],
+  ['b', 'c', 2],
+  ['c', 'd', 3],
 ]);
 
 describe('Reversed', () => {
@@ -147,7 +146,7 @@ describe('EdgeFiltered', () => {
 });
 
 describe('适配器嵌套', () => {
-  it('reversed(NodeFiltered(g)) 仍是 GraphView-兼容的视图', () => {
+  it('reversed(NodeFiltered(g)) 仍是 trait 兼容的视图', () => {
     const filtered = new NodeFiltered(linear(), id => id !== 'd');
     const view = reversed(filtered);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c']);

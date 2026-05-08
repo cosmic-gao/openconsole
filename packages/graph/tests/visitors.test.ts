@@ -8,30 +8,27 @@ import {
   Dfs,
   DfsPostorder,
   dfsVisit,
-  MapGraph,
   Topo,
   type Control,
   type DfsEvent,
-  type GraphId,
   type NodeId,
 } from '../core';
+import { buildGraph, id } from './_fixtures';
 
-const id = <T extends string>(v: string) => v as unknown as T;
-
-const diamond = () => MapGraph.from(id<GraphId>('d'), [
-  [id<NodeId>('a'), id<NodeId>('b')],
-  [id<NodeId>('a'), id<NodeId>('c')],
-  [id<NodeId>('b'), id<NodeId>('d')],
-  [id<NodeId>('c'), id<NodeId>('d')],
+const diamond = () => buildGraph('d', [
+  ['a', 'b'],
+  ['a', 'c'],
+  ['b', 'd'],
+  ['c', 'd'],
 ]);
 
-const cycle3 = () => MapGraph.from(id<GraphId>('c3'), [
-  [id<NodeId>('x'), id<NodeId>('y')],
-  [id<NodeId>('y'), id<NodeId>('z')],
-  [id<NodeId>('z'), id<NodeId>('x')],
+const cycle3 = () => buildGraph('c3', [
+  ['x', 'y'],
+  ['y', 'z'],
+  ['z', 'x'],
 ]);
 
-const drain = <T>(iter: Iterable<T>): T[] => [...iter];
+const drain = <T>(iterable: Iterable<T>): T[] => [...iterable];
 
 describe('Dfs', () => {
   it('next 推进；遍历完返回 undefined', () => {
@@ -47,9 +44,9 @@ describe('Dfs', () => {
     expect(dfs.next(g)).toBeUndefined();
   });
 
-  it('iter 适配为可迭代对象', () => {
+  it('iterator 适配为可迭代对象', () => {
     const g = diamond();
-    expect(drain(Dfs.start(g, id<NodeId>('a')).iter(g))).toEqual(['a', 'b', 'd', 'c']);
+    expect(drain(Dfs.start(g, id<NodeId>('a')).iterator(g))).toEqual(['a', 'b', 'd', 'c']);
   });
 
   it('moveTo 切换起点而不丢失 discovered', () => {
@@ -82,22 +79,22 @@ describe('Dfs', () => {
 describe('Bfs', () => {
   it('按层次推进', () => {
     const g = diamond();
-    expect(drain(Bfs.start(g, id<NodeId>('a')).iter(g))).toEqual(['a', 'b', 'c', 'd']);
+    expect(drain(Bfs.start(g, id<NodeId>('a')).iterator(g))).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('moveTo 重置队列与 visited', () => {
     const g = diamond();
     const bfs = Bfs.start(g, id<NodeId>('a'));
-    drain(bfs.iter(g));
+    drain(bfs.iterator(g));
     bfs.moveTo(id<NodeId>('c'));
-    expect(drain(bfs.iter(g))).toEqual(['c', 'd']);
+    expect(drain(bfs.iterator(g))).toEqual(['c', 'd']);
   });
 });
 
 describe('DfsPostorder', () => {
   it('返回 finish 顺序：叶子先于内部', () => {
     const g = diamond();
-    expect(drain(DfsPostorder.start(g, id<NodeId>('a')).iter(g))).toEqual(['d', 'b', 'c', 'a']);
+    expect(drain(DfsPostorder.start(g, id<NodeId>('a')).iterator(g))).toEqual(['d', 'b', 'c', 'a']);
   });
 
   it('lazy 起点构造（new + next 才入栈）', () => {
@@ -116,7 +113,7 @@ describe('DfsPostorder', () => {
   it('reset 清空全部', () => {
     const g = diamond();
     const post = DfsPostorder.start(g, id<NodeId>('a'));
-    drain(post.iter(g));
+    drain(post.iterator(g));
     post.reset();
     expect(post.discovered.size).toBe(0);
     expect(post.finished.size).toBe(0);
@@ -128,14 +125,14 @@ describe('Topo', () => {
   it('drain 后 cycleNodes 为空', () => {
     const g = diamond();
     const topo = Topo.start(g);
-    expect(drain(topo.iter(g))).toEqual(['a', 'b', 'c', 'd']);
+    expect(drain(topo.iterator(g))).toEqual(['a', 'b', 'c', 'd']);
     expect(topo.cycleNodes()).toEqual([]);
   });
 
   it('环图：drain 出 0 个节点，cycleNodes 包含全部环节点', () => {
     const g = cycle3();
     const topo = Topo.start(g);
-    expect(drain(topo.iter(g))).toEqual([]);
+    expect(drain(topo.iterator(g))).toEqual([]);
     expect(topo.cycleNodes().sort()).toEqual(['x', 'y', 'z']);
   });
 
@@ -146,8 +143,7 @@ describe('Topo', () => {
   });
 
   it('Topo 已防孤儿邻居（与 topology 1.1 修复同源）', () => {
-    const g = new MapGraph<unknown, unknown>(id<GraphId>('orphan'));
-    g.addNode(id<NodeId>('a'));
+    const g = buildGraph('orphan', [], ['a']);
     const real = g.outgoingNeighbors.bind(g);
     (g as unknown as { outgoingNeighbors: typeof g.outgoingNeighbors }).outgoingNeighbors =
       function* (n: NodeId) {
@@ -155,7 +151,7 @@ describe('Topo', () => {
         if (n === 'a') yield id<NodeId>('ghost');
       };
     const topo = Topo.start(g);
-    const out: NodeId[] = drain(topo.iter(g));
+    const out: NodeId[] = drain(topo.iterator(g));
     expect(out).toEqual(['a']); // ghost 不应进入
   });
 });

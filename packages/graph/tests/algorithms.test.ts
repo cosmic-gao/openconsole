@@ -16,7 +16,6 @@ import {
   isCyclic,
   isolated,
   kosaraju,
-  MapGraph,
   neighborhood,
   postorder,
   ranks,
@@ -27,29 +26,27 @@ import {
   toposort,
   topology,
   weighted,
-  type GraphId,
   type NodeId,
 } from '../core';
+import { buildGraph, id } from './_fixtures';
 
-const id = <T extends string>(v: string) => v as unknown as T;
-
-const linear = () => MapGraph.from(id<GraphId>('lin'), [
-  [id<NodeId>('a'), id<NodeId>('b'), 1],
-  [id<NodeId>('b'), id<NodeId>('c'), 2],
-  [id<NodeId>('c'), id<NodeId>('d'), 3],
+const linear = () => buildGraph('lin', [
+  ['a', 'b', 1],
+  ['b', 'c', 2],
+  ['c', 'd', 3],
 ]);
 
-const diamond = () => MapGraph.from(id<GraphId>('dmd'), [
-  [id<NodeId>('a'), id<NodeId>('b'), 1],
-  [id<NodeId>('a'), id<NodeId>('c'), 4],
-  [id<NodeId>('b'), id<NodeId>('d'), 2],
-  [id<NodeId>('c'), id<NodeId>('d'), 1],
+const diamond = () => buildGraph('dmd', [
+  ['a', 'b', 1],
+  ['a', 'c', 4],
+  ['b', 'd', 2],
+  ['c', 'd', 1],
 ]);
 
-const cycle3 = () => MapGraph.from(id<GraphId>('cy3'), [
-  [id<NodeId>('x'), id<NodeId>('y')],
-  [id<NodeId>('y'), id<NodeId>('z')],
-  [id<NodeId>('z'), id<NodeId>('x')],
+const cycle3 = () => buildGraph('cy3', [
+  ['x', 'y'],
+  ['y', 'z'],
+  ['z', 'x'],
 ]);
 
 describe('toposort', () => {
@@ -82,9 +79,7 @@ describe('toposort', () => {
 
   // 1.1 回归：topology 不应把 outgoingNeighbors 返回的孤儿节点纳入 order
   it('1.1 fix: outgoingNeighbors 返回的孤儿节点不会污染 order', () => {
-    const g = new MapGraph<unknown, unknown>(id<GraphId>('orphan'));
-    g.addNode(id<NodeId>('a'));
-    g.addNode(id<NodeId>('b'));
+    const g = buildGraph('orphan', [], ['a', 'b']);
     const real = g.outgoingNeighbors.bind(g);
     (g as unknown as { outgoingNeighbors: typeof g.outgoingNeighbors }).outgoingNeighbors =
       function* (n: NodeId) {
@@ -125,15 +120,15 @@ describe('scc / kosaraju', () => {
   });
 
   it('双环 + 桥：每个环各一个分量', () => {
-    const g = MapGraph.from(id<GraphId>('two'), [
+    const g = buildGraph('two', [
       // 环 1: a → b → a
-      [id<NodeId>('a'), id<NodeId>('b')],
-      [id<NodeId>('b'), id<NodeId>('a')],
+      ['a', 'b'],
+      ['b', 'a'],
       // 桥 b → c
-      [id<NodeId>('b'), id<NodeId>('c')],
+      ['b', 'c'],
       // 环 2: c → d → c
-      [id<NodeId>('c'), id<NodeId>('d')],
-      [id<NodeId>('d'), id<NodeId>('c')],
+      ['c', 'd'],
+      ['d', 'c'],
     ]);
     const sets = scc(g).map(c => c.sort());
     expect(sets.length).toBe(2);
@@ -142,10 +137,10 @@ describe('scc / kosaraju', () => {
 
   it('kosaraju 与 scc 在划分上一致', () => {
     const norm = (cs: NodeId[][]) => cs.map(c => [...c].sort()).map(c => c.join(',')).sort();
-    const g = MapGraph.from(id<GraphId>('mix'), [
-      [id<NodeId>('a'), id<NodeId>('b')],
-      [id<NodeId>('b'), id<NodeId>('a')],
-      [id<NodeId>('b'), id<NodeId>('c')],
+    const g = buildGraph('mix', [
+      ['a', 'b'],
+      ['b', 'a'],
+      ['b', 'c'],
     ]);
     expect(norm(scc(g))).toEqual(norm(kosaraju(g)));
   });
@@ -161,8 +156,7 @@ describe('dfs / bfs', () => {
   });
 
   it('从孤立节点出发只产出自身', () => {
-    const g = new MapGraph<unknown, unknown>(id<GraphId>('s'));
-    g.addNode(id<NodeId>('only'));
+    const g = buildGraph('s', [], ['only']);
     expect([...dfs(g, id<NodeId>('only'))]).toEqual(['only']);
     expect([...bfs(g, id<NodeId>('only'))]).toEqual(['only']);
   });
@@ -216,10 +210,7 @@ describe('degrees / sources / sinks / isolated', () => {
   });
 
   it('sources / sinks / isolated 在算法层正确返回 NodeId[]', () => {
-    const g = MapGraph.from(id<GraphId>('mixed'), [
-      [id<NodeId>('a'), id<NodeId>('b')],
-    ]);
-    g.addNode(id<NodeId>('lonely'));
+    const g = buildGraph('mixed', [['a', 'b']], ['lonely']);
     expect(sources(g).sort()).toEqual(['a', 'lonely']);
     expect(sinks(g).sort()).toEqual(['b', 'lonely']);
     expect(isolated(g)).toEqual(['lonely']);
@@ -237,10 +228,10 @@ describe('neighborhood', () => {
 
 describe('condensation', () => {
   it('SCC 被合并为超节点，得到 DAG 描述', () => {
-    const g = MapGraph.from(id<GraphId>('cond'), [
-      [id<NodeId>('a'), id<NodeId>('b')],
-      [id<NodeId>('b'), id<NodeId>('a')], // a/b 同一 SCC
-      [id<NodeId>('b'), id<NodeId>('c')],
+    const g = buildGraph('cond', [
+      ['a', 'b'],
+      ['b', 'a'], // a/b 同一 SCC
+      ['b', 'c'],
     ]);
     const out = condensation(g);
     expect(out.components.length).toBe(2);
@@ -275,10 +266,7 @@ describe('dijkstra', () => {
   });
 
   it('不可达节点不在 distances 中', () => {
-    const g = MapGraph.from(id<GraphId>('disc'), [
-      [id<NodeId>('a'), id<NodeId>('b'), 1],
-    ]);
-    g.addNode(id<NodeId>('island'));
+    const g = buildGraph('disc', [['a', 'b', 1]], ['island']);
     const dist = dijkstra(g, id<NodeId>('a'), undefined, e => (e.weight as number) ?? 0);
     expect(dist.has(id<NodeId>('island'))).toBe(false);
   });

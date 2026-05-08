@@ -299,17 +299,17 @@ function portById<P extends { id: PortId }>(
  *
  * @internal
  */
-function utf8ByteLength(s: string): number {
-  if (TEXT_ENCODER) return TEXT_ENCODER.encode(s).length;
+function utf8ByteLength(text: string): number {
+  if (TEXT_ENCODER) return TEXT_ENCODER.encode(text).length;
 
   let bytes = 0;
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
     if (code < 0x80) {
       bytes += 1;
     } else if (code < 0x800) {
       bytes += 2;
-    } else if (code >= 0xd800 && code < 0xdc00 && i + 1 < s.length) {
+    } else if (code >= 0xd800 && code < 0xdc00 && i + 1 < text.length) {
       // 高代理 + 低代理 = 4 字节 UTF-8
       bytes += 4;
       i++;

@@ -4,7 +4,7 @@
  * @remarks
  * 命名约定：
  * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`、`EdgeView`）。
- * - 能力型 trait 用集合 / 动作的单数名词命名（{@link Catalog}、{@link Neighbors}、{@link Edges}、
+ * - 能力型 trait 用集合 / 动作的单数名词命名（{@link Catalog}、{@link Neighbors}、
  *   {@link Visitable}、{@link Walkable}）；挑不出贴切单词时保留 `Into*` 前缀
  *   （如 {@link IntoEdgeViews}、{@link IntoDegree}）。
  * - trait 方法亦优先单词形：`bound` / `at` / `marks` / `reset` / `neighbors`，
@@ -14,7 +14,7 @@
 declare const __brand: unique symbol;
 
 // 运行时类位于 ./classic；这里只用 `import type` 引入它们的类型形状，避免循环并保持 types.ts 仅类型。
-import type { Edge, Input, Node, Output, Port, Socket } from './classic';
+import type { Input, Node, Output, Port, Socket } from './classic';
 
 /**
  * 在结构类型上叠加品牌标记，制造名义类型 (nominal typing)。
@@ -159,25 +159,11 @@ export interface Neighbors {
 }
 
 /**
- * 能列举边（出/入边）。
- *
- * @template E 边权重类型
- */
-export interface Edges<E = unknown> {
-  /** 与节点关联的所有边（流入 + 流出）。 */
-  edges(nodeId: NodeId): Iterable<Edge<E>>;
-  /** 流入节点的边。 */
-  incomingEdges(nodeId: NodeId): Iterable<Edge<E>>;
-  /** 流出节点的边。 */
-  outgoingEdges(nodeId: NodeId): Iterable<Edge<E>>;
-}
-
-/**
  * 能列举边的轻量视图 ({@link EdgeView})。
  *
  * @remarks
- * petgraph 的 `IntoEdgeReferences` 类比物。任意存储（`Graph`、`MapGraph`、`MatrixGraph`、`Reversed`）
- * 都可以低成本地实现该 trait，从而被同一份算法消费。
+ * petgraph 的 `IntoEdgeReferences` 类比物。{@link Graph} 与 {@link Reversed} 等视图都可以
+ * 低成本地实现该 trait，从而被同一份算法消费。
  *
  * @template E 边权重类型
  */
@@ -196,8 +182,7 @@ export interface IntoEdgeViews<E = unknown> {
  * @remarks
  * 索引语义跟 petgraph 的 `NodeIndexable` 对齐：
  * - {@link bound} 给出有效索引的上界（不一定等于 {@link Catalog.nodeCount}）；
- * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, bound())` 处 {@link at} 返回 `undefined`
- *   （例如 {@link MatrixGraph} 的墓碑位）；
+ * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, bound())` 处 {@link at} 返回 `undefined`；
  * - 算法应当遍历 `[0, bound())` 并自行跳过 `undefined` 槽，不要假设 `at(i)` 一定有值。
  */
 export interface NodeIndexable {
@@ -205,11 +190,10 @@ export interface NodeIndexable {
    * 节点索引的上界（不含）。
    *
    * @remarks
-   * - 稠密存储（`Graph` / `MapGraph`）：等于 `nodeCount()`；
-   * - 稀疏存储（`MatrixGraph` 含墓碑）：可能 `> nodeCount()`，等于内部槽位总数。
+   * 稠密实现下等于 `nodeCount()`；若实现允许墓碑槽位，可大于 `nodeCount()`。
    */
   bound(): number;
-  /** 按索引获取节点 ID；越界或槽位为空（墓碑）时返回 `undefined`。 */
+  /** 按索引获取节点 ID；越界或槽位为空时返回 `undefined`。 */
   at(index: number): NodeId | undefined;
   /** 节点的索引；不存在返回 `-1`。 */
   indexOf(nodeId: NodeId): number;
@@ -229,24 +213,6 @@ export interface IntoDegree {
   inDegree(nodeId: NodeId): number;
   /** 流出边数。 */
   outDegree(nodeId: NodeId): number;
-}
-
-/**
- * 图的只读视图 - 供算法消费。
- *
- * @template N 节点权重类型
- * @template E 边权重类型
- */
-export interface GraphView<N = unknown, E = unknown>
-  extends Catalog,
-  Neighbors,
-  Edges<E>,
-  NodeIndexable,
-  Visitable {
-  /** 按 ID 取节点；不存在返回 `undefined`。 */
-  getNode(nodeId: NodeId): StoredNode<N> | undefined;
-  /** 按 ID 取边；不存在返回 `undefined`。 */
-  getEdge(edgeId: EdgeId): Edge<E> | undefined;
 }
 
 /** 算法常用的最小约束：可枚举节点 + 列举出邻居。 */

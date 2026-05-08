@@ -3,7 +3,7 @@
  *
  * @remarks
  * 参考 petgraph 风格：算法仅依赖访问者 trait（{@link Catalog} / {@link Neighbors} /
- * {@link Edges} / {@link IntoDegree} 等），与具体存储解耦。
+ * {@link IntoEdgeViews} / {@link IntoDegree} 等），与具体存储解耦。
  */
 
 import type {
@@ -76,12 +76,12 @@ export function topology<G extends Walkable>(
   }
 
   for (const nodeId of nodeOrder) {
-    const succs = adjacency.get(nodeId)!;
+    const successors = adjacency.get(nodeId)!;
     for (const neighbor of graph.outgoingNeighbors(nodeId)) {
       // 跳过孤儿邻居（不在 nodeIds 拓扑空间内）。否则会因 inDegree 被意外创建为 1，
       // 后续在 adjacency 处理时被 dec 到 0 推入 queue，最终混进 order。
       if (!inDegree.has(neighbor)) continue;
-      succs.push(neighbor);
+      successors.push(neighbor);
       inDegree.set(neighbor, inDegree.get(neighbor)! + 1);
     }
   }
@@ -147,7 +147,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
   const components: NodeId[][] = [];
   let counter = 0;
 
-  type Frame = { nodeId: NodeId; iter: Iterator<NodeId>; pendingChild: NodeId | null };
+  type Frame = { nodeId: NodeId; neighbors: Iterator<NodeId>; pendingChild: NodeId | null };
   const callStack: Frame[] = [];
 
   const enter = (nodeId: NodeId): void => {
@@ -158,7 +158,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
     onStack.add(nodeId);
     callStack.push({
       nodeId,
-      iter: graph.outgoingNeighbors(nodeId)[Symbol.iterator](),
+      neighbors: graph.outgoingNeighbors(nodeId)[Symbol.iterator](),
       pendingChild: null,
     });
   };
@@ -176,7 +176,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
         lowlink.set(frame.nodeId, Math.min(lowlink.get(frame.nodeId)!, lowlink.get(child)!));
       }
 
-      const next = frame.iter.next();
+      const next = frame.neighbors.next();
       if (!next.done) {
         const neighbor = next.value;
         if (!index.has(neighbor)) {
@@ -292,8 +292,7 @@ export function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
  * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边引用（O(N + E)）。
  *
  * @template E 边权重类型
- * @template G 至少满足 `Catalog & IntoEdgeViews<E>`，可选实现 {@link IntoDegree}；
- *   三种存储 (`Graph` / `MapGraph` / `MatrixGraph`) 均自动满足。
+ * @template G 至少满足 `Catalog & IntoEdgeViews<E>`，可选实现 {@link IntoDegree}。
  * @param graph 图实例
  * @returns 节点 ID → {@link Degree}
  */
@@ -481,7 +480,7 @@ export function reachable<G extends Neighbors>(
  *
  * @template E 边的原始权重类型
  * @template W 默认权重类型
- * @param edge 原始边引用（来自 {@link Graph.getEdges} / {@link MapGraph} / {@link MatrixGraph} 等）
+ * @param edge 原始边引用（来自 {@link Graph.getEdges} 等）
  * @param defaultWeight `edge.weight` 为 `undefined` 时使用的默认值
  */
 export function weighted<E, W>(edge: EdgeView<E>, defaultWeight: W): EdgeView<E | W> {
@@ -604,7 +603,7 @@ export function kosaraju<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
  * Dijkstra 单源最短路径（非负权重）。
  *
  * @remarks
- * - 仅依赖 {@link IntoEdgeViews}；同一份算法可跑在 `Graph` / `MapGraph` / `MatrixGraph` 上；
+ * - 仅依赖 {@link IntoEdgeViews}，与具体存储解耦；
  * - 返回 `start` 到所有可达节点的最短距离；可选 `end` 提前终止；
  * - 当前实现为 O(V²) 线性扫描（无堆），节点规模较大且性能敏感时再上二叉堆；
  * - 不支持负权边；若 `edgeCost` 返回负数行为未定义。
@@ -643,9 +642,9 @@ export function dijkstra<E, G extends Catalog & IntoEdgeViews<E>>(
 
     for (const edge of graph.getOutgoingEdges(current)) {
       if (visited.has(edge.target)) continue;
-      const next = smallest + edgeCost(edge);
-      const prev = distances.get(edge.target) ?? Infinity;
-      if (next < prev) distances.set(edge.target, next);
+      const candidate = smallest + edgeCost(edge);
+      const recorded = distances.get(edge.target) ?? Infinity;
+      if (candidate < recorded) distances.set(edge.target, candidate);
     }
   }
 
@@ -657,10 +656,10 @@ export function dijkstra<E, G extends Catalog & IntoEdgeViews<E>>(
  *
  * @internal
  */
-function count(iter: Iterable<unknown>): number {
-  let n = 0;
-  for (const _ of iter) n++;
-  return n;
+function count(iterable: Iterable<unknown>): number {
+  let total = 0;
+  for (const _ of iterable) total++;
+  return total;
 }
 
 /**

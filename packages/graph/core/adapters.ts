@@ -100,19 +100,19 @@ implements
   /** 全图边引用（source/target 已互换）。 */
   public *getEdges(): Iterable<EdgeView<unknown>> {
     if (typeof this.inner.getEdges !== 'function') return;
-    for (const ref of this.inner.getEdges()) yield flipEdgeView(ref);
+    for (const view of this.inner.getEdges()) yield flipEdgeView(view);
   }
 
   /** 反向后的入边 = 原图的出边（已翻转 source/target）。 */
   public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
     if (typeof this.inner.getOutgoingEdges !== 'function') return;
-    for (const ref of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(ref);
+    for (const view of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(view);
   }
 
   /** 反向后的出边 = 原图的入边（已翻转 source/target）。 */
   public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
     if (typeof this.inner.getIncomingEdges !== 'function') return;
-    for (const ref of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(ref);
+    for (const view of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(view);
   }
 
   /**
@@ -217,8 +217,8 @@ export function reversed<
  *
  * @internal
  */
-function flipEdgeView<E>(ref: EdgeView<E>): EdgeView<E> {
-  return { id: ref.id, source: ref.target, target: ref.source, weight: ref.weight };
+function flipEdgeView<E>(view: EdgeView<E>): EdgeView<E> {
+  return { id: view.id, source: view.target, target: view.source, weight: view.weight };
 }
 
 /**
@@ -269,22 +269,16 @@ implements Catalog, Neighbors, IntoEdgeViews<unknown> {
    * {@inheritdoc Catalog.edgeIds}
    *
    * @remarks
-   * 当 inner 未实现 `getEdges` 时，无法按谓词过滤边的两端，因此返回空序列
-   * （与本类的 {@link getEdges} / {@link getIncomingEdges} / {@link getOutgoingEdges}
-   * 在同等情况下行为一致）。需要边过滤的视图请使用实现了 {@link IntoEdgeViews} 的图
-   * （`Graph` / `MapGraph` / `MatrixGraph` 均已实现）。
+   * 直接复用本类的 {@link getEdges}（已按节点谓词过滤过两端）。
+   * 当 inner 未实现 `getEdges` 时 {@link getEdges} 自身返回空，因此 `edgeIds` 同样为空，
+   * 不会泄漏未过滤的 `inner.edgeIds`。需要边过滤的视图请使用实现了 {@link IntoEdgeViews} 的图
+   * ({@link Graph} 已实现)。
    */
   public get edgeIds(): Iterable<EdgeId> {
-    if (typeof this.inner.getEdges !== 'function') {
-      return { [Symbol.iterator]: () => [][Symbol.iterator]() };
-    }
-    const refs = this.inner.getEdges.bind(this.inner);
-    const predicate = this.predicate;
+    const getEdges = this.getEdges.bind(this);
     return {
       *[Symbol.iterator]() {
-        for (const ref of refs()) {
-          if (predicate(ref.source) && predicate(ref.target)) yield ref.id;
-        }
+        for (const view of getEdges()) yield view.id;
       },
     };
   }
@@ -324,24 +318,24 @@ implements Catalog, Neighbors, IntoEdgeViews<unknown> {
   /** 全图边引用（两端都需保留）。 */
   public *getEdges(): Iterable<EdgeView<unknown>> {
     if (typeof this.inner.getEdges !== 'function') return;
-    for (const ref of this.inner.getEdges()) {
-      if (this.predicate(ref.source) && this.predicate(ref.target)) yield ref;
+    for (const view of this.inner.getEdges()) {
+      if (this.predicate(view.source) && this.predicate(view.target)) yield view;
     }
   }
 
   /** 入边（来源端需保留）。 */
   public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
     if (!this.predicate(nodeId) || typeof this.inner.getIncomingEdges !== 'function') return;
-    for (const ref of this.inner.getIncomingEdges(nodeId)) {
-      if (this.predicate(ref.source)) yield ref;
+    for (const view of this.inner.getIncomingEdges(nodeId)) {
+      if (this.predicate(view.source)) yield view;
     }
   }
 
   /** 出边（终点端需保留）。 */
   public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
     if (!this.predicate(nodeId) || typeof this.inner.getOutgoingEdges !== 'function') return;
-    for (const ref of this.inner.getOutgoingEdges(nodeId)) {
-      if (this.predicate(ref.target)) yield ref;
+    for (const view of this.inner.getOutgoingEdges(nodeId)) {
+      if (this.predicate(view.target)) yield view;
     }
   }
 }
@@ -375,11 +369,10 @@ implements Catalog, Neighbors, IntoEdgeViews<E> {
 
   /** {@inheritdoc Catalog.edgeIds} */
   public get edgeIds(): Iterable<EdgeId> {
-    const refs = this.inner.getEdges.bind(this.inner);
-    const predicate = this.predicate;
+    const getEdges = this.getEdges.bind(this);
     return {
       *[Symbol.iterator]() {
-        for (const ref of refs()) if (predicate(ref)) yield ref.id;
+        for (const view of getEdges()) yield view.id;
       },
     };
   }
@@ -404,31 +397,31 @@ implements Catalog, Neighbors, IntoEdgeViews<E> {
 
   /** 入邻居：根据保留的入边推导。 */
   public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    for (const ref of this.inner.getIncomingEdges(nodeId)) {
-      if (this.predicate(ref)) yield ref.source;
+    for (const view of this.inner.getIncomingEdges(nodeId)) {
+      if (this.predicate(view)) yield view.source;
     }
   }
 
   /** 出邻居：根据保留的出边推导。 */
   public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    for (const ref of this.inner.getOutgoingEdges(nodeId)) {
-      if (this.predicate(ref)) yield ref.target;
+    for (const view of this.inner.getOutgoingEdges(nodeId)) {
+      if (this.predicate(view)) yield view.target;
     }
   }
 
   /** {@inheritdoc IntoEdgeViews.getEdges} */
   public *getEdges(): Iterable<EdgeView<E>> {
-    for (const ref of this.inner.getEdges()) if (this.predicate(ref)) yield ref;
+    for (const view of this.inner.getEdges()) if (this.predicate(view)) yield view;
   }
 
   /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
   public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
-    for (const ref of this.inner.getIncomingEdges(nodeId)) if (this.predicate(ref)) yield ref;
+    for (const view of this.inner.getIncomingEdges(nodeId)) if (this.predicate(view)) yield view;
   }
 
   /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
   public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
-    for (const ref of this.inner.getOutgoingEdges(nodeId)) if (this.predicate(ref)) yield ref;
+    for (const view of this.inner.getOutgoingEdges(nodeId)) if (this.predicate(view)) yield view;
   }
 }
 

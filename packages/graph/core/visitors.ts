@@ -29,6 +29,25 @@ import type {
 } from './types';
 
 /**
+ * 把"步进函数"包装成 `IterableIterator<NodeId>`，
+ * 用于在状态化遍历器上提供 `for...of` 语法糖。
+ *
+ * @internal
+ */
+function asIterator(step: () => NodeId | undefined): IterableIterator<NodeId> {
+  const result: IterableIterator<NodeId> = {
+    [Symbol.iterator]: () => result,
+    next: () => {
+      const value = step();
+      return value === undefined
+        ? { value: undefined as unknown as NodeId, done: true }
+        : { value, done: false };
+    },
+  };
+  return result;
+}
+
+/**
  * 深度优先遍历器（迭代实现，可暂停 / 恢复）。
  *
  * @example
@@ -115,20 +134,8 @@ export class Dfs {
    * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    const self = this;
-    const iter: IterableIterator<NodeId> = {
-      [Symbol.iterator]() {
-        return iter;
-      },
-      next() {
-        const value = self.next(graph);
-        return value === undefined
-          ? { value: undefined as unknown as NodeId, done: true }
-          : { value, done: false };
-      },
-    };
-    return iter;
+  public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
+    return asIterator(() => this.next(graph));
   }
 }
 
@@ -220,20 +227,8 @@ export class Bfs {
    * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    const self = this;
-    const iter: IterableIterator<NodeId> = {
-      [Symbol.iterator]() {
-        return iter;
-      },
-      next() {
-        const value = self.next(graph);
-        return value === undefined
-          ? { value: undefined as unknown as NodeId, done: true }
-          : { value, done: false };
-      },
-    };
-    return iter;
+  public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
+    return asIterator(() => this.next(graph));
   }
 }
 
@@ -243,7 +238,7 @@ export class Bfs {
  * @remarks
  * - 借鉴 petgraph 的 `DfsPostOrder`：每个 `next(graph)` 调用返回下一个 finish 节点；
  * - 后序意味着节点在所有后代访问完成后才被产出，逆后序天然就是 DAG 的拓扑序；
- * - 内部维护栈帧 `(node, iter)`，无递归调用，深图也不会栈溢出。
+ * - 内部维护栈帧 `(node, neighbors)`，无递归调用，深图也不会栈溢出。
  *
  * @example
  * ```ts
@@ -257,7 +252,7 @@ export class Bfs {
  */
 export class DfsPostorder {
   /** 当前 DFS 调用栈：每帧持有节点与其后继迭代器。 */
-  public readonly stack: Array<{ node: NodeId; iter: Iterator<NodeId> }>;
+  public readonly stack: Array<{ node: NodeId; neighbors: Iterator<NodeId> }>;
 
   /** 已 discover 的节点集合（含已 finish）。 */
   public readonly discovered: Set<NodeId>;
@@ -286,10 +281,10 @@ export class DfsPostorder {
    * @param start 起点节点 ID
    */
   public static start<G extends Neighbors>(graph: G, start: NodeId): DfsPostorder {
-    const inst = new DfsPostorder();
-    inst.discovered.add(start);
-    inst.stack.push({ node: start, iter: graph.outgoingNeighbors(start)[Symbol.iterator]() });
-    return inst;
+    const instance = new DfsPostorder();
+    instance.discovered.add(start);
+    instance.stack.push({ node: start, neighbors: graph.outgoingNeighbors(start)[Symbol.iterator]() });
+    return instance;
   }
 
   /**
@@ -303,7 +298,7 @@ export class DfsPostorder {
       const start = this._initial;
       this._initial = undefined;
       this.discovered.add(start);
-      this.stack.push({ node: start, iter: graph.outgoingNeighbors(start)[Symbol.iterator]() });
+      this.stack.push({ node: start, neighbors: graph.outgoingNeighbors(start)[Symbol.iterator]() });
     }
 
     while (this.stack.length > 0) {
@@ -311,14 +306,14 @@ export class DfsPostorder {
 
       let pushed = false;
       while (true) {
-        const r = frame.iter.next();
-        if (r.done) break;
-        const child = r.value;
+        const step = frame.neighbors.next();
+        if (step.done) break;
+        const child = step.value;
         if (this.discovered.has(child)) continue;
         this.discovered.add(child);
         this.stack.push({
           node: child,
-          iter: graph.outgoingNeighbors(child)[Symbol.iterator](),
+          neighbors: graph.outgoingNeighbors(child)[Symbol.iterator](),
         });
         pushed = true;
         break;
@@ -357,20 +352,8 @@ export class DfsPostorder {
    * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    const self = this;
-    const iter: IterableIterator<NodeId> = {
-      [Symbol.iterator]() {
-        return iter;
-      },
-      next() {
-        const value = self.next(graph);
-        return value === undefined
-          ? { value: undefined as unknown as NodeId, done: true }
-          : { value, done: false };
-      },
-    };
-    return iter;
+  public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
+    return asIterator(() => this.next(graph));
   }
 }
 
@@ -385,7 +368,7 @@ export class DfsPostorder {
  * @example
  * ```ts
  * const topo = Topo.start(graph);
- * for (const node of topo.iter(graph)) {
+ * for (const node of topo.iterator(graph)) {
  *   evaluate(node);
  * }
  * if (topo.cycleNodes().length > 0) console.warn('cycle detected');
@@ -431,18 +414,13 @@ export class Topo {
    */
   public static start<G extends Walkable & Partial<IntoDegree>>(graph: G): Topo {
     const pending = new Map<NodeId, number>();
-    let total = 0;
 
     if (typeof graph.inDegree === 'function') {
       for (const nodeId of graph.nodeIds) {
         pending.set(nodeId, graph.inDegree(nodeId));
-        total++;
       }
     } else {
-      for (const nodeId of graph.nodeIds) {
-        pending.set(nodeId, 0);
-        total++;
-      }
+      for (const nodeId of graph.nodeIds) pending.set(nodeId, 0);
       // 仅对 nodeIds 中的节点累计入度；`outgoingNeighbors` 偶发返回的孤儿节点
       // (不在 nodeIds 中) 不应被算入拓扑空间，否则会出现 emit count > total 的不一致。
       for (const nodeId of graph.nodeIds) {
@@ -454,7 +432,7 @@ export class Topo {
       }
     }
 
-    return new Topo(pending, total);
+    return new Topo(pending, pending.size);
   }
 
   /**
@@ -485,20 +463,8 @@ export class Topo {
    * @template G 实现 {@link Neighbors} 的图类型
    * @param graph 图实例
    */
-  public iter<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    const self = this;
-    const iter: IterableIterator<NodeId> = {
-      [Symbol.iterator]() {
-        return iter;
-      },
-      next() {
-        const value = self.next(graph);
-        return value === undefined
-          ? { value: undefined as unknown as NodeId, done: true }
-          : { value, done: false };
-      },
-    };
-    return iter;
+  public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
+    return asIterator(() => this.next(graph));
   }
 
   /** 当前已输出节点数 < 总数时即存在环；返回剩余的环上节点。 */
@@ -515,9 +481,9 @@ export class Topo {
   public collect<G extends Neighbors>(graph: G): Topology {
     const order: NodeId[] = [];
     while (true) {
-      const next = this.next(graph);
-      if (next === undefined) break;
-      order.push(next);
+      const node = this.next(graph);
+      if (node === undefined) break;
+      order.push(node);
     }
     const cycleNodes = this.cycleNodes();
     if (cycleNodes.length > 0) order.push(...cycleNodes);
@@ -571,7 +537,7 @@ export function dfsVisit<G extends Catalog & Neighbors>(
   const color = new Map<NodeId, number>();
   let timer = 0;
 
-  type Frame = { node: NodeId; iter: Iterator<NodeId> };
+  type Frame = { node: NodeId; neighbors: Iterator<NodeId> };
   const stack: Frame[] = [];
 
   const push = (node: NodeId): Control => {
@@ -583,7 +549,7 @@ export function dfsVisit<G extends Catalog & Neighbors>(
       color.set(node, BLACK);
       return visitor.finish?.({ kind: 'finish', node, time: timer++ }) ?? 'continue';
     }
-    stack.push({ node, iter: graph.outgoingNeighbors(node)[Symbol.iterator]() });
+    stack.push({ node, neighbors: graph.outgoingNeighbors(node)[Symbol.iterator]() });
     return 'continue';
   };
 
@@ -594,7 +560,7 @@ export function dfsVisit<G extends Catalog & Neighbors>(
 
     while (stack.length > 0) {
       const frame = stack[stack.length - 1]!;
-      const next = frame.iter.next();
+      const next = frame.neighbors.next();
 
       if (next.done) {
         color.set(frame.node, BLACK);
