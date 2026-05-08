@@ -204,12 +204,11 @@ function flipEdgeRef<E>(ref: EdgeRef<E>): EdgeRef<E> {
 }
 
 /**
- * 节点过滤器。
+ * 通用谓词：返回 `true` 保留，`false` 从视图中隐去。
  *
- * @param nodeId 节点 ID
- * @returns `true` 表示保留，`false` 表示从视图中隐去
+ * @template T 被过滤的值的类型（节点过滤用 {@link NodeId}；边过滤用 {@link EdgeRef}）
  */
-export type NodePredicate = (nodeId: NodeId) => boolean;
+export type Predicate<T> = (value: T) => boolean;
 
 /**
  * 节点过滤视图：仅暴露满足谓词的节点及与之相连的边。
@@ -234,7 +233,7 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
    */
   public constructor(
     public readonly inner: G,
-    public readonly predicate: NodePredicate,
+    public readonly predicate: Predicate<NodeId>,
   ) {}
 
   /** {@inheritdoc Catalog.nodeIds} */
@@ -320,14 +319,6 @@ implements Catalog, Neighbors, IntoEdgeRefs<unknown> {
 }
 
 /**
- * 边过滤器。
- *
- * @param edge 边引用
- * @returns `true` 表示保留，`false` 表示从视图中隐去
- */
-export type EdgePredicate<E = unknown> = (edge: EdgeRef<E>) => boolean;
-
-/**
  * 边过滤视图：节点不变，仅过滤边。
  *
  * @remarks 必须依赖 {@link IntoEdgeRefs}，因为只有边引用才能高效地按谓词过滤。
@@ -346,7 +337,7 @@ implements Catalog, Neighbors, IntoEdgeRefs<E> {
    */
   public constructor(
     public readonly inner: G,
-    public readonly predicate: EdgePredicate<E>,
+    public readonly predicate: Predicate<EdgeRef<E>>,
   ) {}
 
   /** {@inheritdoc Catalog.nodeIds} */

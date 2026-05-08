@@ -1,10 +1,10 @@
 /**
- * 访问者 (visitor) 模块
+ * 访问者 (visitor) 模块。
  *
  * @remarks
  * 借鉴 petgraph 的 `visit` 子模块，提供两种访问风格：
  *
- * 1. **状态化遍历器** ({@link Dfs}、{@link Bfs}、{@link Topo})
+ * 1. **状态化遍历器** ({@link Dfs}、{@link Bfs}、{@link DfsPostorder}、{@link Topo})
  *    - 暴露 `next(graph)` 接口，调用方控制推进节奏；
  *    - 支持 `moveTo` / `reset` 重新开始；
  *    - 内部使用 `Set<NodeId>` 维护已访问集合，`O(1)` 查询。
@@ -587,8 +587,8 @@ export function dfsVisit<G extends Catalog & Neighbors>(
     return 'continue';
   };
 
-  const sources = starts ?? graph.nodeIds;
-  for (const root of sources) {
+  const roots = starts ?? graph.nodeIds;
+  for (const root of roots) {
     if ((color.get(root) ?? WHITE) !== WHITE) continue;
     if (push(root) === 'break') return 'break';
 

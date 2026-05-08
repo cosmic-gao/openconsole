@@ -1,11 +1,9 @@
 /**
- * 图算法模块
+ * 图算法模块。
  *
  * @remarks
- * 参考 petgraph 风格，算法与存储解耦。
- * 任何实现 Catalog / Neighbors / Edges / IntoDegree 等 trait 的图都可以使用这些算法。
- *
- * 命名约定（用户偏好）：算法导出使用单个英文单词；不得已使用两词组合。
+ * 参考 petgraph 风格：算法仅依赖访问者 trait（{@link Catalog} / {@link Neighbors} /
+ * {@link Edges} / {@link IntoDegree} 等），与具体存储解耦。
  */
 
 import type {
@@ -18,12 +16,10 @@ import type {
   Neighbors,
   NodeId,
   Walkable,
-  WeightedEdge,
   Cycles,
   Topology,
   Degree,
 } from './types';
-import type { Edge } from './classic';
 import { reversed } from './adapters';
 import { dfsVisit } from './visitors';
 
@@ -273,35 +269,20 @@ export function* bfs<G extends Neighbors>(
 }
 
 /**
- * 按拓扑顺序排列指定节点的后继。
+ * 给每个节点分配一个拓扑序中的位置（0 起，含环时环上节点尾部追加）。
+ *
+ * @remarks
+ * 调用方可凭它把任意节点列表按拓扑顺序排序，无需把"拓扑后的后继 / 前驱"
+ * 这样的派生函数挂在公开面上。
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
- * @param nodeId 起点节点 ID
- * @returns 按拓扑顺序排好的后继 ID 列表
  */
-export function topoSuccessors<G extends Walkable>(graph: G, nodeId: NodeId): NodeId[] {
-  const order = ranks(graph);
-  const successors = Array.from(graph.outgoingNeighbors(nodeId));
-  return successors.sort(
-    (a, b) =>
-      (order.get(a) ?? Number.MAX_SAFE_INTEGER) -
-      (order.get(b) ?? Number.MAX_SAFE_INTEGER),
-  );
-}
-
-/**
- * 按逆拓扑顺序排列指定节点的前驱。
- *
- * @template G 满足 {@link Walkable} 约束的图类型
- * @param graph 图实例
- * @param nodeId 终点节点 ID
- * @returns 按逆拓扑顺序排好的前驱 ID 列表
- */
-export function topoPredecessors<G extends Walkable>(graph: G, nodeId: NodeId): NodeId[] {
-  const order = ranks(graph);
-  const predecessors = Array.from(graph.incomingNeighbors(nodeId));
-  return predecessors.sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1));
+export function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
+  const order = toposort(graph, (cycle) => cycle);
+  const map = new Map<NodeId, number>();
+  for (let i = 0; i < order.length; i++) map.set(order[i]!, i);
+  return map;
 }
 
 /**
@@ -422,37 +403,43 @@ export function isCyclic<G extends Walkable>(graph: G): boolean {
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
- * @returns 各分量数组、节点 → 分量序号映射、以及分量间的有向边
+ * @returns
+ *  - `components`: 各分量数组；
+ *  - `index`: 节点 → 所属分量序号；
+ *  - `edges`: 分量间的有向边（已去重，无自环）。
  */
 export function condensation<G extends Walkable>(
   graph: G,
 ): {
   components: NodeId[][];
-  componentOf: Map<NodeId, number>;
+  index: Map<NodeId, number>;
   edges: Array<{ from: number; to: number }>;
 } {
   const components = scc(graph);
-  const componentOf = new Map<NodeId, number>();
+  const index = new Map<NodeId, number>();
   for (let i = 0; i < components.length; i++) {
-    for (const nodeId of components[i]!) componentOf.set(nodeId, i);
+    for (const nodeId of components[i]!) index.set(nodeId, i);
   }
 
-  const seen = new Set<string>();
+  // 用 number Set 编码 (from, to) 对，避免每条候选边都做字符串拼接。
+  // 编码方案：from * stride + to，其中 stride = components.length（足够区分所有分量对）。
+  const stride = components.length;
+  const seen = new Set<number>();
   const edges: Array<{ from: number; to: number }> = [];
   for (const nodeId of graph.nodeIds) {
-    const from = componentOf.get(nodeId);
+    const from = index.get(nodeId);
     if (from === undefined) continue;
     for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-      const to = componentOf.get(neighbor);
+      const to = index.get(neighbor);
       if (to === undefined || to === from) continue;
-      const key = `${from}->${to}`;
+      const key = from * stride + to;
       if (seen.has(key)) continue;
       seen.add(key);
       edges.push({ from, to });
     }
   }
 
-  return { components, componentOf, edges };
+  return { components, index, edges };
 }
 
 /**
@@ -489,18 +476,18 @@ export function reachable<G extends Neighbors>(
 }
 
 /**
- * 将边映射为 {@link WeightedEdge}，缺省时使用 `defaultWeight`。
+ * 把任意边引用映射为带默认权重的 {@link EdgeRef}（`undefined` 处填 `defaultWeight`）。
  *
  * @template E 边的原始权重类型
  * @template W 默认权重类型
- * @param edge 原始边
+ * @param edge 原始边引用（来自 {@link Graph.edgeRefs} / {@link MapGraph} / {@link MatrixGraph} 等）
  * @param defaultWeight `edge.weight` 为 `undefined` 时使用的默认值
  */
-export function weighted<E, W>(edge: Edge<E>, defaultWeight: W): WeightedEdge<E | W> {
+export function weighted<E, W>(edge: EdgeRef<E>, defaultWeight: W): EdgeRef<E | W> {
   return {
     id: edge.id,
-    source: edge.sourceId,
-    target: edge.targetId,
+    source: edge.source,
+    target: edge.target,
     weight: edge.weight ?? defaultWeight,
   };
 }
@@ -673,18 +660,6 @@ function count(iter: Iterable<unknown>): number {
   let n = 0;
   for (const _ of iter) n++;
   return n;
-}
-
-/**
- * 由拓扑序构建 `nodeId → index` 查表，用于按拓扑顺序对节点进行排序。
- *
- * @internal
- */
-function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
-  const order = toposort(graph, (cycle) => cycle);
-  const map = new Map<NodeId, number>();
-  for (let i = 0; i < order.length; i++) map.set(order[i]!, i);
-  return map;
 }
 
 /**

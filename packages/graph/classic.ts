@@ -1,10 +1,8 @@
 /**
- * 基础数据元模型 (classic)
- *
- * @remarks
- * 这里集中所有运行时类：{@link Socket}、{@link Port}、{@link Input}、{@link Output}、
+ * 基础数据元模型：{@link Socket}、{@link Port}、{@link Input}、{@link Output}、
  * {@link Node}、{@link Endpoint}、{@link Edge}、{@link Graph}。
- * 类型与算法接口在 {@link ./types}，算法在 {@link ./algorithms}。
+ *
+ * 类型与访问者 trait 在 {@link ./types}，算法在 {@link ./algorithms}。
  */
 
 import type {
@@ -419,12 +417,10 @@ export class Edge<W = unknown> {
  * @remarks
  * 设计要点（参考 petgraph）：
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
- *   `Graph` 不维护 `Adjacency` 这类失效敏感的中间表；
- * - 任何结构变更（addNode / addEdge / removeNode / removeEdge / clear）都不需要
- *   `_invalidate` 之类的钩子，因为没有缓存可失效；
- * - 拓扑排序、强连通分量等高阶算法**不再以方法形式挂在 Graph 上**，
- *   请改用 {@link toposort} / {@link toposortFull} / {@link scc} 等独立函数：
- *   `algorithms.ts` 仅依赖 visitor traits，三种存储 (Graph / MapGraph / MatrixGraph) 共用。
+ *   任何结构变更后查询立刻反映新状态，无失效钩子；
+ * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
+ *   {@link toposortFull} / {@link scc} 等独立函数（仅依赖访问者 trait，
+ *   三种存储 Graph / MapGraph / MatrixGraph 共用）。
  *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
@@ -591,13 +587,13 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 加入一条边，并将其登记到目标输入端口的连接列表中。
+   * 加入一条边，并把它 attach 到两端端口的 {@link Port.edges} 列表里。
    *
    * @param edge 待加入的边
    * @returns 当前图实例（链式调用）
    * @throws {Error} 当出现以下任一情况：
    *  - 同 ID 的边已存在
-   *  - 起点 / 终点节点不存在
+   *  - 起点 / 终点节点不存在或与图中已注册实例不一致
    *  - 起点 / 终点端口在对应节点上找不到
    *  - 起点不是输出端口、或终点不是输入端口
    *  - 两端 Socket 类型不兼容
@@ -625,7 +621,7 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 移除一条边，并将其从目标输入端口的连接列表中解除。
+   * 移除一条边，并从两端端口的 {@link Port.edges} 列表里 detach。
    *
    * @param edgeId 边 ID
    * @returns 被移除的边；不存在时返回 `undefined`

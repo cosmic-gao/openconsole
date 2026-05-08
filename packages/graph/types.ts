@@ -1,16 +1,13 @@
 /**
- * 类型声明的单一入口。
+ * 类型声明的单一入口（品牌 ID、Socket 字典、访问者 trait、DFS 事件等）。
  *
  * @remarks
- * 把所有公共类型（品牌 ID、Socket 字典、邻接缓存形状、算法接口等）集中在此处，
- * 实现细节（class、运行时常量）则保留在 {@link ./classic} 与 {@link ./algorithms} 里。
- *
  * 命名约定：
  * - 类型名优先使用单个英文单词；不得已使用两词组合（如 `NodeId`、`PortId`、`EdgeRef`）。
  * - 能力型 trait 用集合 / 动作的单数名词命名（{@link Catalog}、{@link Neighbors}、{@link Edges}、
- *   {@link Visitable}、{@link Walkable}）；当无法挑出贴切单词时保留 `Into*` 前缀
+ *   {@link Visitable}、{@link Walkable}）；挑不出贴切单词时保留 `Into*` 前缀
  *   （如 {@link IntoEdgeRefs}、{@link IntoDegree}）。
- * - trait 上的方法亦优先单词形：`bound` / `at` / `marks` / `reset` / `neighbors`，
+ * - trait 方法亦优先单词形：`bound` / `at` / `marks` / `reset` / `neighbors`，
  *   方向语义通过可选 `direction` 参数传入而不是新方法。
  */
 
@@ -125,33 +122,6 @@ export interface EdgeRef<E = unknown> {
   readonly target: NodeId;
   /** 边权重；缺省时为 `undefined`。 */
   readonly weight: E | undefined;
-}
-
-/**
- * 带权重的边引用 - {@link EdgeRef} 的旧名别名，保留以兼容 `weighted()` 等既有用法。
- *
- * @template E 边权重类型
- */
-export type WeightedEdge<E = unknown> = EdgeRef<E>;
-
-/**
- * 邻接缓存 - 节点 ID → 出/入邻居与度数。
- *
- * @remarks 所有 Map 都以节点 ID 为键，调用方应当只读使用。
- */
-export interface Adjacency {
-  /** 节点 → 流出边 ID 列表。 */
-  outgoingEdges: Map<NodeId, EdgeId[]>;
-  /** 节点 → 流入边 ID 列表。 */
-  incomingEdges: Map<NodeId, EdgeId[]>;
-  /** 节点 → 后继节点 ID 列表（与 `outgoingEdges` 一一对应）。 */
-  successors: Map<NodeId, NodeId[]>;
-  /** 节点 → 前驱节点 ID 列表（与 `incomingEdges` 一一对应）。 */
-  predecessors: Map<NodeId, NodeId[]>;
-  /** 节点 → 入度。 */
-  inDegree: Map<NodeId, number>;
-  /** 节点 → 出度。 */
-  outDegree: Map<NodeId, number>;
 }
 
 /** 最小图接口 - 所有图实现必须提供的能力。 */
