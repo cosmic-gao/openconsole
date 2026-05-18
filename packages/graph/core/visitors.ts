@@ -2,7 +2,7 @@
  * 访问者 (visitor) 模块。
  *
  * @remarks
- * 借鉴 petgraph 的 `visit` 子模块，提供两种访问风格：
+ * 提供两种访问风格：
  *
  * 1. **状态化遍历器** ({@link Dfs}、{@link Bfs}、{@link DfsPostorder}、{@link Topo})
  *    - 暴露 `next(graph)` 接口，调用方控制推进节奏；
@@ -236,7 +236,7 @@ export class Bfs {
  * DFS 后序状态化遍历器（迭代实现，可暂停 / 恢复）。
  *
  * @remarks
- * - 借鉴 petgraph 的 `DfsPostOrder`：每个 `next(graph)` 调用返回下一个 finish 节点；
+ * - 每个 `next(graph)` 调用返回下一个 finish 节点；
  * - 后序意味着节点在所有后代访问完成后才被产出，逆后序天然就是 DAG 的拓扑序；
  * - 内部维护栈帧 `(node, neighbors)`，无递归调用，深图也不会栈溢出。
  *

@@ -140,7 +140,7 @@ export interface Catalog {
  * 能列举直接邻居（出/入邻居）。
  *
  * @remarks
- * 用 `direction` 可选参数代替 petgraph 的 `IntoNeighborsDirected` 子 trait：
+ * 用 `direction` 可选参数区分方向：
  * - 缺省：返回 前驱 + 后继（可能含重复，与原 `neighbors(node)` 行为一致）；
  * - `'input'`：仅前驱；
  * - `'output'`：仅后继。
@@ -162,8 +162,8 @@ export interface Neighbors {
  * 能列举边的轻量视图 ({@link EdgeView})。
  *
  * @remarks
- * petgraph 的 `IntoEdgeReferences` 类比物。{@link Graph} 与 {@link Reversed} 等视图都可以
- * 低成本地实现该 trait，从而被同一份算法消费。
+ * {@link Graph} 与 {@link Reversed} 等视图都可以低成本地实现该 trait，
+ * 从而被同一份算法消费。
  *
  * @template E 边权重类型
  */
@@ -180,7 +180,7 @@ export interface IntoEdgeViews<E = unknown> {
  * 节点可索引化 - 用于数组型算法（如 Dijkstra 的距离数组、Floyd-Warshall 的二维矩阵）。
  *
  * @remarks
- * 索引语义跟 petgraph 的 `NodeIndexable` 对齐：
+ * 索引语义：
  * - {@link bound} 给出有效索引的上界（不一定等于 {@link Catalog.nodeCount}）；
  * - 索引可以是 **稀疏** 的——某些 `i ∈ [0, bound())` 处 {@link at} 返回 `undefined`；
  * - 算法应当遍历 `[0, bound())` 并自行跳过 `undefined` 槽，不要假设 `at(i)` 一定有值。
@@ -219,7 +219,7 @@ export interface IntoDegree {
 export type Walkable = Catalog & Neighbors;
 
 /**
- * 访问者回调返回值，模仿 petgraph 的 `Control<B>`。
+ * 访问者回调返回值。
  *
  * @remarks
  * - `'continue'`：继续访问；
@@ -231,7 +231,7 @@ export type Control = 'continue' | 'prune' | 'break';
 /**
  * DFS 访问事件。
  *
- * @remarks 与 petgraph `DfsEvent` 对齐，便于 dominator/topo/SCC 等算法基于事件流编写。
+ * @remarks 便于 dominator/topo/SCC 等算法基于事件流编写。
  *
  * @template T 用户载荷类型，预留给计时器（discover/finish 时间戳）等扩展使用
  */

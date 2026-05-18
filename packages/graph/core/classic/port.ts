@@ -9,7 +9,7 @@ import type { Socket } from './socket';
  * 端口抽象基类。子类决定方向（{@link Input} / {@link Output}）。
  *
  * @remarks
- * 借鉴 petgraph 的 "数据结构本身即邻接表" 思想：
+ * "数据结构本身即邻接表"：
  * - 每个端口直接持有 `edges` 列表，记录所有从 / 到该端口的边 ID；
  * - {@link Graph} 不再维护任何中央邻接缓存，所有邻接查询从端口列表直接派生；
  * - 这样既消除了缓存失效问题，又把数据 / 索引绑在同一个对象上，便于 GC 回收。

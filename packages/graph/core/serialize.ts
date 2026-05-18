@@ -2,7 +2,7 @@
  * 序列化压缩模块
  *
  * @remarks
- * 参考 LiteGraph.js 的数组压缩格式，显著减少序列化后的字节大小。
+ * 使用数组元组压缩格式，显著减少序列化后的字节大小。
  *
  * 压缩格式：
  * - 节点元组：`[id, weight, inputs, outputs]`，`inputs`/`outputs` 为 `[name, portId, socketName][]` 或 `null`。

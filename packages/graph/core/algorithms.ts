@@ -2,7 +2,7 @@
  * 图算法模块。
  *
  * @remarks
- * 参考 petgraph 风格：算法仅依赖访问者 trait（{@link Catalog} / {@link Neighbors} /
+ * 算法仅依赖访问者 trait（{@link Catalog} / {@link Neighbors} /
  * {@link IntoEdgeViews} / {@link IntoDegree} 等），与具体存储解耦。
  */
 
@@ -356,8 +356,8 @@ export function isolated<G extends Catalog & IntoDegree>(graph: G): NodeId[] {
  *
  * @remarks
  * 仅遍历 `outgoingNeighbors` 一次即可同步推出 `predecessors`，
- * 适用于只暴露出边却需要双向访问的图实现。注意这不是 petgraph 风格的
- * `Reversed<G>` 视图（那是一个零成本边翻转适配器）。
+ * 适用于只暴露出边却需要双向访问的图实现。注意这会一次性物化双向邻接表，
+ * 不是零成本的边翻转视图；如需零成本视图请使用 {@link reversed}。
  *
  * @template G 满足 {@link Catalog} + {@link Neighbors} 的图类型；
  *   不需要节点 / 边权重，因此不再带 N / E 泛型。

@@ -21,7 +21,7 @@ import type { Port } from './port';
  * 有向图，承载节点 (`Node`) 与边 (`Edge`)，并提供基础邻接查询。
  *
  * @remarks
- * 设计要点（参考 petgraph）：
+ * 设计要点：
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
  * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
@@ -154,7 +154,7 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 查找从 `source` 直接指向 `target` 的第一条边（petgraph `find_edge` 等价物）。
+   * 查找从 `source` 直接指向 `target` 的第一条边。
    *
    * @remarks 存在多重边时只返回首条；如需全部请用 {@link edgesBetween}。
    *
@@ -171,7 +171,7 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 取边的两端节点 ID（petgraph `edge_endpoints` 等价物）。
+   * 取边的两端节点 ID。
    *
    * @param edgeId 边 ID
    * @returns `[sourceId, targetId]`；边不存在时返回 `undefined`
