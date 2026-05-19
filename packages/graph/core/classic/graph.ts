@@ -40,7 +40,7 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * @param id 图的唯一标识
    */
-  public constructor(public readonly id: GraphId) {}
+  public constructor(public readonly id: GraphId) { }
 
   /**
    * 节点所有出边的 ID 流。
@@ -447,8 +447,8 @@ export class Graph<N = unknown, E = unknown> {
       nodes: Array.from(this.nodes.values()).map(node => ({
         id: node.id,
         weight: node.weight,
-        inputs: portDictToJson(node.inputs),
-        outputs: portDictToJson(node.outputs),
+        inputs: json(node.inputs),
+        outputs: json(node.outputs),
       })),
       edges: Array.from(this.edges.values()).map(edge => ({
         id: edge.id,
@@ -677,7 +677,7 @@ export class Graph<N = unknown, E = unknown> {
  *
  * @internal
  */
-function portDictToJson(
+function json(
   ports: PortDict,
 ): Record<string, { id: PortId; socket: string } | null> {
   const result: Record<string, { id: PortId; socket: string } | null> = {};
