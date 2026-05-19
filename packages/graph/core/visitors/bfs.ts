@@ -3,7 +3,7 @@
  */
 
 import type { Neighbors, NodeId } from '../types';
-import { asIterator } from './iterator';
+import { toIterator } from './iterator';
 
 /**
  * 广度优先遍历器（迭代实现，使用游标队列）。
@@ -94,6 +94,6 @@ export class Bfs {
    * @param graph 图实例
    */
   public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    return asIterator(() => this.next(graph));
+    return toIterator(() => this.next(graph));
   }
 }

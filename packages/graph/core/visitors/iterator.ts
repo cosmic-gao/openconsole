@@ -12,7 +12,7 @@ import type { NodeId } from '../types';
  *
  * @internal
  */
-export function asIterator(step: () => NodeId | undefined): IterableIterator<NodeId> {
+export function toIterator(step: () => NodeId | undefined): IterableIterator<NodeId> {
   const result: IterableIterator<NodeId> = {
     [Symbol.iterator]: () => result,
     next: () => {

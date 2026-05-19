@@ -9,7 +9,7 @@ import type {
   Topology,
   Walkable,
 } from '../types';
-import { asIterator } from './iterator';
+import { toIterator } from './iterator';
 
 /**
  * 拓扑序状态化遍历器（Kahn 算法的可暂停版）。
@@ -118,7 +118,7 @@ export class Topo {
    * @param graph 图实例
    */
   public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    return asIterator(() => this.next(graph));
+    return toIterator(() => this.next(graph));
   }
 
   /** 当前已输出节点数 < 总数时即存在环；返回剩余的环上节点。 */

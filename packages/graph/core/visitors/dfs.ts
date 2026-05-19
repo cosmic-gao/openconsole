@@ -9,7 +9,7 @@ import type {
   Neighbors,
   NodeId,
 } from '../types';
-import { asIterator } from './iterator';
+import { toIterator } from './iterator';
 
 /**
  * 深度优先遍历器（迭代实现，可暂停 / 恢复）。
@@ -99,7 +99,7 @@ export class Dfs {
    * @param graph 图实例
    */
   public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    return asIterator(() => this.next(graph));
+    return toIterator(() => this.next(graph));
   }
 }
 
@@ -224,7 +224,7 @@ export class DfsPostorder {
    * @param graph 图实例
    */
   public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
-    return asIterator(() => this.next(graph));
+    return toIterator(() => this.next(graph));
   }
 }
 
