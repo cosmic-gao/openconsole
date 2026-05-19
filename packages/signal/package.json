@@ -4,7 +4,19 @@
   "private": true,
   "type": "module",
   "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && vitest run"
   }
 }

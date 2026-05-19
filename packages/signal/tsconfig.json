@@ -5,6 +5,7 @@
     "@opendesign/tsconfig/esm"
   ],
   "include": [
-    "index.ts"
+    "index.ts",
+    "index.test.ts"
   ]
 }
