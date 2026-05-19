@@ -10,5 +10,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "@opendesign/signal": "workspace:*"
   }
 }

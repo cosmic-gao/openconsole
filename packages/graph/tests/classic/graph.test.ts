@@ -130,6 +130,22 @@ describe('Graph - 基础结构', () => {
     expect(g.edgesConnecting(id<NodeId>('A'), id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
   });
 
+  it('incidentEdges 包含入边与出边，自环只出现一次', () => {
+    const g = newGraph();
+    const A = portNode('A');
+    const B = portNode('B');
+    g.addNode(A).addNode(B);
+    // A → B（A 出 / B 入）
+    g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
+    // B → A（A 入 / B 出）
+    g.addEdge(new Edge(id<EdgeId>('e2'), new Endpoint(B, B.output('y')!), new Endpoint(A, A.input('x')!)));
+    // A 上的自环（A 出 + A 入，去重后应只出现一次）
+    g.addEdge(new Edge(id<EdgeId>('loop'), new Endpoint(A, A.output('y')!), new Endpoint(A, A.input('x')!)));
+
+    expect(g.incidentEdges(id<NodeId>('A')).map(e => e.id).sort()).toEqual(['e1', 'e2', 'loop']);
+    expect(g.incidentEdges(id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
+  });
+
   it('predecessors / successors / adjacencies / degree', () => {
     const g = newGraph();
     const A = portNode('A');

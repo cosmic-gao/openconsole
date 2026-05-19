@@ -2,6 +2,7 @@
  * Topo：拓扑序状态化遍历器（Kahn 算法的可暂停版）。
  */
 
+import { inDegrees } from '../internal';
 import type {
   IntoDegree,
   Neighbors,
@@ -67,25 +68,7 @@ export class Topo {
    * @param graph 图实例
    */
   public static start<G extends Walkable & Partial<IntoDegree>>(graph: G): Topo {
-    const pending = new Map<NodeId, number>();
-
-    if (typeof graph.inDegree === 'function') {
-      for (const nodeId of graph.nodeIds) {
-        pending.set(nodeId, graph.inDegree(nodeId));
-      }
-    } else {
-      for (const nodeId of graph.nodeIds) pending.set(nodeId, 0);
-      // 仅对 nodeIds 中的节点累计入度；`outgoingNeighbors` 偶发返回的孤儿节点
-      // (不在 nodeIds 中) 不应被算入拓扑空间，否则会出现 emit count > total 的不一致。
-      for (const nodeId of graph.nodeIds) {
-        for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-          if (pending.has(neighbor)) {
-            pending.set(neighbor, pending.get(neighbor)! + 1);
-          }
-        }
-      }
-    }
-
+    const pending = inDegrees(graph);
     return new Topo(pending, pending.size);
   }
 

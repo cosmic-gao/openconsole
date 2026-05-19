@@ -1,8 +1,11 @@
 /**
  * 拓扑排序家族：{@link CycleError} 及 toposort / topology / cycles / isCyclic / ranks。
+ *
+ * @remarks 排序主体委托给 {@link Topo} 状态化遍历器；本模块只负责 `onCycle` 等便捷封装。
  */
 
 import type { Cycles, IntoDegree, NodeId, Topology, Walkable } from '../types';
+import { Topo } from '../visitors';
 
 /** 拓扑排序检测到环时抛出的错误。 */
 export class CycleError extends Error {
@@ -40,8 +43,8 @@ export function toposort<G extends Walkable>(
  * 带环路信息的拓扑排序。
  *
  * @remarks
- * 入度计算优先走快路径：若 `graph` 实现了 {@link IntoDegree}，直接调用 `inDegree(id)`；
- * 否则按 `outgoingNeighbors` 扫描重建。
+ * 实现：构造一个 {@link Topo} 实例，drain 出所有可达节点，再把环上节点交给 `onCycle`
+ * 决定是否抛错 / 拼回。入度初始化的快/慢路径细节请见 {@link inDegrees}。
  *
  * @template G 满足 {@link Walkable}，可选实现 {@link IntoDegree}
  * @param graph 图实例
@@ -52,64 +55,13 @@ export function topology<G extends Walkable & Partial<IntoDegree>>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => cycle,
 ): Topology {
-  const inDegree = new Map<NodeId, number>();
-  const nodeOrder: NodeId[] = [];
-
-  for (const nodeId of graph.nodeIds) {
-    nodeOrder.push(nodeId);
-    inDegree.set(nodeId, 0);
-  }
-
-  if (typeof graph.inDegree === 'function') {
-    // 快路径：直接读 IntoDegree（Graph 的 inDegree 是 O(num_inputs)）
-    for (const nodeId of nodeOrder) {
-      inDegree.set(nodeId, graph.inDegree(nodeId));
-    }
-  } else {
-    // 慢路径：扫出邻居重建
-    for (const nodeId of nodeOrder) {
-      for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-        // 跳过孤儿邻居（不在 nodeIds 拓扑空间内）。
-        if (!inDegree.has(neighbor)) continue;
-        inDegree.set(neighbor, inDegree.get(neighbor)! + 1);
-      }
-    }
-  }
-
-  const queue: NodeId[] = [];
-  for (const [nodeId, degree] of inDegree) {
-    if (degree === 0) queue.push(nodeId);
-  }
-
-  const order: NodeId[] = [];
-  let head = 0;
-  while (head < queue.length) {
-    const nodeId = queue[head++]!;
-    order.push(nodeId);
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-      const current = inDegree.get(neighbor);
-      if (current === undefined) continue; // 孤儿邻居
-      const remaining = current - 1;
-      inDegree.set(neighbor, remaining);
-      if (remaining === 0) queue.push(neighbor);
-    }
-  }
-
-  const cycleNodes: NodeId[] = [];
-  if (order.length < nodeOrder.length) {
-    const visited = new Set<NodeId>(order);
-    for (const nodeId of nodeOrder) {
-      if (!visited.has(nodeId)) cycleNodes.push(nodeId);
-    }
-    order.push(...onCycle(cycleNodes));
-  }
-
+  const topo = Topo.start(graph);
+  const order: NodeId[] = [...topo.iterator(graph)];
+  const cycleNodes = topo.cycleNodes();
+  if (cycleNodes.length > 0) order.push(...onCycle(cycleNodes));
   return {
     order,
-    cycles: {
-      hasCycle: cycleNodes.length > 0,
-      cycleNodes,
-    },
+    cycles: { hasCycle: cycleNodes.length > 0, cycleNodes },
   };
 }
 

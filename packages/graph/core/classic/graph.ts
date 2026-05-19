@@ -2,6 +2,9 @@
  * Graph：有向图主容器，承载节点与边并提供基础邻接查询。
  */
 
+import { Signal } from '@opendesign/signal';
+
+import { portsJson } from '../internal';
 import type {
   Direction,
   EdgeId,
@@ -15,7 +18,6 @@ import type {
   GraphListener,
   NodeId,
   PortDict,
-  PortId,
   Sockets,
   Vertex,
   Subscribable,
@@ -32,7 +34,7 @@ import type { Port } from './port';
  * 设计要点：
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
- * - **O(1) NodeIndexable**：内部维护 `_order` 数组 + `_index` Map，
+ * - **O(1) NodeIndexable**：内部维护 `_order` 数组 + `_index` Map,
  *   {@link at}/{@link indexOf}/{@link bound} 全部 O(1)；removeNode 使用 swap-and-pop，
  *   节点索引顺序在删除时**可能被打乱**；
  * - **变更事件**：通过 {@link on} 订阅节点/边的 add/remove，可用于增量算法（如
@@ -59,8 +61,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
 
-  /** 事件订阅表。 */
-  private readonly _listeners = new Map<GraphEventName, Set<GraphListener<unknown>>>();
+  /** 内置事件总线，承载 {@link GraphEventMap}（基于 `@opendesign/signal`）。 */
+  private readonly _signal = new Signal<GraphEventMap<N, E>>();
 
   /**
    * @param id 图的唯一标识
@@ -68,32 +70,30 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   public constructor(public readonly id: GraphId) {}
 
   /**
-   * 节点所有出边的 ID 流。
+   * 流式生成节点在指定方向上的边 ID（直接读端口的 {@link Port.edges} 列表）。
    *
    * @internal
    */
-  private *_outgoingEdgeIds(nodeId: NodeId): IterableIterator<EdgeId> {
+  private *_edgeIds(nodeId: NodeId, direction: Direction): IterableIterator<EdgeId> {
     const node = this.nodes.get(nodeId);
     if (!node) return;
-    for (const key in node.outputs) {
-      const port = node.outputs[key];
+    const ports = direction === 'input' ? node.inputs : node.outputs;
+    for (const key in ports) {
+      const port = ports[key];
       if (!port) continue;
       for (const id of port.edges) yield id;
     }
   }
 
   /**
-   * 节点所有入边的 ID 流。
+   * 流式生成节点在指定方向上的边实例（自动跳过已被删除的孤儿 ID）。
    *
    * @internal
    */
-  private *_incomingEdgeIds(nodeId: NodeId): IterableIterator<EdgeId> {
-    const node = this.nodes.get(nodeId);
-    if (!node) return;
-    for (const key in node.inputs) {
-      const port = node.inputs[key];
-      if (!port) continue;
-      for (const id of port.edges) yield id;
+  private *_edgesOf(nodeId: NodeId, direction: Direction): IterableIterator<Edge<E>> {
+    for (const id of this._edgeIds(nodeId, direction)) {
+      const edge = this.edges.get(id);
+      if (edge) yield edge;
     }
   }
 
@@ -133,8 +133,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     if (!node) return undefined;
 
     const incident = new Set<EdgeId>();
-    for (const id of this._outgoingEdgeIds(nodeId)) incident.add(id);
-    for (const id of this._incomingEdgeIds(nodeId)) incident.add(id);
+    for (const id of this._edgeIds(nodeId, 'output')) incident.add(id);
+    for (const id of this._edgeIds(nodeId, 'input')) incident.add(id);
     for (const edgeId of incident) {
       const edge = this.edges.get(edgeId);
       if (!edge) continue;
@@ -209,9 +209,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @returns 边实例；不存在时返回 `undefined`
    */
   public findEdge(source: NodeId, target: NodeId): Edge<E> | undefined {
-    for (const id of this._outgoingEdgeIds(source)) {
-      const edge = this.edges.get(id);
-      if (edge && edge.targetId === target) return edge;
+    for (const edge of this._edgesOf(source, 'output')) {
+      if (edge.targetId === target) return edge;
     }
     return undefined;
   }
@@ -348,12 +347,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    */
   public incomingEdges(nodeId: NodeId): Edge<E>[] {
-    const result: Edge<E>[] = [];
-    for (const id of this._incomingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge);
-    }
-    return result;
+    return Array.from(this._edgesOf(nodeId, 'input'));
   }
 
   /**
@@ -362,12 +356,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    */
   public outgoingEdges(nodeId: NodeId): Edge<E>[] {
-    const result: Edge<E>[] = [];
-    for (const id of this._outgoingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge);
-    }
-    return result;
+    return Array.from(this._edgesOf(nodeId, 'output'));
   }
 
   /**
@@ -378,17 +367,13 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   public incidentEdges(nodeId: NodeId): Edge<E>[] {
     const seen = new Set<EdgeId>();
     const result: Edge<E>[] = [];
-    for (const id of this._outgoingEdgeIds(nodeId)) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge);
+    for (const edge of this._edgesOf(nodeId, 'output')) {
+      seen.add(edge.id);
+      result.push(edge);
     }
-    for (const id of this._incomingEdgeIds(nodeId)) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge);
+    for (const edge of this._edgesOf(nodeId, 'input')) {
+      if (seen.has(edge.id)) continue;
+      result.push(edge);
     }
     return result;
   }
@@ -401,9 +386,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public edgesBetween(source: NodeId, target: NodeId): Edge<E>[] {
     const result: Edge<E>[] = [];
-    for (const id of this._outgoingEdgeIds(source)) {
-      const edge = this.edges.get(id);
-      if (edge && edge.targetId === target) result.push(edge);
+    for (const edge of this._edgesOf(source, 'output')) {
+      if (edge.targetId === target) result.push(edge);
     }
     return result;
   }
@@ -426,10 +410,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public predecessors(nodeId: NodeId): NodeId[] {
     const result: NodeId[] = [];
-    for (const id of this._incomingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge.sourceId);
-    }
+    for (const edge of this._edgesOf(nodeId, 'input')) result.push(edge.sourceId);
     return result;
   }
 
@@ -440,10 +421,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public successors(nodeId: NodeId): NodeId[] {
     const result: NodeId[] = [];
-    for (const id of this._outgoingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (edge) result.push(edge.targetId);
-    }
+    for (const edge of this._edgesOf(nodeId, 'output')) result.push(edge.targetId);
     return result;
   }
 
@@ -463,14 +441,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    */
   public inDegree(nodeId: NodeId): number {
-    const node = this.nodes.get(nodeId);
-    if (!node) return 0;
-    let count = 0;
-    for (const key in node.inputs) {
-      const port = node.inputs[key];
-      if (port) count += port.edges.length;
-    }
-    return count;
+    return this._degree(nodeId, 'input');
   }
 
   /**
@@ -480,14 +451,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    */
   public outDegree(nodeId: NodeId): number {
-    const node = this.nodes.get(nodeId);
-    if (!node) return 0;
-    let count = 0;
-    for (const key in node.outputs) {
-      const port = node.outputs[key];
-      if (port) count += port.edges.length;
-    }
-    return count;
+    return this._degree(nodeId, 'output');
   }
 
   /**
@@ -497,6 +461,23 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public degree(nodeId: NodeId): number {
     return this.inDegree(nodeId) + this.outDegree(nodeId);
+  }
+
+  /**
+   * 节点在指定方向上的度数（端口边列表长度之和）。
+   *
+   * @internal
+   */
+  private _degree(nodeId: NodeId, direction: Direction): number {
+    const node = this.nodes.get(nodeId);
+    if (!node) return 0;
+    const ports = direction === 'input' ? node.inputs : node.outputs;
+    let count = 0;
+    for (const key in ports) {
+      const port = ports[key];
+      if (port) count += port.edges.length;
+    }
+    return count;
   }
 
   /** 源节点：入度为 0 的节点。 */
@@ -565,8 +546,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     const nodes: GraphJsonNode<N>[] = Array.from(this.nodes.values()).map(node => ({
       id: node.id,
       weight: node.weight,
-      inputs: json(node.inputs),
-      outputs: json(node.outputs),
+      inputs: portsJson(node.inputs),
+      outputs: portsJson(node.outputs),
     }));
     const edges: GraphJsonEdge<E>[] = Array.from(this.edges.values()).map(edge => ({
       id: edge.id,
@@ -595,13 +576,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     event: K,
     listener: GraphListener<GraphEventMap<N, E>[K]>,
   ): () => void {
-    let set = this._listeners.get(event);
-    if (!set) {
-      set = new Set();
-      this._listeners.set(event, set);
-    }
-    set.add(listener as GraphListener<unknown>);
-    return () => { set!.delete(listener as GraphListener<unknown>); };
+    return this._signal.on(event, listener);
   }
 
   /**
@@ -615,7 +590,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     event: K,
     listener: GraphListener<GraphEventMap<N, E>[K]>,
   ): void {
-    this._listeners.get(event)?.delete(listener as GraphListener<unknown>);
+    this._signal.off(event, listener);
   }
 
   /**
@@ -627,11 +602,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     event: K,
     payload: GraphEventMap<N, E>[K],
   ): void {
-    const set = this._listeners.get(event);
-    if (!set || set.size === 0) return;
-    for (const listener of set) {
-      (listener as GraphListener<GraphEventMap<N, E>[K]>)(payload);
-    }
+    this._signal.emit(event, payload);
   }
 
   /**
@@ -686,42 +657,17 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
 
   /** {@inheritdoc IntoEdgeViews.getEdges} */
   public *getEdges(): Iterable<EdgeView<E>> {
-    for (const edge of this.edges.values()) {
-      yield {
-        id: edge.id,
-        source: edge.sourceId,
-        target: edge.targetId,
-        weight: edge.weight,
-      };
-    }
+    for (const edge of this.edges.values()) yield viewOf(edge);
   }
 
   /** {@inheritdoc IntoEdgeViews.getIncomingEdges} */
   public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
-    for (const id of this._incomingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (!edge) continue;
-      yield {
-        id: edge.id,
-        source: edge.sourceId,
-        target: edge.targetId,
-        weight: edge.weight,
-      };
-    }
+    for (const edge of this._edgesOf(nodeId, 'input')) yield viewOf(edge);
   }
 
   /** {@inheritdoc IntoEdgeViews.getOutgoingEdges} */
   public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
-    for (const id of this._outgoingEdgeIds(nodeId)) {
-      const edge = this.edges.get(id);
-      if (!edge) continue;
-      yield {
-        id: edge.id,
-        source: edge.sourceId,
-        target: edge.targetId,
-        weight: edge.weight,
-      };
-    }
+    for (const edge of this._edgesOf(nodeId, 'output')) yield viewOf(edge);
   }
 
   /** {@inheritdoc NodeIndexable.bound} (O(1)) */
@@ -841,16 +787,15 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
 }
 
 /**
- * 将端口字典序列化为 `{ portName: { id, socket } | null }`。
+ * 把内部 {@link Edge} 实例投影为通用 {@link EdgeView}。
  *
  * @internal
  */
-function json(
-  ports: PortDict,
-): Record<string, { id: PortId; socket: string } | null> {
-  const result: Record<string, { id: PortId; socket: string } | null> = {};
-  for (const [name, port] of Object.entries(ports)) {
-    result[name] = port ? { id: port.id, socket: port.socket.name } : null;
-  }
-  return result;
+function viewOf<E>(edge: Edge<E>): EdgeView<E> {
+  return {
+    id: edge.id,
+    source: edge.sourceId,
+    target: edge.targetId,
+    weight: edge.weight,
+  };
 }

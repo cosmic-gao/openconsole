@@ -11,12 +11,12 @@ import {
   type Input,
   type Output,
 } from '../classic';
+import { lookupPort, portsJson } from '../internal';
 import type {
   EdgeId,
   GraphJsonEdge,
   GraphJsonNode,
   NodeId,
-  PortId,
   Vertex,
 } from '../types';
 import { mergeLookup, type SocketLookup } from './sockets';
@@ -176,7 +176,7 @@ export function apply<N, E>(
   patch: GraphPatch<N, E>,
   options?: { sockets?: SocketLookup },
 ): void {
-  const lookup = mergeLookup(options?.sockets);
+  const sockets = mergeLookup(options?.sockets);
   for (const op of patch.ops) {
     switch (op.kind) {
       case 'removeEdge':
@@ -186,7 +186,7 @@ export function apply<N, E>(
         graph.removeNode(op.data.id);
         break;
       case 'addNode':
-        graph.addNode(nodeFromJson(op.data, lookup) as Vertex<N>);
+        graph.addNode(nodeFromJson(op.data, sockets) as Vertex<N>);
         break;
       case 'addEdge':
         graph.addEdge(edgeFromJson(graph, op.data));
@@ -245,8 +245,8 @@ function nodeToJson<N>(node: Vertex<N>): GraphJsonNode<N> {
   return {
     id: node.id,
     weight: node.weight,
-    inputs: portDictToJson(node.inputs),
-    outputs: portDictToJson(node.outputs),
+    inputs: portsJson(node.inputs),
+    outputs: portsJson(node.outputs),
   };
 }
 
@@ -265,37 +265,22 @@ function edgeToJson<E>(edge: Edge<E>): GraphJsonEdge<E> {
 }
 
 /**
- * 端口字典 → JSON 形态。
- *
- * @internal
- */
-function portDictToJson(
-  ports: { readonly [key: string]: { id: PortId; socket: Socket } | undefined },
-): Record<string, { id: PortId; socket: string } | null> {
-  const result: Record<string, { id: PortId; socket: string } | null> = {};
-  for (const [name, port] of Object.entries(ports)) {
-    result[name] = port ? { id: port.id, socket: port.socket.name } : null;
-  }
-  return result;
-}
-
-/**
  * GraphJsonNode → 重建的 Node 实例（带端口）。
  *
  * @internal
  */
 function nodeFromJson<N>(
   data: GraphJsonNode<N>,
-  lookup: ReadonlyMap<string, Socket>,
+  sockets: ReadonlyMap<string, Socket>,
 ): Vertex<N> {
   const node = new Node(data.id, data.weight) as Vertex<N>;
   for (const [name, port] of Object.entries(data.inputs)) {
     if (!port) continue;
-    node.addInput(name, lookup.get(port.socket) ?? Socket.any, port.id);
+    node.addInput(name, sockets.get(port.socket) ?? Socket.any, port.id);
   }
   for (const [name, port] of Object.entries(data.outputs)) {
     if (!port) continue;
-    node.addOutput(name, lookup.get(port.socket) ?? Socket.any, port.id);
+    node.addOutput(name, sockets.get(port.socket) ?? Socket.any, port.id);
   }
   return node;
 }
@@ -305,7 +290,7 @@ function nodeFromJson<N>(
  *
  * @internal
  */
-function edgeFromJson<E>(graph: Graph<unknown, E>, data: GraphJsonEdge<E>): Edge<E> {
+function edgeFromJson<N, E>(graph: Graph<N, E>, data: GraphJsonEdge<E>): Edge<E> {
   const sourceNode = graph.getNode(data.source.nodeId);
   if (!sourceNode) {
     throw new Error(
@@ -318,8 +303,8 @@ function edgeFromJson<E>(graph: Graph<unknown, E>, data: GraphJsonEdge<E>): Edge
       `[diff/apply] edge "${String(data.id)}": target node "${String(data.target.nodeId)}" not found in target graph.`,
     );
   }
-  const sourcePort = portById<Output>(sourceNode.outputs, data.source.portId);
-  const targetPort = portById<Input>(targetNode.inputs, data.target.portId);
+  const sourcePort = lookupPort<Output>(sourceNode.outputs, data.source.portId);
+  const targetPort = lookupPort<Input>(targetNode.inputs, data.target.portId);
   if (!sourcePort || !targetPort) {
     throw new Error(`[diff/apply] edge "${String(data.id)}" references missing ports.`);
   }
@@ -329,22 +314,6 @@ function edgeFromJson<E>(graph: Graph<unknown, E>, data: GraphJsonEdge<E>): Edge
     new Endpoint(targetNode, targetPort),
     data.weight,
   );
-}
-
-/**
- * 按端口 ID 在端口字典中线性查找。
- *
- * @internal
- */
-function portById<P extends { id: PortId }>(
-  ports: { readonly [key: string]: P | undefined },
-  portId: PortId,
-): P | undefined {
-  for (const key in ports) {
-    const port = ports[key];
-    if (port && port.id === portId) return port;
-  }
-  return undefined;
 }
 
 /**

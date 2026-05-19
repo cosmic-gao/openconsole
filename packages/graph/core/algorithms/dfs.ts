@@ -1,8 +1,11 @@
 /**
  * dfs：DFS 生成器（迭代版，支持延迟消费）。
+ *
+ * @remarks 实现委托给 {@link Dfs} 状态化遍历器；本函数仅提供 Generator 风格的便捷入口。
  */
 
 import type { Neighbors, NodeId } from '../types';
+import { Dfs } from '../visitors';
 
 /**
  * DFS 生成器（迭代版，支持延迟消费）。
@@ -16,19 +19,5 @@ export function* dfs<G extends Neighbors>(
   graph: G,
   start: NodeId,
 ): Generator<NodeId, void, unknown> {
-  const stack: NodeId[] = [start];
-  const visited = new Set<NodeId>();
-
-  while (stack.length > 0) {
-    const nodeId = stack.pop()!;
-    if (visited.has(nodeId)) continue;
-    visited.add(nodeId);
-    yield nodeId;
-
-    const neighbors = Array.from(graph.outgoingNeighbors(nodeId));
-    for (let i = neighbors.length - 1; i >= 0; i--) {
-      const neighbor = neighbors[i]!;
-      if (!visited.has(neighbor)) stack.push(neighbor);
-    }
-  }
+  yield* Dfs.start(graph, start).iterator(graph);
 }

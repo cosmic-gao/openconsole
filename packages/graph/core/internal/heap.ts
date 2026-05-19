@@ -12,7 +12,7 @@
  *
  * @template T 元素类型
  */
-export class BinaryHeap<T> {
+export class Heap<T> {
   private readonly _data: T[] = [];
 
   /**

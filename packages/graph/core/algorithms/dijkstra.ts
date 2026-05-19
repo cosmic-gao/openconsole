@@ -8,7 +8,7 @@ import type {
   IntoEdgeViews,
   NodeId,
 } from '../types';
-import { BinaryHeap } from '../internal/heap';
+import { Heap } from '../internal';
 
 /** 堆中的待处理项：节点 + 距起点距离。 */
 interface DijkstraEntry {
@@ -42,7 +42,7 @@ export function dijkstra<E, G extends Catalog & IntoEdgeViews<E>>(
 ): Map<NodeId, number> {
   const distances = new Map<NodeId, number>();
   const visited = new Set<NodeId>();
-  const heap = new BinaryHeap<DijkstraEntry>((a, b) => a.dist - b.dist);
+  const heap = new Heap<DijkstraEntry>((a, b) => a.dist - b.dist);
 
   distances.set(start, 0);
   heap.push({ node: start, dist: 0 });

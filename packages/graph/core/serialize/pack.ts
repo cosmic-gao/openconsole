@@ -2,8 +2,9 @@
  * pack：把图序列化为紧凑格式。
  */
 
-import { Edge, Graph, type Socket } from '../classic';
-import type { PortId, Vertex } from '../types';
+import { Edge, Graph } from '../classic';
+import { compactPorts } from '../internal';
+import type { Vertex } from '../types';
 import type { Compact, CompactEdge, CompactNode } from './compact';
 
 /**
@@ -32,23 +33,7 @@ export function pack<N, E>(graph: Graph<N, E>): Compact {
  * @internal
  */
 function packNode(node: Vertex<unknown>): CompactNode {
-  return [node.id, node.weight, packPorts(node.inputs), packPorts(node.outputs)];
-}
-
-/**
- * 把端口字典压缩成元组数组；空字典返回 `null`，与 {@link CompactNode} 的存储约定一致。
- *
- * @internal
- */
-function packPorts(
-  ports: { readonly [k: string]: { id: PortId; socket: Socket } | undefined },
-): ReadonlyArray<[string, PortId, string]> | null {
-  const result: [string, PortId, string][] = [];
-  for (const [name, port] of Object.entries(ports)) {
-    if (!port) continue;
-    result.push([name, port.id, port.socket.name]);
-  }
-  return result.length > 0 ? result : null;
+  return [node.id, node.weight, compactPorts(node.inputs), compactPorts(node.outputs)];
 }
 
 /**

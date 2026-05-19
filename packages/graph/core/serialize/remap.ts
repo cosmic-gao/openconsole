@@ -13,13 +13,14 @@
  */
 
 import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
+import { compactPorts, lookupPort } from '../internal';
 import type {
   EdgeId,
   NodeId,
   PortId,
   Vertex,
 } from '../types';
-import { topology } from '../algorithms/toposort';
+import { topology } from '../algorithms';
 import type { Compact, CompactEdge, CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
@@ -63,20 +64,20 @@ export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
   // 2. 按节点 -> input/output 字典顺序为端口编号
   const portForward = new Map<string, string>();
   const ports: string[] = [];
+  const indexPort = (id: PortId): void => {
+    portForward.set(String(id), String(ports.length));
+    ports.push(String(id));
+  };
   for (const nodeId of nodeOrder) {
     const node = graph.getNode(nodeId);
     if (!node) continue;
     for (const portName in node.inputs) {
       const port = node.inputs[portName];
-      if (!port) continue;
-      portForward.set(String(port.id), String(ports.length));
-      ports.push(String(port.id));
+      if (port) indexPort(port.id);
     }
     for (const portName in node.outputs) {
       const port = node.outputs[portName];
-      if (!port) continue;
-      portForward.set(String(port.id), String(ports.length));
-      ports.push(String(port.id));
+      if (port) indexPort(port.id);
     }
   }
 
@@ -97,8 +98,8 @@ export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
     n.push([
       nodeForward.get(String(node.id))! as NodeId,
       node.weight,
-      packPorts(node.inputs, portForward),
-      packPorts(node.outputs, portForward),
+      compactPorts(node.inputs, portForward),
+      compactPorts(node.outputs, portForward),
     ]);
   }
 
@@ -141,7 +142,7 @@ export function unpackRemap<N, E>(
   const graph = options?.target ?? new Graph<N, E>(data.compact.g);
   if (options?.target) graph.clear();
 
-  const lookup = mergeLookup(options?.sockets);
+  const sockets = mergeLookup(options?.sockets);
   const keep = options?.keepCompactIds ?? false;
   const restoreNode = (compactId: string): NodeId =>
     keep ? (compactId as NodeId) : (data.remap.nodes[Number(compactId)] as NodeId);
@@ -159,7 +160,7 @@ export function unpackRemap<N, E>(
       for (const [name, portCompactId, socketName] of inputs) {
         node.addInput(
           name as string,
-          lookup.get(socketName) ?? Socket.any,
+          sockets.get(socketName) ?? Socket.any,
           restorePort(String(portCompactId)),
         );
       }
@@ -168,7 +169,7 @@ export function unpackRemap<N, E>(
       for (const [name, portCompactId, socketName] of outputs) {
         node.addOutput(
           name as string,
-          lookup.get(socketName) ?? Socket.any,
+          sockets.get(socketName) ?? Socket.any,
           restorePort(String(portCompactId)),
         );
       }
@@ -192,8 +193,8 @@ export function unpackRemap<N, E>(
         `[unpackRemap] edge "${String(edgeId)}" references missing nodes: ${String(sourceId)} -> ${String(targetId)}`,
       );
     }
-    const sourcePort = portById<Output>(sourceNode.outputs, sourcePortId);
-    const targetPort = portById<Input>(targetNode.inputs, targetPortId);
+    const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
+    const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
     if (!sourcePort || !targetPort) {
       throw new Error(`[unpackRemap] edge "${String(edgeId)}" references missing ports.`);
     }
@@ -209,38 +210,3 @@ export function unpackRemap<N, E>(
 
   return graph;
 }
-
-/**
- * 把节点的端口字典压成 `[name, compactPortId, socketName][]`。
- *
- * @internal
- */
-function packPorts(
-  ports: { readonly [k: string]: { id: PortId; socket: Socket } | undefined },
-  portForward: Map<string, string>,
-): ReadonlyArray<[string, PortId, string]> | null {
-  const result: [string, PortId, string][] = [];
-  for (const name in ports) {
-    const port = ports[name];
-    if (!port) continue;
-    result.push([name, portForward.get(String(port.id))! as PortId, port.socket.name]);
-  }
-  return result.length > 0 ? result : null;
-}
-
-/**
- * 按端口 ID 在端口字典中线性查找。
- *
- * @internal
- */
-function portById<P extends { id: PortId }>(
-  ports: { readonly [key: string]: P | undefined },
-  portId: PortId,
-): P | undefined {
-  for (const key in ports) {
-    const port = ports[key];
-    if (port && port.id === portId) return port;
-  }
-  return undefined;
-}
-

@@ -2,7 +2,10 @@
  * GraphEventMap / Subscribable：图变更事件载体与可订阅 trait。
  */
 
-import type { Edge } from '../classic/edge';
+// 仅类型 import：types ↔ classic 经 barrel 形成的循环只在 import type 下被
+// TS 擦除消解；切忌把下面的 `import type` 升级为值 import，否则会触发
+// 真正的运行时循环依赖。
+import type { Edge } from '../classic';
 import type { Vertex } from './port';
 
 /**

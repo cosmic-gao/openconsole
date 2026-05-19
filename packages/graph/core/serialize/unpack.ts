@@ -3,6 +3,7 @@
  */
 
 import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
+import { lookupPort } from '../internal';
 import type { PortId, Vertex } from '../types';
 import type { Compact, CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
@@ -29,11 +30,11 @@ export function unpack<N, E>(
   const graph = options?.target ?? new Graph<N, E>(data.g);
   if (options?.target) graph.clear();
 
-  const lookup = mergeLookup(options?.sockets);
+  const sockets = mergeLookup(options?.sockets);
 
   const nodeMap = new Map<typeof data.n[number][0], Vertex<unknown>>();
   for (const nodeData of data.n) {
-    const node = unpackNode(nodeData, lookup);
+    const node = unpackNode(nodeData, sockets);
     nodeMap.set(node.id, node);
     graph.addNode(node as Vertex<N>);
   }
@@ -49,8 +50,8 @@ export function unpack<N, E>(
       );
     }
 
-    const sourcePort = portById<Output>(sourceNode.outputs, sourcePortId);
-    const targetPort = portById<Input>(targetNode.inputs, targetPortId);
+    const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
+    const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
     if (!sourcePort || !targetPort) {
       throw new Error(`Edge "${String(id)}" references missing ports`);
     }
@@ -72,19 +73,19 @@ export function unpack<N, E>(
  * 还原 {@link CompactNode} 元组到 {@link Node} 实例。
  *
  * @param data 压缩节点元组
- * @param lookup Socket 名 → Socket 实例的查找表
+ * @param sockets Socket 名 → Socket 实例的查找表
  * @internal
  */
 function unpackNode(
   data: CompactNode,
-  lookup: ReadonlyMap<string, Socket>,
+  sockets: ReadonlyMap<string, Socket>,
 ): Vertex<unknown> {
   const [id, weight, inputs, outputs] = data;
   const node = new Node(id, weight) as Vertex<unknown>;
-  unpackPorts(inputs, lookup, (name, socket, portId) => {
+  unpackPorts(inputs, sockets, (name, socket, portId) => {
     node.addInput(name, socket, portId);
   });
-  unpackPorts(outputs, lookup, (name, socket, portId) => {
+  unpackPorts(outputs, sockets, (name, socket, portId) => {
     node.addOutput(name, socket, portId);
   });
   return node;
@@ -97,27 +98,11 @@ function unpackNode(
  */
 function unpackPorts(
   ports: ReadonlyArray<[string, PortId, string]> | null,
-  lookup: ReadonlyMap<string, Socket>,
+  sockets: ReadonlyMap<string, Socket>,
   add: (name: string, socket: Socket, id: PortId) => void,
 ): void {
   if (!ports) return;
   for (const [name, portId, socketName] of ports) {
-    add(name, lookup.get(socketName) ?? Socket.any, portId);
+    add(name, sockets.get(socketName) ?? Socket.any, portId);
   }
-}
-
-/**
- * 用引用相等在端口字典中按 ID 查找端口。
- *
- * @internal
- */
-function portById<P extends { id: PortId }>(
-  ports: { readonly [key: string]: P | undefined },
-  portId: PortId,
-): P | undefined {
-  for (const key in ports) {
-    const port = ports[key];
-    if (port && port.id === portId) return port;
-  }
-  return undefined;
 }

@@ -42,23 +42,16 @@ export function reachable<G extends Neighbors>(
 /**
  * 收集 `node` 的全部祖先（沿入边可达的节点，不含 `node` 本身）。
  *
- * @remarks 通过 {@link reversed} 在反向视图上跑 DFS，与正向 {@link dfs} 共享同一份算法。
+ * @remarks 在 {@link reversed} 视图上跑 DFS 复用同一份遍历算法。
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
  * @param node 起点
  */
 export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] {
-  const result: NodeId[] = [];
-  let first = true;
-  for (const visited of dfs(reversed(graph), node)) {
-    if (first) {
-      first = false;
-      continue;
-    }
-    result.push(visited);
-  }
-  return result;
+  const iter = dfs(reversed(graph), node);
+  iter.next(); // DFS 先 yield 起点本身，这里丢弃
+  return [...iter];
 }
 
 /**
@@ -69,14 +62,7 @@ export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] 
  * @param node 起点
  */
 export function descendants<G extends Neighbors>(graph: G, node: NodeId): NodeId[] {
-  const result: NodeId[] = [];
-  let first = true;
-  for (const visited of dfs(graph, node)) {
-    if (first) {
-      first = false;
-      continue;
-    }
-    result.push(visited);
-  }
-  return result;
+  const iter = dfs(graph, node);
+  iter.next(); // DFS 先 yield 起点本身，这里丢弃
+  return [...iter];
 }

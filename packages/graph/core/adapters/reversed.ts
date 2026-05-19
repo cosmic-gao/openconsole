@@ -21,7 +21,7 @@ import type {
 type EdgeOf<G> = G extends IntoEdgeViews<infer E> ? E : unknown;
 
 /** 空可迭代对象，O(1) 内存，用于 inner 缺 getEdges 时的安全回退。 */
-const EMPTY_ITERABLE: Iterable<never> = { *[Symbol.iterator]() { /* empty */ } };
+const EMPTY: Iterable<never> = { *[Symbol.iterator]() { /* empty */ } };
 
 /**
  * 反向图视图：把所有边方向翻转后呈现给算法。
@@ -77,7 +77,7 @@ implements
    * 否则返回空可迭代，确保与 {@link getEdges} 的回退行为一致。
    */
   public get edgeIds(): Iterable<EdgeId> {
-    return typeof this.inner.getEdges === 'function' ? this.inner.edgeIds : EMPTY_ITERABLE;
+    return typeof this.inner.getEdges === 'function' ? this.inner.edgeIds : EMPTY;
   }
 
   /** {@inheritdoc Catalog.nodeCount} */
@@ -117,19 +117,19 @@ implements
   /** 全图边引用（source/target 已互换）。 */
   public *getEdges(): Iterable<EdgeView<E>> {
     if (typeof this.inner.getEdges !== 'function') return;
-    for (const view of this.inner.getEdges()) yield flipEdgeView(view as EdgeView<E>);
+    for (const view of this.inner.getEdges()) yield flip(view as EdgeView<E>);
   }
 
   /** 反向后的入边 = 原图的出边（已翻转 source/target）。 */
   public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (typeof this.inner.getOutgoingEdges !== 'function') return;
-    for (const view of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(view as EdgeView<E>);
+    for (const view of this.inner.getOutgoingEdges(nodeId)) yield flip(view as EdgeView<E>);
   }
 
   /** 反向后的出边 = 原图的入边（已翻转 source/target）。 */
   public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (typeof this.inner.getIncomingEdges !== 'function') return;
-    for (const view of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(view as EdgeView<E>);
+    for (const view of this.inner.getIncomingEdges(nodeId)) yield flip(view as EdgeView<E>);
   }
 
   /**
@@ -235,6 +235,6 @@ export function reversed<
  *
  * @internal
  */
-function flipEdgeView<E>(view: EdgeView<E>): EdgeView<E> {
+function flip<E>(view: EdgeView<E>): EdgeView<E> {
   return { id: view.id, source: view.target, target: view.source, weight: view.weight };
 }
