@@ -1,10 +1,9 @@
 /**
- * 测试覆盖：`./serialize` 中的 pack / unpack / compressionRatio 紧凑序列化。
+ * 测试覆盖：unpack - 从紧凑格式恢复 Graph，支持自定义 Socket 表与目标图复用。
  */
 import { describe, expect, it } from 'vitest';
 
 import {
-  compressionRatio,
   Edge,
   Endpoint,
   Graph,
@@ -17,9 +16,8 @@ import {
   type NodeId,
   type PortId,
   type Sockets,
-} from '../core';
-
-const id = <T extends string>(v: string) => v as unknown as T;
+} from '../../core';
+import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
   const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
@@ -41,42 +39,6 @@ const makeGraph = () => {
   ));
   return g;
 };
-
-describe('pack', () => {
-  it('生成 g/n/e 三字段紧凑结构', () => {
-    const packed = pack(makeGraph());
-    expect(packed.g).toBe('g');
-    expect(packed.n).toHaveLength(2);
-    expect(packed.e).toHaveLength(1);
-  });
-
-  it('节点元组形式 [id, weight, inputs, outputs]', () => {
-    const packed = pack(makeGraph());
-    const [nid, weight, inputs, outputs] = packed.n[0]!;
-    expect(nid).toBe('A');
-    expect(weight).toEqual({ kind: 'src' });
-    expect(inputs).toEqual([['x', 'A:input:x', 'number']]);
-    expect(outputs).toEqual([['y', 'A:output:y', 'number']]);
-  });
-
-  it('边元组形式 [id, sourceNode, sourcePort, targetNode, targetPort, weight]', () => {
-    const packed = pack(makeGraph());
-    const [eid, sNode, sPort, tNode, tPort, weight] = packed.e[0]!;
-    expect(eid).toBe('e1');
-    expect(sNode).toBe('A');
-    expect(sPort).toBe('A:output:y');
-    expect(tNode).toBe('B');
-    expect(tPort).toBe('B:input:x');
-    expect(weight).toBe('edge-w');
-  });
-
-  it('无端口的节点 inputs / outputs 字段为 null（节省字节）', () => {
-    const g = new Graph<unknown, unknown>(id<GraphId>('g'));
-    g.addNode(new Node<Sockets, Sockets>(id<NodeId>('bare')));
-    const packed = pack(g);
-    expect(packed.n[0]).toEqual(['bare', undefined, null, null]);
-  });
-});
 
 describe('unpack', () => {
   it('从 pack 输出恢复完整图', () => {
@@ -140,29 +102,5 @@ describe('unpack', () => {
     const original = makeGraph();
     const restored = unpack(pack(original));
     expect(restored.toJson()).toEqual(original.toJson());
-  });
-});
-
-describe('compressionRatio', () => {
-  it('紧凑格式比 JSON 形式更小', () => {
-    const g = makeGraph();
-    const r = compressionRatio(g);
-    expect(r.originalBytes).toBeGreaterThan(r.compressedBytes);
-    expect(r.ratio).toBeGreaterThan(1);
-  });
-
-  it('空图 ratio 仍然合理（不为 0）', () => {
-    const g = new Graph<unknown, unknown>(id<GraphId>('empty'));
-    const r = compressionRatio(g);
-    expect(r.compressedBytes).toBeGreaterThan(0);
-    expect(r.ratio).toBeGreaterThan(0);
-  });
-
-  it('UTF-8 多字节字符长度准确', () => {
-    const g = new Graph<string, unknown>(id<GraphId>('emoji'));
-    g.addNode(new Node(id<NodeId>('节点-🎉'), '中文节点权重 🚀'));
-    const r = compressionRatio(g);
-    expect(r.compressedBytes).toBeGreaterThan(0);
-    expect(Number.isFinite(r.ratio)).toBe(true);
   });
 });

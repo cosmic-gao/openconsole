@@ -1,5 +1,5 @@
 /**
- * 测试覆盖：`./classic` 中的 Socket / Port / Input / Output / Node / Endpoint / Edge / Graph。
+ * 测试覆盖：Graph 主容器 - 增删、校验、邻接查询、度数、视图协议（Catalog/Neighbors/NodeIndexable/Visitable）。
  */
 import { describe, expect, it } from 'vitest';
 
@@ -7,27 +7,15 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Input,
   Node,
-  Output,
   Socket,
   type EdgeId,
   type GraphId,
   type NodeId,
-  type PortId,
-  type Sockets,
-} from '../core';
+} from '../../core';
+import { id, portNode } from '../_fixtures';
 
-// 测试中直接用默认 `Sockets` 索引签名，避免 interface 与 index-signature 的细节冲突。
-const id = <T extends string>(v: string) => v as unknown as T;
 const newGraph = () => new Graph<unknown, unknown>(id<GraphId>('g'));
-
-const makeNumNode = (name: string) => {
-  const n = new Node(id<NodeId>(name));
-  n.addInput('x', Socket.number);
-  n.addOutput('y', Socket.number);
-  return n;
-};
 
 const makeStrNode = (name: string) => {
   const n = new Node(id<NodeId>(name));
@@ -36,135 +24,21 @@ const makeStrNode = (name: string) => {
   return n;
 };
 
-describe('Socket', () => {
-  it('内置 Socket 命中同名兼容', () => {
-    expect(Socket.number.matches(Socket.number)).toBe(true);
-    expect(Socket.string.matches(Socket.string)).toBe(true);
-  });
-
-  it('any (`*`) 与任意类型互通', () => {
-    expect(Socket.any.matches(Socket.number)).toBe(true);
-    expect(Socket.number.matches(Socket.any)).toBe(true);
-  });
-
-  it('不同名 Socket 互不兼容', () => {
-    expect(Socket.number.matches(Socket.string)).toBe(false);
-  });
-
-  it('compatible 列表生效', () => {
-    const a = Socket.from('a', [Socket.number]);
-    expect(a.matches(Socket.number)).toBe(true);
-    // 单向语义：Socket.number 没有 'a' 兼容声明，因此 Socket.number.matches(a) 为 false
-    expect(Socket.number.matches(a)).toBe(false);
-  });
-
-  it('Socket.from 工厂复用相同字段', () => {
-    const s = Socket.from('foo', [Socket.string]);
-    expect(s.name).toBe('foo');
-    expect(s.compatible).toEqual([Socket.string]);
-  });
-});
-
-describe('Port (Input / Output)', () => {
-  it('Input 与 Output 暴露正确的 direction', () => {
-    const inp = new Input(Socket.number, id<PortId>('p:i'));
-    const out = new Output(Socket.number, id<PortId>('p:o'));
-    expect(inp.direction).toBe('input');
-    expect(out.direction).toBe('output');
-  });
-
-  it('attach / detach 维护边列表', () => {
-    const port = new Output(Socket.number, id<PortId>('p:o'));
-    expect(port.connected).toBe(false);
-    port.attach(id<EdgeId>('e1'));
-    port.attach(id<EdgeId>('e2'));
-    expect(port.edges).toEqual(['e1', 'e2']);
-    expect(port.connected).toBe(true);
-    expect(port.detach(id<EdgeId>('e1'))).toBe(true);
-    expect(port.edges).toEqual(['e2']);
-    expect(port.detach(id<EdgeId>('missing'))).toBe(false);
-  });
-
-  it('attach 不再做 includes 去重 (Graph.addEdge 已在上游保证)', () => {
-    const port = new Output(Socket.number, id<PortId>('p:o'));
-    port.attach(id<EdgeId>('e1'));
-    port.attach(id<EdgeId>('e1'));
-    expect(port.edges).toHaveLength(2);
-  });
-});
-
-describe('Node', () => {
-  it('addInput / addOutput 注册端口并自动生成 ID', () => {
-    const n = new Node(id<NodeId>('A'));
-    const inp = n.addInput('x', Socket.number);
-    const out = n.addOutput('y', Socket.number);
-    expect(inp.id).toBe('A:input:x');
-    expect(out.id).toBe('A:output:y');
-    expect(n.hasInput('x')).toBe(true);
-    expect(n.hasOutput('y')).toBe(true);
-    expect(n.input('x')).toBe(inp);
-    expect(n.output('y')).toBe(out);
-  });
-
-  it('removeInput / removeOutput 正确删除端口', () => {
-    const n = makeNumNode('A');
-    expect(n.removeInput('x')).toBe(true);
-    expect(n.hasInput('x')).toBe(false);
-    expect(n.removeInput('x')).toBe(false);
-    expect(n.removeOutput('y')).toBe(true);
-    expect(n.removeOutput('y')).toBe(false);
-  });
-
-  it('weight 可读写', () => {
-    const n = new Node<Sockets, Sockets, { label: string }>(id<NodeId>('A'), { label: 'init' });
-    expect(n.weight).toEqual({ label: 'init' });
-    n.weight = { label: 'changed' };
-    expect(n.weight?.label).toBe('changed');
-  });
-});
-
-describe('Endpoint / Edge', () => {
-  it('Endpoint 提供 nodeId / portId 访问器', () => {
-    const A = makeNumNode('A');
-    const ep = new Endpoint(A, A.output('y')!);
-    expect(ep.nodeId).toBe('A');
-    expect(ep.portId).toBe('A:output:y');
-  });
-
-  it('Edge.connects / sourceId / targetId / opposite', () => {
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
-    const edge = new Edge(
-      id<EdgeId>('e1'),
-      new Endpoint(A, A.output('y')!),
-      new Endpoint(B, B.input('x')!),
-      'w',
-    );
-    expect(edge.sourceId).toBe('A');
-    expect(edge.targetId).toBe('B');
-    expect(edge.connects(id<NodeId>('A'))).toBe(true);
-    expect(edge.connects(id<NodeId>('C'))).toBe(false);
-    expect(edge.opposite('input')).toBe('A');
-    expect(edge.opposite('output')).toBe('B');
-    expect(edge.weight).toBe('w');
-  });
-});
-
 describe('Graph - 基础结构', () => {
   it('addNode 重复 ID 抛错', () => {
     const g = newGraph();
-    g.addNode(makeNumNode('A'));
-    expect(() => g.addNode(makeNumNode('A'))).toThrow(/already exists/);
+    g.addNode(portNode('A'));
+    expect(() => g.addNode(portNode('A'))).toThrow(/already exists/);
   });
 
   it('addEdge 校验 source / target / 端口归属 / 方向 / Socket 兼容', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
+    const A = portNode('A');
+    const B = portNode('B');
     g.addNode(A).addNode(B);
 
     // 1. source 节点未注册
-    const orphan = makeNumNode('Orphan');
+    const orphan = portNode('Orphan');
     expect(() => {
       g.addEdge(new Edge(id<EdgeId>('e1'),
         new Endpoint(orphan, orphan.output('y')!),
@@ -172,7 +46,7 @@ describe('Graph - 基础结构', () => {
     }).toThrow(/source node "Orphan" does not exist/);
 
     // 2. 端点指向同 ID 但不同实例的节点
-    const fakeA = makeNumNode('A');
+    const fakeA = portNode('A');
     expect(() => {
       g.addEdge(new Edge(id<EdgeId>('e2'),
         new Endpoint(fakeA, fakeA.output('y')!),
@@ -198,8 +72,8 @@ describe('Graph - 基础结构', () => {
 
   it('addEdge 重复 ID 抛错', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
+    const A = portNode('A');
+    const B = portNode('B');
     g.addNode(A).addNode(B);
     g.addEdge(new Edge(id<EdgeId>('e1'),
       new Endpoint(A, A.output('y')!),
@@ -213,9 +87,9 @@ describe('Graph - 基础结构', () => {
 
   it('removeNode 同步清理两端的边', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
-    const C = makeNumNode('C');
+    const A = portNode('A');
+    const B = portNode('B');
+    const C = portNode('C');
     g.addNode(A).addNode(B).addNode(C);
     g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
     g.addEdge(new Edge(id<EdgeId>('e2'), new Endpoint(B, B.output('y')!), new Endpoint(C, C.input('x')!)));
@@ -231,7 +105,7 @@ describe('Graph - 基础结构', () => {
 
   it('removeNode 处理自环', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
+    const A = portNode('A');
     g.addNode(A);
     g.addEdge(new Edge(id<EdgeId>('self'),
       new Endpoint(A, A.output('y')!),
@@ -243,8 +117,8 @@ describe('Graph - 基础结构', () => {
 
   it('findEdge / edgeEndpoints / edgesBetween / edgesConnecting', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
+    const A = portNode('A');
+    const B = portNode('B');
     g.addNode(A).addNode(B);
     g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
     g.addEdge(new Edge(id<EdgeId>('e2'), new Endpoint(B, B.output('y')!), new Endpoint(A, A.input('x')!)));
@@ -258,9 +132,9 @@ describe('Graph - 基础结构', () => {
 
   it('predecessors / successors / adjacencies / degree', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
-    const C = makeNumNode('C');
+    const A = portNode('A');
+    const B = portNode('B');
+    const C = portNode('C');
     g.addNode(A).addNode(B).addNode(C);
     g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
     g.addEdge(new Edge(id<EdgeId>('e2'), new Endpoint(B, B.output('y')!), new Endpoint(C, C.input('x')!)));
@@ -275,9 +149,9 @@ describe('Graph - 基础结构', () => {
 
   it('sources / sinks / isolated', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
-    const C = makeNumNode('C'); // 孤立
+    const A = portNode('A');
+    const B = portNode('B');
+    const C = portNode('C'); // 孤立
     g.addNode(A).addNode(B).addNode(C);
     g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
 
@@ -289,7 +163,7 @@ describe('Graph - 基础结构', () => {
   it('clear / empty', () => {
     const g = newGraph();
     expect(g.empty()).toBe(true);
-    g.addNode(makeNumNode('A'));
+    g.addNode(portNode('A'));
     expect(g.empty()).toBe(false);
     g.clear();
     expect(g.empty()).toBe(true);
@@ -299,8 +173,7 @@ describe('Graph - 基础结构', () => {
 
   it('toJson 输出可被 JSON.stringify 序列化', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    g.addNode(A);
+    g.addNode(portNode('A'));
     const snapshot = g.toJson() as { id: string; nodes: unknown[]; edges: unknown[] };
     expect(snapshot.id).toBe('g');
     expect(Array.isArray(snapshot.nodes)).toBe(true);
@@ -309,9 +182,7 @@ describe('Graph - 基础结构', () => {
 
   it('NodeIndexable: bound / at / indexOf', () => {
     const g = newGraph();
-    const A = makeNumNode('A');
-    const B = makeNumNode('B');
-    g.addNode(A).addNode(B);
+    g.addNode(portNode('A')).addNode(portNode('B'));
     expect(g.bound()).toBe(2);
     expect(g.at(0)).toBe('A');
     expect(g.at(1)).toBe('B');
@@ -322,8 +193,8 @@ describe('Graph - 基础结构', () => {
 
   it('Visitable: marks / reset', () => {
     const g = newGraph();
-    g.addNode(makeNumNode('A'));
-    g.addNode(makeNumNode('B'));
+    g.addNode(portNode('A'));
+    g.addNode(portNode('B'));
     const m = g.marks();
     expect(m.size).toBe(2);
     expect([...m.values()]).toEqual([false, false]);

@@ -1,19 +1,17 @@
 /**
- * 测试覆盖：`./visitors` 中的状态化遍历器与事件回调 DFS。
+ * 测试覆盖：DFS 家族 - Dfs / DfsPostorder 状态化遍历器 + dfsVisit 事件回调。
  */
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  Bfs,
   Dfs,
   DfsPostorder,
   dfsVisit,
-  Topo,
   type Control,
   type DfsEvent,
   type NodeId,
-} from '../core';
-import { buildGraph, id } from './_fixtures';
+} from '../../core';
+import { buildGraph, id } from '../_fixtures';
 
 const diamond = () => buildGraph('d', [
   ['a', 'b'],
@@ -76,21 +74,6 @@ describe('Dfs', () => {
   });
 });
 
-describe('Bfs', () => {
-  it('按层次推进', () => {
-    const g = diamond();
-    expect(drain(Bfs.start(g, id<NodeId>('a')).iterator(g))).toEqual(['a', 'b', 'c', 'd']);
-  });
-
-  it('moveTo 重置队列与 visited', () => {
-    const g = diamond();
-    const bfs = Bfs.start(g, id<NodeId>('a'));
-    drain(bfs.iterator(g));
-    bfs.moveTo(id<NodeId>('c'));
-    expect(drain(bfs.iterator(g))).toEqual(['c', 'd']);
-  });
-});
-
 describe('DfsPostorder', () => {
   it('返回 finish 顺序：叶子先于内部', () => {
     const g = diamond();
@@ -118,41 +101,6 @@ describe('DfsPostorder', () => {
     expect(post.discovered.size).toBe(0);
     expect(post.finished.size).toBe(0);
     expect(post.next(g)).toBeUndefined();
-  });
-});
-
-describe('Topo', () => {
-  it('drain 后 cycleNodes 为空', () => {
-    const g = diamond();
-    const topo = Topo.start(g);
-    expect(drain(topo.iterator(g))).toEqual(['a', 'b', 'c', 'd']);
-    expect(topo.cycleNodes()).toEqual([]);
-  });
-
-  it('环图：drain 出 0 个节点，cycleNodes 包含全部环节点', () => {
-    const g = cycle3();
-    const topo = Topo.start(g);
-    expect(drain(topo.iterator(g))).toEqual([]);
-    expect(topo.cycleNodes().sort()).toEqual(['x', 'y', 'z']);
-  });
-
-  it('collect 一次性 drain + 报告环', () => {
-    const result = Topo.start(cycle3()).collect(cycle3());
-    expect(result.cycles.hasCycle).toBe(true);
-    expect(result.cycles.cycleNodes.length).toBe(3);
-  });
-
-  it('Topo 已防孤儿邻居（与 topology 1.1 修复同源）', () => {
-    const g = buildGraph('orphan', [], ['a']);
-    const real = g.outgoingNeighbors.bind(g);
-    (g as unknown as { outgoingNeighbors: typeof g.outgoingNeighbors }).outgoingNeighbors =
-      function* (n: NodeId) {
-        yield* real(n);
-        if (n === 'a') yield id<NodeId>('ghost');
-      };
-    const topo = Topo.start(g);
-    const out: NodeId[] = drain(topo.iterator(g));
-    expect(out).toEqual(['a']); // ghost 不应进入
   });
 });
 
