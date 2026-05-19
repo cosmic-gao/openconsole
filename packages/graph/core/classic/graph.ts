@@ -112,11 +112,11 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
         `[Graph "${String(this.id)}"] addNode: a node with id "${String(node.id)}" already exists.`,
       );
     }
-    const stored = node as unknown as Vertex<N>;
-    this.nodes.set(node.id, stored);
+    const vertex = node as unknown as Vertex<N>;
+    this.nodes.set(node.id, vertex);
     this._index.set(node.id, this._order.length);
     this._order.push(node.id);
-    this._emit('nodeAdded', { node: stored });
+    this._emit('nodeAdded', { node: vertex });
     return this;
   }
 
