@@ -6,14 +6,22 @@ import type {
   Direction,
   EdgeId,
   EdgeView,
+  GraphEventMap,
+  GraphEventName,
   GraphId,
+  GraphJson,
+  GraphJsonEdge,
+  GraphJsonNode,
+  GraphListener,
   NodeId,
   PortDict,
   PortId,
   Sockets,
   StoredNode,
+  Subscribable,
 } from '../types';
-import type { Edge } from './edge';
+import { Edge } from './edge';
+import { Endpoint } from './endpoint';
 import type { Node } from './node';
 import type { Port } from './port';
 
@@ -24,23 +32,40 @@ import type { Port } from './port';
  * 设计要点：
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
+ * - **O(1) NodeIndexable**：内部维护 `_idByIndex` 数组 + `_indexById` Map，
+ *   {@link at}/{@link indexOf}/{@link bound} 全部 O(1)；removeNode 使用 swap-and-pop，
+ *   节点索引顺序在删除时**可能被打乱**；
+ * - **变更事件**：通过 {@link on} 订阅节点/边的 add/remove，可用于增量算法（如
+ *   `IncrementalTopo`）订阅。
  * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
  *   {@link topology} / {@link scc} 等独立函数（仅依赖访问者 trait）。
  *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
  */
-export class Graph<N = unknown, E = unknown> {
+export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 节点存储：NodeId → Node。 */
   public readonly nodes = new Map<NodeId, StoredNode<N>>();
 
   /** 边存储：EdgeId → Edge。 */
   public readonly edges = new Map<EdgeId, Edge<E>>();
 
+  /** index → NodeId；用 swap-and-pop 维护，O(1) `at(i)`。 */
+  private readonly _idByIndex: NodeId[] = [];
+
+  /** NodeId → index；O(1) `indexOf`。 */
+  private readonly _indexById = new Map<NodeId, number>();
+
+  /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
+  private _autoEdgeCounter = 0;
+
+  /** 事件订阅表。 */
+  private readonly _listeners = new Map<GraphEventName, Set<GraphListener<unknown>>>();
+
   /**
    * @param id 图的唯一标识
    */
-  public constructor(public readonly id: GraphId) { }
+  public constructor(public readonly id: GraphId) {}
 
   /**
    * 节点所有出边的 ID 流。
@@ -87,12 +112,18 @@ export class Graph<N = unknown, E = unknown> {
         `[Graph "${String(this.id)}"] addNode: a node with id "${String(node.id)}" already exists.`,
       );
     }
-    this.nodes.set(node.id, node as unknown as StoredNode<N>);
+    const stored = node as unknown as StoredNode<N>;
+    this.nodes.set(node.id, stored);
+    this._indexById.set(node.id, this._idByIndex.length);
+    this._idByIndex.push(node.id);
+    this._emit('nodeAdded', { node: stored });
     return this;
   }
 
   /**
    * 移除节点，并连带删除所有与该节点相关的边。
+   *
+   * @remarks 顺序：先发 `edgeRemoved`（每条 incident 边一次），再发 `nodeRemoved`。
    *
    * @param nodeId 节点 ID
    * @returns 被移除的节点；不存在时返回 `undefined`
@@ -100,6 +131,7 @@ export class Graph<N = unknown, E = unknown> {
   public removeNode(nodeId: NodeId): StoredNode<N> | undefined {
     const node = this.nodes.get(nodeId);
     if (!node) return undefined;
+
     const incident = new Set<EdgeId>();
     for (const id of this._outgoingEdgeIds(nodeId)) incident.add(id);
     for (const id of this._incomingEdgeIds(nodeId)) incident.add(id);
@@ -110,8 +142,22 @@ export class Graph<N = unknown, E = unknown> {
       if (edge.sourceId !== nodeId) edge.source.port.detach(edge.id);
       if (edge.targetId !== nodeId) edge.target.port.detach(edge.id);
       this.edges.delete(edgeId);
+      this._emit('edgeRemoved', { edge });
     }
+
+    // swap-and-pop 维护节点索引
+    const idx = this._indexById.get(nodeId)!;
+    const lastIdx = this._idByIndex.length - 1;
+    if (idx !== lastIdx) {
+      const lastId = this._idByIndex[lastIdx]!;
+      this._idByIndex[idx] = lastId;
+      this._indexById.set(lastId, idx);
+    }
+    this._idByIndex.pop();
+    this._indexById.delete(nodeId);
+
     this.nodes.delete(nodeId);
+    this._emit('nodeRemoved', { node });
     return node;
   }
 
@@ -212,7 +258,73 @@ export class Graph<N = unknown, E = unknown> {
     this._validate(edge);
     this.edges.set(edge.id, edge);
     this._link(edge);
+    this._emit('edgeAdded', { edge });
     return this;
+  }
+
+  /**
+   * 流式 API：按 `[节点ID, 端口名]` 元组连接两端，自动包装 Endpoint + Edge。
+   *
+   * @remarks
+   * 等价于：
+   * ```ts
+   * graph.addEdge(new Edge(
+   *   options?.id ?? autoId,
+   *   new Endpoint(sourceNode, sourceNode.outputs[srcPort]!),
+   *   new Endpoint(targetNode, targetNode.inputs[tgtPort]!),
+   *   options?.weight,
+   * ));
+   * ```
+   *
+   * @param from `[源节点 ID, 输出端口名]`
+   * @param to `[目标节点 ID, 输入端口名]`
+   * @param options 可选：自定义 `id` 与 `weight`
+   * @returns 创建的 {@link Edge} 实例
+   * @throws {Error} 节点或端口不存在；或 {@link addEdge} 抛出的任何错误
+   */
+  public connect(
+    from: readonly [NodeId, string],
+    to: readonly [NodeId, string],
+    options?: { id?: EdgeId; weight?: E },
+  ): Edge<E> {
+    const [sourceNodeId, sourcePortName] = from;
+    const [targetNodeId, targetPortName] = to;
+
+    const sourceNode = this.nodes.get(sourceNodeId);
+    if (!sourceNode) {
+      throw new Error(
+        `[Graph "${String(this.id)}"] connect: source node "${String(sourceNodeId)}" not found.`,
+      );
+    }
+    const targetNode = this.nodes.get(targetNodeId);
+    if (!targetNode) {
+      throw new Error(
+        `[Graph "${String(this.id)}"] connect: target node "${String(targetNodeId)}" not found.`,
+      );
+    }
+
+    const sourcePort = sourceNode.outputs[sourcePortName];
+    if (!sourcePort) {
+      throw new Error(
+        `[Graph "${String(this.id)}"] connect: output port "${sourcePortName}" not found on node "${String(sourceNodeId)}".`,
+      );
+    }
+    const targetPort = targetNode.inputs[targetPortName];
+    if (!targetPort) {
+      throw new Error(
+        `[Graph "${String(this.id)}"] connect: input port "${targetPortName}" not found on node "${String(targetNodeId)}".`,
+      );
+    }
+
+    const edgeId = options?.id ?? this._allocEdgeId();
+    const edge = new Edge<E>(
+      edgeId,
+      new Endpoint(sourceNode, sourcePort),
+      new Endpoint(targetNode, targetPort),
+      options?.weight,
+    );
+    this.addEdge(edge);
+    return edge;
   }
 
   /**
@@ -226,6 +338,7 @@ export class Graph<N = unknown, E = unknown> {
     if (!edge) return undefined;
     this._unlink(edge);
     this.edges.delete(edgeId);
+    this._emit('edgeRemoved', { edge });
     return edge;
   }
 
@@ -430,33 +543,108 @@ export class Graph<N = unknown, E = unknown> {
     return this.nodes.size === 0;
   }
 
-  /** 清空所有节点与边。 */
+  /**
+   * 清空所有节点与边。
+   *
+   * @remarks 不触发任何事件 — 批量清空场景下事件风暴反而碍事。
+   *   订阅者保留：clear 不取消用户订阅。
+   */
   public clear(): void {
     this.nodes.clear();
     this.edges.clear();
+    this._idByIndex.length = 0;
+    this._indexById.clear();
   }
 
   /**
    * 序列化为可用 `JSON.stringify` 输出的纯对象快照。
    *
-   * @returns 描述当前图的纯对象
+   * @returns 描述当前图的 {@link GraphJson} 结构
    */
-  public toJson(): object {
-    return {
-      id: this.id,
-      nodes: Array.from(this.nodes.values()).map(node => ({
-        id: node.id,
-        weight: node.weight,
-        inputs: json(node.inputs),
-        outputs: json(node.outputs),
-      })),
-      edges: Array.from(this.edges.values()).map(edge => ({
-        id: edge.id,
-        source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
-        target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
-        weight: edge.weight,
-      })),
-    };
+  public toJson(): GraphJson<N, E> {
+    const nodes: GraphJsonNode<N>[] = Array.from(this.nodes.values()).map(node => ({
+      id: node.id,
+      weight: node.weight,
+      inputs: json(node.inputs),
+      outputs: json(node.outputs),
+    }));
+    const edges: GraphJsonEdge<E>[] = Array.from(this.edges.values()).map(edge => ({
+      id: edge.id,
+      source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
+      target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
+      weight: edge.weight,
+    }));
+    return { id: this.id, nodes, edges };
+  }
+
+  /**
+   * 订阅图变更事件。
+   *
+   * @template K 事件名
+   * @param event 事件名
+   * @param listener 回调
+   * @returns 取消订阅函数
+   *
+   * @example
+   * ```ts
+   * const off = graph.on('edgeAdded', ({ edge }) => console.log(edge.id));
+   * off(); // 取消订阅
+   * ```
+   */
+  public on<K extends GraphEventName>(
+    event: K,
+    listener: GraphListener<GraphEventMap<N, E>[K]>,
+  ): () => void {
+    let set = this._listeners.get(event);
+    if (!set) {
+      set = new Set();
+      this._listeners.set(event, set);
+    }
+    set.add(listener as GraphListener<unknown>);
+    return () => { set!.delete(listener as GraphListener<unknown>); };
+  }
+
+  /**
+   * 取消订阅指定回调。
+   *
+   * @template K 事件名
+   * @param event 事件名
+   * @param listener 之前传给 {@link on} 的回调
+   */
+  public off<K extends GraphEventName>(
+    event: K,
+    listener: GraphListener<GraphEventMap<N, E>[K]>,
+  ): void {
+    this._listeners.get(event)?.delete(listener as GraphListener<unknown>);
+  }
+
+  /**
+   * 同步派发事件给所有订阅者。
+   *
+   * @internal
+   */
+  private _emit<K extends GraphEventName>(
+    event: K,
+    payload: GraphEventMap<N, E>[K],
+  ): void {
+    const set = this._listeners.get(event);
+    if (!set || set.size === 0) return;
+    for (const listener of set) {
+      (listener as GraphListener<GraphEventMap<N, E>[K]>)(payload);
+    }
+  }
+
+  /**
+   * 分配下一个可用边 ID（跳过已存在 ID 以避免冲突）。
+   *
+   * @internal
+   */
+  private _allocEdgeId(): EdgeId {
+    let id: EdgeId;
+    do {
+      id = `e${this._autoEdgeCounter++}` as EdgeId;
+    } while (this.edges.has(id));
+    return id;
   }
 
   /** {@inheritdoc Catalog.nodeIds} */
@@ -536,31 +724,19 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  /** {@inheritdoc NodeIndexable.bound} */
+  /** {@inheritdoc NodeIndexable.bound} (O(1)) */
   public bound(): number {
-    return this.nodes.size;
+    return this._idByIndex.length;
   }
 
-  /** {@inheritdoc NodeIndexable.at} */
+  /** {@inheritdoc NodeIndexable.at} (O(1)) */
   public at(index: number): NodeId | undefined {
-    if (index < 0 || index >= this.nodes.size) return undefined;
-    let i = 0;
-    for (const nodeId of this.nodes.keys()) {
-      if (i === index) return nodeId;
-      i++;
-    }
-    return undefined;
+    return this._idByIndex[index];
   }
 
-  /** {@inheritdoc NodeIndexable.indexOf} */
+  /** {@inheritdoc NodeIndexable.indexOf} (O(1)) */
   public indexOf(nodeId: NodeId): number {
-    if (!this.nodes.has(nodeId)) return -1;
-    let i = 0;
-    for (const id of this.nodes.keys()) {
-      if (id === nodeId) return i;
-      i++;
-    }
-    return -1;
+    return this._indexById.get(nodeId) ?? -1;
   }
 
   /** {@inheritdoc Visitable.marks} */
@@ -633,12 +809,6 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 把边登记到两端端口的 {@link Port.edges} 列表里。
    *
-   * @remarks
-   * 由于 {@link Port} 基类已统一暴露 `edges` / `attach` / `detach`，这里无需按方向分支：
-   * `addEdge` 通过 {@link _validate} 保证起点是 Output、终点是 Input，因此对两端无差别 attach
-   * 即可让端口列表自洽。
-   *
-   * @param edge 待登记的边
    * @internal
    */
   private _link(edge: Edge<E>): void {
@@ -660,8 +830,6 @@ export class Graph<N = unknown, E = unknown> {
   /**
    * 用引用相等检测端口是否在节点的端口字典中注册。
    *
-   * @param ports 节点的端口字典
-   * @param target 要检查的端口
    * @internal
    */
   private _owns(ports: PortDict, target: Port): boolean {

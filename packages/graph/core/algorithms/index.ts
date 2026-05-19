@@ -7,6 +7,7 @@
  */
 
 export * from './toposort';
+export * from './incremental';
 export * from './dfs';
 export * from './bfs';
 export * from './scc';

@@ -5,20 +5,10 @@
 import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
 import type { PortId, StoredNode } from '../types';
 import type { Compact, CompactNode } from './compact';
+import { mergeLookup, type SocketLookup } from './sockets';
 
-/** Socket 名称查找表。 */
-export type SocketLookup = ReadonlyMap<string, Socket> | ReadonlyArray<Socket>;
-
-/** 内置 Socket 名称 → 实例的查找表。 */
-const BUILTINS: ReadonlyMap<string, Socket> = new Map<string, Socket>([
-  ['number', Socket.number],
-  ['string', Socket.string],
-  ['boolean', Socket.boolean],
-  ['object', Socket.object],
-  ['array', Socket.array],
-  ['exec', Socket.exec],
-  ['*', Socket.any],
-]);
+// re-export SocketLookup for backward compatibility (tests / external import)
+export type { SocketLookup };
 
 /**
  * 从压缩格式恢复完整图。
@@ -114,24 +104,6 @@ function unpackPorts(
   for (const [name, portId, socketName] of ports) {
     add(name, lookup.get(socketName) ?? Socket.any, portId);
   }
-}
-
-/**
- * 把内置 Socket 表与用户自定义表合并；用户表同名 Socket 会覆盖内置版本。
- *
- * @internal
- */
-function mergeLookup(custom?: SocketLookup): ReadonlyMap<string, Socket> {
-  if (!custom) return BUILTINS;
-  const merged = new Map<string, Socket>(BUILTINS);
-  if (Array.isArray(custom)) {
-    for (const socket of custom) merged.set(socket.name, socket);
-  } else {
-    for (const [name, socket] of custom as ReadonlyMap<string, Socket>) {
-      merged.set(name, socket);
-    }
-  }
-  return merged;
 }
 
 /**

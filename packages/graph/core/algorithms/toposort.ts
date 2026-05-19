@@ -2,7 +2,7 @@
  * 拓扑排序家族：{@link CycleError} 及 toposort / topology / cycles / isCyclic / ranks。
  */
 
-import type { Cycles, NodeId, Topology, Walkable } from '../types';
+import type { Cycles, IntoDegree, NodeId, Topology, Walkable } from '../types';
 
 /** 拓扑排序检测到环时抛出的错误。 */
 export class CycleError extends Error {
@@ -39,33 +39,40 @@ export function toposort<G extends Walkable>(
 /**
  * 带环路信息的拓扑排序。
  *
- * @template G 满足 {@link Walkable} 约束的图类型
+ * @remarks
+ * 入度计算优先走快路径：若 `graph` 实现了 {@link IntoDegree}，直接调用 `inDegree(id)`；
+ * 否则按 `outgoingNeighbors` 扫描重建。
+ *
+ * @template G 满足 {@link Walkable}，可选实现 {@link IntoDegree}
  * @param graph 图实例
  * @param onCycle 检测到环时的回调，默认按原始顺序追加环上节点
  * @returns 排序结果与环路信息
  */
-export function topology<G extends Walkable>(
+export function topology<G extends Walkable & Partial<IntoDegree>>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => cycle,
 ): Topology {
   const inDegree = new Map<NodeId, number>();
-  const adjacency = new Map<NodeId, NodeId[]>();
   const nodeOrder: NodeId[] = [];
 
   for (const nodeId of graph.nodeIds) {
     nodeOrder.push(nodeId);
     inDegree.set(nodeId, 0);
-    adjacency.set(nodeId, []);
   }
 
-  for (const nodeId of nodeOrder) {
-    const successors = adjacency.get(nodeId)!;
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
-      // 跳过孤儿邻居（不在 nodeIds 拓扑空间内）。否则会因 inDegree 被意外创建为 1，
-      // 后续在 adjacency 处理时被 dec 到 0 推入 queue，最终混进 order。
-      if (!inDegree.has(neighbor)) continue;
-      successors.push(neighbor);
-      inDegree.set(neighbor, inDegree.get(neighbor)! + 1);
+  if (typeof graph.inDegree === 'function') {
+    // 快路径：直接读 IntoDegree（Graph 的 inDegree 是 O(num_inputs)）
+    for (const nodeId of nodeOrder) {
+      inDegree.set(nodeId, graph.inDegree(nodeId));
+    }
+  } else {
+    // 慢路径：扫出邻居重建
+    for (const nodeId of nodeOrder) {
+      for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+        // 跳过孤儿邻居（不在 nodeIds 拓扑空间内）。
+        if (!inDegree.has(neighbor)) continue;
+        inDegree.set(neighbor, inDegree.get(neighbor)! + 1);
+      }
     }
   }
 
@@ -79,8 +86,10 @@ export function topology<G extends Walkable>(
   while (head < queue.length) {
     const nodeId = queue[head++]!;
     order.push(nodeId);
-    for (const neighbor of adjacency.get(nodeId) ?? []) {
-      const remaining = (inDegree.get(neighbor) ?? 1) - 1;
+    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+      const current = inDegree.get(neighbor);
+      if (current === undefined) continue; // 孤儿邻居
+      const remaining = current - 1;
       inDegree.set(neighbor, remaining);
       if (remaining === 0) queue.push(neighbor);
     }

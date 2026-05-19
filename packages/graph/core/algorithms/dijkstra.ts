@@ -1,5 +1,5 @@
 /**
- * dijkstra：单源最短路径（非负权重）。
+ * dijkstra：单源最短路径（非负权重，二叉堆优化）。
  */
 
 import type {
@@ -8,14 +8,22 @@ import type {
   IntoEdgeViews,
   NodeId,
 } from '../types';
+import { BinaryHeap } from '../internal/heap';
+
+/** 堆中的待处理项：节点 + 距起点距离。 */
+interface DijkstraEntry {
+  readonly node: NodeId;
+  readonly dist: number;
+}
 
 /**
  * Dijkstra 单源最短路径（非负权重）。
  *
  * @remarks
  * - 仅依赖 {@link IntoEdgeViews}，与具体存储解耦；
+ * - 使用二叉最小堆，复杂度 O((V+E) log V)；
+ * - 采用 lazy decrease-key：发现更短路径时重新入堆，pop 时跳过过期条目；
  * - 返回 `start` 到所有可达节点的最短距离；可选 `end` 提前终止；
- * - 当前实现为 O(V²) 线性扫描（无堆），节点规模较大且性能敏感时再上二叉堆；
  * - 不支持负权边；若 `edgeCost` 返回负数行为未定义。
  *
  * @template E 边权重类型
@@ -34,27 +42,28 @@ export function dijkstra<E, G extends Catalog & IntoEdgeViews<E>>(
 ): Map<NodeId, number> {
   const distances = new Map<NodeId, number>();
   const visited = new Set<NodeId>();
-  distances.set(start, 0);
+  const heap = new BinaryHeap<DijkstraEntry>((a, b) => a.dist - b.dist);
 
-  while (true) {
-    let current: NodeId | undefined;
-    let smallest = Infinity;
-    for (const [node, dist] of distances) {
-      if (visited.has(node)) continue;
-      if (dist < smallest) {
-        smallest = dist;
-        current = node;
-      }
-    }
-    if (current === undefined) break;
+  distances.set(start, 0);
+  heap.push({ node: start, dist: 0 });
+
+  while (!heap.isEmpty) {
+    const { node: current, dist } = heap.pop()!;
+    // 过期条目（之前 push 时记录的 dist > 当前已确认的最短）— 跳过
+    if (visited.has(current)) continue;
+    // 安全检查：dist 与 distances 中记录不同 — 也是过期条目
+    if (distances.get(current) !== dist) continue;
     visited.add(current);
     if (current === end) break;
 
     for (const edge of graph.getOutgoingEdges(current)) {
       if (visited.has(edge.target)) continue;
-      const candidate = smallest + edgeCost(edge);
+      const candidate = dist + edgeCost(edge);
       const recorded = distances.get(edge.target) ?? Infinity;
-      if (candidate < recorded) distances.set(edge.target, candidate);
+      if (candidate < recorded) {
+        distances.set(edge.target, candidate);
+        heap.push({ node: edge.target, dist: candidate });
+      }
     }
   }
 

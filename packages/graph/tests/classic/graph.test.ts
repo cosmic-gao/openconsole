@@ -174,7 +174,7 @@ describe('Graph - 基础结构', () => {
   it('toJson 输出可被 JSON.stringify 序列化', () => {
     const g = newGraph();
     g.addNode(portNode('A'));
-    const snapshot = g.toJson() as { id: string; nodes: unknown[]; edges: unknown[] };
+    const snapshot = g.toJson();
     expect(snapshot.id).toBe('g');
     expect(Array.isArray(snapshot.nodes)).toBe(true);
     expect(() => JSON.stringify(snapshot)).not.toThrow();

@@ -24,3 +24,5 @@ export * from './visitable';
 export * from './walkable';
 export * from './control';
 export * from './event';
+export * from './json';
+export * from './subscribable';

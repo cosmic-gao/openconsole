@@ -16,20 +16,32 @@ import type {
 } from '../types';
 
 /**
+ * 由图类型 `G` 推导边权重类型 `E`；G 不实现 IntoEdgeViews 时退化为 `unknown`。
+ */
+type EdgeOf<G> = G extends IntoEdgeViews<infer E> ? E : unknown;
+
+/** 空可迭代对象，O(1) 内存，用于 inner 缺 getEdges 时的安全回退。 */
+const EMPTY_ITERABLE: Iterable<never> = { *[Symbol.iterator]() { /* empty */ } };
+
+/**
  * 反向图视图：把所有边方向翻转后呈现给算法。
  *
  * @remarks
  * - 对 `outgoingNeighbors` 调用，返回内层的 `incomingNeighbors`，反之亦然；
  * - 同样翻转 `getIncomingEdges` / `getOutgoingEdges`，并交换每条边引用的 `source` / `target`；
  * - 入 / 出度互换；
- * - 不复制底层数据，包装本身是 O(1) 内存。
+ * - 不复制底层数据，包装本身是 O(1) 内存；
+ * - **`E` 泛型从 inner 推导**：`reversed(g: IntoEdgeViews<number>)` 得到 `Reversed<G, number>`；
+ * - **edgeIds/edgeCount 一致性**：inner 缺 `getEdges` 时，edgeIds 返回空、edgeCount 为 0，与
+ *   `getEdges` 的回退行为一致（不再透传 inner 的 edgeIds 造成方法间不一致）。
  *
  * 配合 {@link dfs} / {@link toposort} 等算法可以零成本地获得：
  * - 祖先遍历：`dfs(reversed(g), x)` 等价于反向 BFS / DFS；
  * - 反向拓扑序：`toposort(reversed(g))`；
  * - 强连通分量第二阶段：Kosaraju 算法直接复用 SCC 主算法。
  *
- * @template G 至少满足 {@link Catalog} 的图类型
+ * @template G 内层图类型（至少满足 Catalog + Neighbors）
+ * @template E 边权重类型，从 G 自动推导
  */
 export class Reversed<
   G extends Catalog &
@@ -38,11 +50,12 @@ export class Reversed<
     Partial<IntoDegree> &
     Partial<Visitable> &
     Partial<NodeIndexable>,
+  E = EdgeOf<G>,
 >
 implements
     Catalog,
     Neighbors,
-    IntoEdgeViews<unknown>,
+    IntoEdgeViews<E>,
     IntoDegree,
     Visitable,
     NodeIndexable {
@@ -56,9 +69,15 @@ implements
     return this.inner.nodeIds;
   }
 
-  /** {@inheritdoc Catalog.edgeIds} */
+  /**
+   * {@inheritdoc Catalog.edgeIds}
+   *
+   * @remarks
+   * 若 inner 实现了 {@link IntoEdgeViews}，则边 ID 集合与原图等价（反向只翻转端点，不改 ID）；
+   * 否则返回空可迭代，确保与 {@link getEdges} 的回退行为一致。
+   */
   public get edgeIds(): Iterable<EdgeId> {
-    return this.inner.edgeIds;
+    return typeof this.inner.getEdges === 'function' ? this.inner.edgeIds : EMPTY_ITERABLE;
   }
 
   /** {@inheritdoc Catalog.nodeCount} */
@@ -66,9 +85,13 @@ implements
     return this.inner.nodeCount();
   }
 
-  /** {@inheritdoc Catalog.edgeCount} */
+  /**
+   * {@inheritdoc Catalog.edgeCount}
+   *
+   * @remarks 与 {@link edgeIds} 同步：inner 缺 getEdges 时返回 0。
+   */
   public edgeCount(): number {
-    return this.inner.edgeCount();
+    return typeof this.inner.getEdges === 'function' ? this.inner.edgeCount() : 0;
   }
 
   /**
@@ -92,21 +115,21 @@ implements
   }
 
   /** 全图边引用（source/target 已互换）。 */
-  public *getEdges(): Iterable<EdgeView<unknown>> {
+  public *getEdges(): Iterable<EdgeView<E>> {
     if (typeof this.inner.getEdges !== 'function') return;
-    for (const view of this.inner.getEdges()) yield flipEdgeView(view);
+    for (const view of this.inner.getEdges()) yield flipEdgeView(view as EdgeView<E>);
   }
 
   /** 反向后的入边 = 原图的出边（已翻转 source/target）。 */
-  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (typeof this.inner.getOutgoingEdges !== 'function') return;
-    for (const view of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(view);
+    for (const view of this.inner.getOutgoingEdges(nodeId)) yield flipEdgeView(view as EdgeView<E>);
   }
 
   /** 反向后的出边 = 原图的入边（已翻转 source/target）。 */
-  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (typeof this.inner.getIncomingEdges !== 'function') return;
-    for (const view of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(view);
+    for (const view of this.inner.getIncomingEdges(nodeId)) yield flipEdgeView(view as EdgeView<E>);
   }
 
   /**
@@ -184,7 +207,7 @@ implements
 }
 
 /**
- * 工厂函数：把任意图包装成反向视图。
+ * 工厂函数：把任意图包装成反向视图。`E` 自动从 `G` 的 IntoEdgeViews 推导。
  *
  * @template G 输入图类型
  * @param graph 原始图
@@ -192,6 +215,7 @@ implements
  * @example
  * ```ts
  * import { reversed, dfs } from '@opendesign/graph';
+ * // g: Graph<unknown, number> → reversed(g): Reversed<G, number>
  * for (const ancestor of dfs(reversed(g), node)) console.log(ancestor);
  * ```
  */
@@ -202,7 +226,7 @@ export function reversed<
     Partial<IntoDegree> &
     Partial<Visitable> &
     Partial<NodeIndexable>,
->(graph: G): Reversed<G> {
+>(graph: G): Reversed<G, EdgeOf<G>> {
   return new Reversed(graph);
 }
 

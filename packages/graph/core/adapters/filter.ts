@@ -15,6 +15,11 @@ import type {
 import type { Predicate } from './predicate';
 
 /**
+ * 由图类型 `G` 推导边权重类型 `E`；G 不实现 IntoEdgeViews 时退化为 `unknown`。
+ */
+type EdgeOf<G> = G extends IntoEdgeViews<infer E> ? E : unknown;
+
+/**
  * 节点过滤视图：仅暴露满足谓词的节点及与之相连的边。
  *
  * @remarks
@@ -22,15 +27,17 @@ import type { Predicate } from './predicate';
  * - 邻居 / 边引用迭代时也会跳过被隐去的节点；
  * - 用于子图分析（如某些标签的节点）而无需复制图。
  *
- * @template G 至少满足 {@link Catalog} + {@link Neighbors} 的图类型
+ * @template G 内层图类型
+ * @template E 边权重类型（从 G 自动推导）
  */
 export class NodeFiltered<
   G extends Catalog &
     Neighbors &
     Partial<IntoEdgeViews<unknown>> &
     Partial<IntoDegree>,
+  E = EdgeOf<G>,
 >
-implements Catalog, Neighbors, IntoEdgeViews<unknown> {
+implements Catalog, Neighbors, IntoEdgeViews<E> {
   /**
    * @param inner 原始图
    * @param predicate 节点保留谓词
@@ -102,26 +109,26 @@ implements Catalog, Neighbors, IntoEdgeViews<unknown> {
   }
 
   /** 全图边引用（两端都需保留）。 */
-  public *getEdges(): Iterable<EdgeView<unknown>> {
+  public *getEdges(): Iterable<EdgeView<E>> {
     if (typeof this.inner.getEdges !== 'function') return;
     for (const view of this.inner.getEdges()) {
-      if (this.predicate(view.source) && this.predicate(view.target)) yield view;
+      if (this.predicate(view.source) && this.predicate(view.target)) yield view as EdgeView<E>;
     }
   }
 
   /** 入边（来源端需保留）。 */
-  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+  public *getIncomingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (!this.predicate(nodeId) || typeof this.inner.getIncomingEdges !== 'function') return;
     for (const view of this.inner.getIncomingEdges(nodeId)) {
-      if (this.predicate(view.source)) yield view;
+      if (this.predicate(view.source)) yield view as EdgeView<E>;
     }
   }
 
   /** 出边（终点端需保留）。 */
-  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<unknown>> {
+  public *getOutgoingEdges(nodeId: NodeId): Iterable<EdgeView<E>> {
     if (!this.predicate(nodeId) || typeof this.inner.getOutgoingEdges !== 'function') return;
     for (const view of this.inner.getOutgoingEdges(nodeId)) {
-      if (this.predicate(view.target)) yield view;
+      if (this.predicate(view.target)) yield view as EdgeView<E>;
     }
   }
 }

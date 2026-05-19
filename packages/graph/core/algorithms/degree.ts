@@ -13,33 +13,34 @@ import type {
 /**
  * 计算所有节点的入度与出度。
  *
- * @remarks 优先使用 {@link IntoDegree}（O(N)）；缺省时枚举边引用（O(N + E)）。
+ * @remarks
+ * 提供两个重载，由 TypeScript 在调用点选择：
+ * - 快路径：图实现 {@link IntoDegree}（如 {@link Graph}），直接读取 O(N)；
+ * - 慢路径：图实现 {@link IntoEdgeViews}，枚举边计数 O(N + E)。
  *
- * @template E 边权重类型
- * @template G 至少满足 `Catalog & IntoEdgeViews<E>`，可选实现 {@link IntoDegree}。
- * @param graph 图实例
- * @returns 节点 ID → {@link Degree}
+ * 内部用 `'inDegree' in graph` 区分而非 `typeof === 'function'`，去掉 duck typing。
  */
-export function degrees<E, G extends Catalog & IntoEdgeViews<E>>(
-  graph: G,
+export function degrees<G extends Catalog & IntoDegree>(graph: G): Map<NodeId, Degree>;
+export function degrees<E, G extends Catalog & IntoEdgeViews<E>>(graph: G): Map<NodeId, Degree>;
+export function degrees(
+  graph: Catalog & Partial<IntoDegree> & Partial<IntoEdgeViews<unknown>>,
 ): Map<NodeId, Degree> {
   const result = new Map<NodeId, Degree>();
-  const withDegree = graph as G & Partial<IntoDegree>;
-
-  if (typeof withDegree.inDegree === 'function' && typeof withDegree.outDegree === 'function') {
-    for (const nodeId of graph.nodeIds) {
+  if ('inDegree' in graph && 'outDegree' in graph) {
+    const g = graph as Catalog & IntoDegree;
+    for (const nodeId of g.nodeIds) {
       result.set(nodeId, {
-        inDegree: withDegree.inDegree(nodeId),
-        outDegree: withDegree.outDegree(nodeId),
+        inDegree: g.inDegree(nodeId),
+        outDegree: g.outDegree(nodeId),
       });
     }
     return result;
   }
-
-  for (const nodeId of graph.nodeIds) {
+  const g = graph as Catalog & IntoEdgeViews<unknown>;
+  for (const nodeId of g.nodeIds) {
     result.set(nodeId, {
-      inDegree: count(graph.getIncomingEdges(nodeId)),
-      outDegree: count(graph.getOutgoingEdges(nodeId)),
+      inDegree: count(g.getIncomingEdges(nodeId)),
+      outDegree: count(g.getOutgoingEdges(nodeId)),
     });
   }
   return result;
