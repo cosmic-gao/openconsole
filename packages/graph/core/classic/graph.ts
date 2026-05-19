@@ -57,7 +57,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   private readonly _indexById = new Map<NodeId, number>();
 
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
-  private _autoEdgeCounter = 0;
+  private _serial = 0;
 
   /** 事件订阅表。 */
   private readonly _listeners = new Map<GraphEventName, Set<GraphListener<unknown>>>();
@@ -642,7 +642,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   private _allocEdgeId(): EdgeId {
     let id: EdgeId;
     do {
-      id = `e${this._autoEdgeCounter++}` as EdgeId;
+      id = `e${this._serial++}` as EdgeId;
     } while (this.edges.has(id));
     return id;
   }
