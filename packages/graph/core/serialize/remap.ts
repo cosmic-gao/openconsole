@@ -17,7 +17,7 @@ import type {
   EdgeId,
   NodeId,
   PortId,
-  StoredNode,
+  Vertex,
 } from '../types';
 import { topology } from '../algorithms/toposort';
 import type { Compact, CompactEdge, CompactNode } from './compact';
@@ -151,10 +151,10 @@ export function unpackRemap<N, E>(
     keep ? (compactId as EdgeId) : (data.remap.edges[Number(compactId)] as EdgeId);
 
   // 重建节点
-  const nodeMap = new Map<NodeId, StoredNode<unknown>>();
+  const nodeMap = new Map<NodeId, Vertex<unknown>>();
   for (const [compactId, weight, inputs, outputs] of data.compact.n) {
     const id = restoreNode(String(compactId));
-    const node = new Node(id, weight as N) as StoredNode<N>;
+    const node = new Node(id, weight as N) as Vertex<N>;
     if (inputs) {
       for (const [name, portCompactId, socketName] of inputs) {
         node.addInput(
@@ -173,7 +173,7 @@ export function unpackRemap<N, E>(
         );
       }
     }
-    nodeMap.set(id, node as StoredNode<unknown>);
+    nodeMap.set(id, node as Vertex<unknown>);
     graph.addNode(node);
   }
 

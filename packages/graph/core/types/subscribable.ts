@@ -3,7 +3,7 @@
  */
 
 import type { Edge } from '../classic/edge';
-import type { StoredNode } from './port';
+import type { Vertex } from './port';
 
 /**
  * 图变更事件载体类型。
@@ -13,9 +13,9 @@ import type { StoredNode } from './port';
  */
 export interface GraphEventMap<N = unknown, E = unknown> {
   /** 新节点入图。 */
-  nodeAdded: { node: StoredNode<N> };
+  nodeAdded: { node: Vertex<N> };
   /** 节点已离开图（其入/出边已先一步触发 edgeRemoved）。 */
-  nodeRemoved: { node: StoredNode<N> };
+  nodeRemoved: { node: Vertex<N> };
   /** 新边入图。 */
   edgeAdded: { edge: Edge<E> };
   /** 边已离开图。 */

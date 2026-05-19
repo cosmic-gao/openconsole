@@ -3,7 +3,7 @@
  */
 
 import { Edge, Graph, type Socket } from '../classic';
-import type { PortId, StoredNode } from '../types';
+import type { PortId, Vertex } from '../types';
 import type { Compact, CompactEdge, CompactNode } from './compact';
 
 /**
@@ -31,7 +31,7 @@ export function pack<N, E>(graph: Graph<N, E>): Compact {
  *
  * @internal
  */
-function packNode(node: StoredNode<unknown>): CompactNode {
+function packNode(node: Vertex<unknown>): CompactNode {
   return [node.id, node.weight, packPorts(node.inputs), packPorts(node.outputs)];
 }
 

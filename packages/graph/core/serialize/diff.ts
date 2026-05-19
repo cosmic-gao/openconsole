@@ -17,7 +17,7 @@ import type {
   GraphJsonNode,
   NodeId,
   PortId,
-  StoredNode,
+  Vertex,
 } from '../types';
 import { mergeLookup, type SocketLookup } from './sockets';
 
@@ -186,7 +186,7 @@ export function apply<N, E>(
         graph.removeNode(op.data.id);
         break;
       case 'addNode':
-        graph.addNode(nodeFromJson(op.data, lookup) as StoredNode<N>);
+        graph.addNode(nodeFromJson(op.data, lookup) as Vertex<N>);
         break;
       case 'addEdge':
         graph.addEdge(edgeFromJson(graph, op.data));
@@ -241,7 +241,7 @@ export function invert<N, E>(patch: GraphPatch<N, E>): GraphPatch<N, E> {
  *
  * @internal
  */
-function nodeToJson<N>(node: StoredNode<N>): GraphJsonNode<N> {
+function nodeToJson<N>(node: Vertex<N>): GraphJsonNode<N> {
   return {
     id: node.id,
     weight: node.weight,
@@ -287,8 +287,8 @@ function portDictToJson(
 function nodeFromJson<N>(
   data: GraphJsonNode<N>,
   lookup: ReadonlyMap<string, Socket>,
-): StoredNode<N> {
-  const node = new Node(data.id, data.weight) as StoredNode<N>;
+): Vertex<N> {
+  const node = new Node(data.id, data.weight) as Vertex<N>;
   for (const [name, port] of Object.entries(data.inputs)) {
     if (!port) continue;
     node.addInput(name, lookup.get(port.socket) ?? Socket.any, port.id);

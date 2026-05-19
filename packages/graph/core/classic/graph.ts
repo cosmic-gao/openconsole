@@ -17,7 +17,7 @@ import type {
   PortDict,
   PortId,
   Sockets,
-  StoredNode,
+  Vertex,
   Subscribable,
 } from '../types';
 import { Edge } from './edge';
@@ -32,7 +32,7 @@ import type { Port } from './port';
  * 设计要点：
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
- * - **O(1) NodeIndexable**：内部维护 `_idByIndex` 数组 + `_indexById` Map，
+ * - **O(1) NodeIndexable**：内部维护 `_order` 数组 + `_index` Map，
  *   {@link at}/{@link indexOf}/{@link bound} 全部 O(1)；removeNode 使用 swap-and-pop，
  *   节点索引顺序在删除时**可能被打乱**；
  * - **变更事件**：通过 {@link on} 订阅节点/边的 add/remove，可用于增量算法（如
@@ -45,16 +45,16 @@ import type { Port } from './port';
  */
 export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 节点存储：NodeId → Node。 */
-  public readonly nodes = new Map<NodeId, StoredNode<N>>();
+  public readonly nodes = new Map<NodeId, Vertex<N>>();
 
   /** 边存储：EdgeId → Edge。 */
   public readonly edges = new Map<EdgeId, Edge<E>>();
 
   /** index → NodeId；用 swap-and-pop 维护，O(1) `at(i)`。 */
-  private readonly _idByIndex: NodeId[] = [];
+  private readonly _order: NodeId[] = [];
 
   /** NodeId → index；O(1) `indexOf`。 */
-  private readonly _indexById = new Map<NodeId, number>();
+  private readonly _index = new Map<NodeId, number>();
 
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
@@ -112,10 +112,10 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
         `[Graph "${String(this.id)}"] addNode: a node with id "${String(node.id)}" already exists.`,
       );
     }
-    const stored = node as unknown as StoredNode<N>;
+    const stored = node as unknown as Vertex<N>;
     this.nodes.set(node.id, stored);
-    this._indexById.set(node.id, this._idByIndex.length);
-    this._idByIndex.push(node.id);
+    this._index.set(node.id, this._order.length);
+    this._order.push(node.id);
     this._emit('nodeAdded', { node: stored });
     return this;
   }
@@ -128,7 +128,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    * @returns 被移除的节点；不存在时返回 `undefined`
    */
-  public removeNode(nodeId: NodeId): StoredNode<N> | undefined {
+  public removeNode(nodeId: NodeId): Vertex<N> | undefined {
     const node = this.nodes.get(nodeId);
     if (!node) return undefined;
 
@@ -146,15 +146,15 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     }
 
     // swap-and-pop 维护节点索引
-    const idx = this._indexById.get(nodeId)!;
-    const lastIdx = this._idByIndex.length - 1;
+    const idx = this._index.get(nodeId)!;
+    const lastIdx = this._order.length - 1;
     if (idx !== lastIdx) {
-      const lastId = this._idByIndex[lastIdx]!;
-      this._idByIndex[idx] = lastId;
-      this._indexById.set(lastId, idx);
+      const lastId = this._order[lastIdx]!;
+      this._order[idx] = lastId;
+      this._index.set(lastId, idx);
     }
-    this._idByIndex.pop();
-    this._indexById.delete(nodeId);
+    this._order.pop();
+    this._index.delete(nodeId);
 
     this.nodes.delete(nodeId);
     this._emit('nodeRemoved', { node });
@@ -167,7 +167,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    * @returns 节点实例；不存在时返回 `undefined`
    */
-  public getNode(nodeId: NodeId): StoredNode<N> | undefined {
+  public getNode(nodeId: NodeId): Vertex<N> | undefined {
     return this.nodes.get(nodeId);
   }
 
@@ -500,17 +500,17 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   }
 
   /** 源节点：入度为 0 的节点。 */
-  public sources(): StoredNode<N>[] {
+  public sources(): Vertex<N>[] {
     return this._filterByDegree((inDegree) => inDegree === 0);
   }
 
   /** 汇节点：出度为 0 的节点。 */
-  public sinks(): StoredNode<N>[] {
+  public sinks(): Vertex<N>[] {
     return this._filterByDegree((_inDegree, outDegree) => outDegree === 0);
   }
 
   /** 孤立节点：入度与出度均为 0 的节点。 */
-  public isolated(): StoredNode<N>[] {
+  public isolated(): Vertex<N>[] {
     return this._filterByDegree((inDegree, outDegree) => inDegree === 0 && outDegree === 0);
   }
 
@@ -520,8 +520,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param check 判定函数，接收节点的入度和出度
    * @internal
    */
-  private _filterByDegree(check: (inDegree: number, outDegree: number) => boolean): StoredNode<N>[] {
-    const result: StoredNode<N>[] = [];
+  private _filterByDegree(check: (inDegree: number, outDegree: number) => boolean): Vertex<N>[] {
+    const result: Vertex<N>[] = [];
     for (const node of this.nodes.values()) {
       if (check(this.inDegree(node.id), this.outDegree(node.id))) result.push(node);
     }
@@ -552,8 +552,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   public clear(): void {
     this.nodes.clear();
     this.edges.clear();
-    this._idByIndex.length = 0;
-    this._indexById.clear();
+    this._order.length = 0;
+    this._index.clear();
   }
 
   /**
@@ -726,17 +726,17 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
 
   /** {@inheritdoc NodeIndexable.bound} (O(1)) */
   public bound(): number {
-    return this._idByIndex.length;
+    return this._order.length;
   }
 
   /** {@inheritdoc NodeIndexable.at} (O(1)) */
   public at(index: number): NodeId | undefined {
-    return this._idByIndex[index];
+    return this._order[index];
   }
 
   /** {@inheritdoc NodeIndexable.indexOf} (O(1)) */
   public indexOf(nodeId: NodeId): number {
-    return this._indexById.get(nodeId) ?? -1;
+    return this._index.get(nodeId) ?? -1;
   }
 
   /** {@inheritdoc Visitable.marks} */

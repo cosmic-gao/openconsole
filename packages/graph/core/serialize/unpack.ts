@@ -3,7 +3,7 @@
  */
 
 import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
-import type { PortId, StoredNode } from '../types';
+import type { PortId, Vertex } from '../types';
 import type { Compact, CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
@@ -31,11 +31,11 @@ export function unpack<N, E>(
 
   const lookup = mergeLookup(options?.sockets);
 
-  const nodeMap = new Map<typeof data.n[number][0], StoredNode<unknown>>();
+  const nodeMap = new Map<typeof data.n[number][0], Vertex<unknown>>();
   for (const nodeData of data.n) {
     const node = unpackNode(nodeData, lookup);
     nodeMap.set(node.id, node);
-    graph.addNode(node as StoredNode<N>);
+    graph.addNode(node as Vertex<N>);
   }
 
   for (const edgeData of data.e) {
@@ -78,9 +78,9 @@ export function unpack<N, E>(
 function unpackNode(
   data: CompactNode,
   lookup: ReadonlyMap<string, Socket>,
-): StoredNode<unknown> {
+): Vertex<unknown> {
   const [id, weight, inputs, outputs] = data;
-  const node = new Node(id, weight) as StoredNode<unknown>;
+  const node = new Node(id, weight) as Vertex<unknown>;
   unpackPorts(inputs, lookup, (name, socket, portId) => {
     node.addInput(name, socket, portId);
   });
