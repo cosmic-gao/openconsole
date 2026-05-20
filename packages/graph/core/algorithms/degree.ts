@@ -2,13 +2,7 @@
  * 度数家族：degrees / sources / sinks / isolated。
  */
 
-import type {
-  Catalog,
-  Degree,
-  IntoDegree,
-  IntoEdgeViews,
-  NodeId,
-} from '../types';
+import type { Catalog, Degree, IntoDegree, IntoEdges, NodeId } from '../types';
 
 /**
  * 计算所有节点的入度与出度。
@@ -16,14 +10,16 @@ import type {
  * @remarks
  * 提供两个重载，由 TypeScript 在调用点选择：
  * - 快路径：图实现 {@link IntoDegree}（如 {@link Graph}），直接读取 O(N)；
- * - 慢路径：图实现 {@link IntoEdgeViews}，枚举边计数 O(N + E)。
+ * - 慢路径：图实现 {@link IntoEdges}，枚举边计数 O(N + E)。
  *
  * 内部用 `'inDegree' in graph` 区分而非 `typeof === 'function'`，去掉 duck typing。
+ *
+ * @returns 节点 ID → 入/出度
  */
 export function degrees<G extends Catalog & IntoDegree>(graph: G): Map<NodeId, Degree>;
-export function degrees<E, G extends Catalog & IntoEdgeViews<E>>(graph: G): Map<NodeId, Degree>;
+export function degrees<E, G extends Catalog & IntoEdges<E>>(graph: G): Map<NodeId, Degree>;
 export function degrees(
-  graph: Catalog & Partial<IntoDegree> & Partial<IntoEdgeViews<unknown>>,
+  graph: Catalog & Partial<IntoDegree> & Partial<IntoEdges<unknown>>,
 ): Map<NodeId, Degree> {
   const result = new Map<NodeId, Degree>();
   if ('inDegree' in graph && 'outDegree' in graph) {
@@ -36,11 +32,11 @@ export function degrees(
     }
     return result;
   }
-  const g = graph as Catalog & IntoEdgeViews<unknown>;
+  const g = graph as Catalog & IntoEdges<unknown>;
   for (const nodeId of g.nodeIds) {
     result.set(nodeId, {
-      inDegree: count(g.getIncomingEdges(nodeId)),
-      outDegree: count(g.getOutgoingEdges(nodeId)),
+      inDegree: count(g.getIncoming(nodeId)),
+      outDegree: count(g.getOutgoing(nodeId)),
     });
   }
   return result;

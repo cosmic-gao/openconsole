@@ -2,7 +2,7 @@
  * IncrementalTopo：基于事件订阅的增量拓扑维护。
  *
  * @remarks
- * 订阅图的 add/remove 事件并维护 ranks 映射。设计策略：
+ * 订阅图的 add / remove 事件并维护 ranks 映射。设计策略：
  * - **happy path**：节点添加在末尾分配新 rank（O(1)）；不破坏拓扑的边变更不触发重排（O(1)）。
  * - **violation path**：当一条新边导致 `rank(source) >= rank(target)` 时，标记 dirty，下次
  *   `rank()` / `sorted()` / `hasCycle` 查询时触发完整 {@link topology} 重算（O(V+E)）。
@@ -44,7 +44,13 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   /** NodeId → 当前 rank（稀疏，删除节点后留空隙）。 */
   private readonly _ranks = new Map<NodeId, number>();
 
-  /** 已分配的最大 rank。 */
+  /**
+   * 已分配的最大 rank。
+   *
+   * @remarks 节点 add 时 `++_maxRank` 单调递增、不复用被删节点留下的空隙；
+   *   极长寿命会话 + 频繁 add/remove 时数字会很大，但仅作为 rank 比较用，
+   *   不会溢出（Number 可安全表示 2^53 之内）；用户感知不到。
+   */
   private _maxRank = -1;
 
   /** 是否需要在下次查询时重算。 */
@@ -53,24 +59,30 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   /** 重算缓存：是否含环。 */
   private _hasCycle = false;
 
-  /** 重算缓存：环上节点。 */
+  /** 重算缓存：环上节点（数组形式，外部返回时保留顺序）。 */
   private _cycleNodes: NodeId[] = [];
+
+  /** 重算缓存：环上节点集合（用于 O(1) `has` 查询）。 */
+  private _cycleSet = new Set<NodeId>();
+
+  /** 重算缓存：上一次 `_recompute` 后 ranks 是否已是连续 0..N-1（无空隙）。 */
+  private _dense = true;
 
   /** 持有的所有取消订阅函数。 */
   private readonly _unsubscribers: Array<() => void> = [];
 
   /**
-   * @param _graph 既满足 Walkable（重算需要）又实现 Subscribable（订阅需要）的图
+   * @param _graph 既满足 {@link Walkable}（重算需要）又实现 {@link Subscribable}（订阅需要）的图
    */
   public constructor(
     private readonly _graph: Walkable & Subscribable<N, E>,
   ) {
     this._recompute();
     this._unsubscribers.push(
-      _graph.on('nodeAdded', ({ node }) => this._onNodeAdded(node.id)),
-      _graph.on('nodeRemoved', ({ node }) => this._onNodeRemoved(node.id)),
-      _graph.on('edgeAdded', ({ edge }) => this._onEdgeAdded(edge.sourceId, edge.targetId)),
-      _graph.on('edgeRemoved', () => this._onEdgeRemoved()),
+      _graph.on('nodeAdded', ({ node }) => this._addNode(node.id)),
+      _graph.on('nodeRemoved', ({ node }) => this._removeNode(node.id)),
+      _graph.on('edgeAdded', ({ edge }) => this._addEdge(edge.sourceId, edge.targetId)),
+      _graph.on('edgeRemoved', () => this._removeEdge()),
     );
   }
 
@@ -78,6 +90,9 @@ export class IncrementalTopo<N = unknown, E = unknown> {
    * 节点的拓扑序位置（0-based）；不存在时返回 `undefined`。
    *
    * @remarks 含环时环上节点的 rank 与重算时机有关，调用方应先检查 {@link hasCycle}。
+   *
+   * @param id 节点 ID
+   * @returns rank；节点不存在时 `undefined`
    */
   public rank(id: NodeId): number | undefined {
     if (this._dirty) this._recompute();
@@ -85,10 +100,11 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   }
 
   /**
-   * 比较两个节点的拓扑顺序：负数表示 `a` 在前，正数表示 `b` 在前，0 表示相等或都不存在。
+   * 比较两个节点的拓扑顺序。
    *
    * @param a 节点 A
    * @param b 节点 B
+   * @returns 负数表示 `a` 在前，正数表示 `b` 在前，0 表示相等或都不存在
    */
   public compare(a: NodeId, b: NodeId): number {
     if (this._dirty) this._recompute();
@@ -104,9 +120,19 @@ export class IncrementalTopo<N = unknown, E = unknown> {
    * @remarks
    * 稀疏 rank（含 gaps）会被压紧成 0..N-1 的连续序列。返回数组与 rank 映射独立，
    * 调用方修改返回值不影响内部状态。
+   *
+   * 性能：刚 `_recompute` 后内部是稠密的，按下标直接填入 O(N)；
+   * 节点 add/remove 后变稀疏，再回退到 entries + sort 路径 O(N log N)。
+   *
+   * @returns 拓扑顺序的节点 ID 数组
    */
   public sorted(): NodeId[] {
     if (this._dirty) this._recompute();
+    if (this._dense) {
+      const result: NodeId[] = new Array(this._ranks.size);
+      for (const [id, rank] of this._ranks) result[rank] = id;
+      return result;
+    }
     const entries = Array.from(this._ranks.entries());
     entries.sort((a, b) => a[1] - b[1]);
     return entries.map(([id]) => id);
@@ -153,38 +179,40 @@ export class IncrementalTopo<N = unknown, E = unknown> {
     this._maxRank = result.order.length - 1;
     this._hasCycle = result.cycles.hasCycle;
     this._cycleNodes = result.cycles.cycleNodes;
+    this._cycleSet = new Set(this._cycleNodes);
+    this._dense = true;
     this._dirty = false;
   }
 
   /**
-   * 节点入图：追加到 rank 序列末尾（O(1)）。
+   * 节点入图回调：在 rank 表末尾分配新 rank（O(1)）。
    *
    * @internal
    */
-  private _onNodeAdded(nodeId: NodeId): void {
+  private _addNode(nodeId: NodeId): void {
     if (this._ranks.has(nodeId)) return;
     this._ranks.set(nodeId, ++this._maxRank);
+    // 新 rank 恰好等于旧 size 时仍稠密；旧 size < _maxRank（有删除空隙）时退化为稀疏。
+    if (this._maxRank !== this._ranks.size - 1) this._dense = false;
   }
 
   /**
-   * 节点离图：从 ranks 中删除；不压紧（留空隙换 O(1)）。
+   * 节点离图回调：从 ranks 中删除；不压紧（留空隙换 O(1)）。
    *
    * @internal
    */
-  private _onNodeRemoved(nodeId: NodeId): void {
-    this._ranks.delete(nodeId);
-    // 若被删节点曾在环上，环路信息也过期了
-    if (this._cycleNodes.length > 0 && this._cycleNodes.includes(nodeId)) {
-      this._dirty = true;
-    }
+  private _removeNode(nodeId: NodeId): void {
+    if (this._ranks.delete(nodeId)) this._dense = false;
+    // 若被删节点曾在环上，环路信息也过期了（O(1) 查询）
+    if (this._cycleSet.has(nodeId)) this._dirty = true;
   }
 
   /**
-   * 边入图：rank(source) < rank(target) 时无操作；否则标记 dirty。
+   * 边入图回调：`rank(source) < rank(target)` 时无操作；否则标记 dirty。
    *
    * @internal
    */
-  private _onEdgeAdded(sourceId: NodeId, targetId: NodeId): void {
+  private _addEdge(sourceId: NodeId, targetId: NodeId): void {
     const rs = this._ranks.get(sourceId);
     const rt = this._ranks.get(targetId);
     if (rs === undefined || rt === undefined) {
@@ -199,11 +227,11 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   }
 
   /**
-   * 边离图：只可能让拓扑更"宽松"；若之前存在环，删除一条边可能解开它 → dirty。
+   * 边离图回调：只可能让拓扑更"宽松"；若之前存在环，删除一条边可能解开它 → dirty。
    *
    * @internal
    */
-  private _onEdgeRemoved(): void {
+  private _removeEdge(): void {
     if (this._hasCycle) this._dirty = true;
   }
 }

@@ -3,7 +3,7 @@
  *
  * @remarks
  * 算法仅依赖访问者 trait（{@link Catalog} / {@link Neighbors} /
- * {@link IntoEdgeViews} / {@link IntoDegree} 等），与具体存储解耦。
+ * {@link IntoEdges} / {@link IntoDegree} 等），与具体存储解耦。
  */
 
 export * from './toposort';

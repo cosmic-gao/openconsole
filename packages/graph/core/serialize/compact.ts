@@ -32,12 +32,19 @@ export type CompactEdge = [
   unknown,
 ];
 
-/** 整图压缩格式。 */
+/**
+ * 整图压缩格式。
+ *
+ * @remarks
+ * 字段名刻意单字母（`g` / `n` / `e`）以最小化 JSON 字节体积：每条边、每个节点都不需要
+ * 再多写一份字段名。属于压缩格式 schema 的有意设计，外部代码请通过 {@link pack} /
+ * {@link unpack} 访问，不要直接依赖字段名。
+ */
 export interface Compact {
-  /** 图 ID。 */
+  /** 图 ID（graph）。 */
   g: GraphId;
-  /** 节点数组。 */
+  /** 节点数组（nodes）。 */
   n: CompactNode[];
-  /** 边数组。 */
+  /** 边数组（edges）。 */
   e: CompactEdge[];
 }

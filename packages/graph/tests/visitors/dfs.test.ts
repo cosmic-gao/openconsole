@@ -105,15 +105,15 @@ describe('DfsPostorder', () => {
 });
 
 describe('dfsVisit', () => {
-  it('discover/finish/treeEdge/backEdge/crossForwardEdge 分类正确', () => {
+  it('discover / finish / treeEdge / backEdge / crossEdge 分类正确', () => {
     const g = diamond(); // a→b, a→c, b→d, c→d
     const events: string[] = [];
     dfsVisit(g, [id<NodeId>('a')], {
-      discover: e => { events.push(`d:${e.node}`); },
-      finish: e => { events.push(`f:${e.node}`); },
-      treeEdge: e => { events.push(`t:${e.node}->${e.target}`); },
-      backEdge: e => { events.push(`b:${e.node}->${e.target}`); },
-      crossForwardEdge: e => { events.push(`x:${e.node}->${e.target}`); },
+      discover: (e: DfsEvent) => { events.push(`d:${e.node}`); },
+      finish: (e: DfsEvent) => { events.push(`f:${e.node}`); },
+      treeEdge: (e: DfsEvent) => { events.push(`t:${e.node}->${e.target}`); },
+      backEdge: (e: DfsEvent) => { events.push(`b:${e.node}->${e.target}`); },
+      crossEdge: (e: DfsEvent) => { events.push(`x:${e.node}->${e.target}`); },
     });
     expect(events.filter(e => e.startsWith('d:')).length).toBe(4); // 4 节点
     expect(events.filter(e => e.startsWith('f:')).length).toBe(4);

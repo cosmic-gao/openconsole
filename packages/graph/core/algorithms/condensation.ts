@@ -33,7 +33,12 @@ export function condensation<G extends Walkable>(
 
   // 用 number Set 编码 (from, to) 对，避免每条候选边都做字符串拼接。
   // 编码方案：from * stride + to，其中 stride = components.length（足够区分所有分量对）。
+  // 安全上界：stride² < Number.MAX_SAFE_INTEGER (2^53)，即 stride < 2^26.5 ≈ 94M。
+  // 真实场景下分量数远小于此，仅极端情形需要保守 assert。
   const stride = components.length;
+  if (stride > 0x3ffffff) {
+    throw new Error(`condensation: too many SCC components (${stride}) for safe stride encoding`);
+  }
   const seen = new Set<number>();
   const edges: Array<{ from: number; to: number }> = [];
   for (const nodeId of graph.nodeIds) {

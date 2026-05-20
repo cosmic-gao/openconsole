@@ -52,17 +52,21 @@ export abstract class Port<S extends Socket = Socket> {
   }
 
   /**
-   * 关联一条边到本端口（O(1)）。
+   * 关联一条边到本端口（O(1)，幂等）。
    *
    * @remarks
-   * 调用约定：`Graph.addEdge` 在 attach 前已经通过 `edges.has(edge.id)` 拒绝重复 ID，
-   * 因此本方法不再做去重检查。直接对外调用 `attach` 时调用方自行保证不重复。
+   * 同 ID 边重复 attach 不会破坏内部一致性 — 第二次起返回 `false`，不再追加。
+   * `Graph.addEdge` 路径下重复 ID 已先一步在 `edges.has` 处被拒绝，这里只是
+   * 防御直接调用 `port.attach` 的代码。
    *
    * @param edge 要关联的边 ID
+   * @returns 是否新增（首次 attach 返回 `true`，已存在则返回 `false`）
    */
-  public attach(edge: EdgeId): void {
+  public attach(edge: EdgeId): boolean {
+    if (this._index.has(edge)) return false;
     this._index.set(edge, this.edges.length);
     this.edges.push(edge);
+    return true;
   }
 
   /**

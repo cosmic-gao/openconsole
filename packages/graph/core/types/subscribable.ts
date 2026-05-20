@@ -1,10 +1,10 @@
 /**
- * GraphEventMap / Subscribable：图变更事件载体与可订阅 trait。
+ * 图变更事件载体与可订阅 trait。
  */
 
-// 仅类型 import：types ↔ classic 经 barrel 形成的循环只在 import type 下被
-// TS 擦除消解；切忌把下面的 `import type` 升级为值 import，否则会触发
-// 真正的运行时循环依赖。
+// 仅类型 import：types ↔ classic 经 barrel 形成的循环只在 `import type` 下被
+// TS 擦除消解；切忌把下面的 `import type` 升级为值 import，否则会触发真正的
+// 运行时循环依赖。
 import type { Edge } from '../classic';
 import type { Vertex } from './port';
 
@@ -14,10 +14,10 @@ import type { Vertex } from './port';
  * @template N 节点权重类型
  * @template E 边权重类型
  */
-export interface GraphEventMap<N = unknown, E = unknown> {
+export interface EventMap<N = unknown, E = unknown> {
   /** 新节点入图。 */
   nodeAdded: { node: Vertex<N> };
-  /** 节点已离开图（其入/出边已先一步触发 edgeRemoved）。 */
+  /** 节点已离开图（其入/出边已先一步触发 `edgeRemoved`）。 */
   nodeRemoved: { node: Vertex<N> };
   /** 新边入图。 */
   edgeAdded: { edge: Edge<E> };
@@ -25,11 +25,11 @@ export interface GraphEventMap<N = unknown, E = unknown> {
   edgeRemoved: { edge: Edge<E> };
 }
 
-/** Graph 事件名集合。 */
-export type GraphEventName = keyof GraphEventMap;
+/** 事件名集合。 */
+export type EventName = keyof EventMap;
 
-/** Graph 事件订阅者回调签名。 */
-export type GraphListener<P> = (payload: P) => void;
+/** 事件订阅者回调签名。 */
+export type Listener<P> = (payload: P) => void;
 
 /**
  * 可订阅图变更事件的能力 trait。
@@ -50,8 +50,8 @@ export interface Subscribable<N = unknown, E = unknown> {
    * @param listener 回调
    * @returns 取消订阅函数
    */
-  on<K extends GraphEventName>(
+  on<K extends EventName>(
     event: K,
-    listener: GraphListener<GraphEventMap<N, E>[K]>,
+    listener: Listener<EventMap<N, E>[K]>,
   ): () => void;
 }

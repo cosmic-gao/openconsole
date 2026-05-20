@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { Graph, type EdgeId, type GraphId, type NodeId } from '../../core';
+import { Graph, type Edge, type EdgeId, type GraphId, type NodeId, type Vertex } from '../../core';
 import { id, portNode } from '../_fixtures';
 
 const newGraph = () => new Graph<unknown, string>(id<GraphId>('g'));
@@ -12,7 +12,7 @@ describe('Graph events', () => {
   it('nodeAdded 在 addNode 后触发，回调收到节点引用', () => {
     const g = newGraph();
     const seen: string[] = [];
-    g.on('nodeAdded', ({ node }) => seen.push(String(node.id)));
+    g.on('nodeAdded', ({ node }: { node: Vertex<unknown> }) => seen.push(String(node.id)));
     g.addNode(portNode('A'));
     g.addNode(portNode('B'));
     expect(seen).toEqual(['A', 'B']);
@@ -25,7 +25,7 @@ describe('Graph events', () => {
     g.addNode(A).addNode(B);
 
     const seen: EdgeId[] = [];
-    g.on('edgeAdded', ({ edge }) => seen.push(edge.id));
+    g.on('edgeAdded', ({ edge }: { edge: Edge<string> }) => seen.push(edge.id));
     g.connect([id<NodeId>('A'), 'y'], [id<NodeId>('B'), 'x'], { id: id<EdgeId>('e1') });
     expect(seen).toEqual(['e1']);
   });
@@ -38,8 +38,8 @@ describe('Graph events', () => {
     g.connect([id<NodeId>('A'), 'y'], [id<NodeId>('B'), 'x'], { id: id<EdgeId>('e1') });
 
     const events: string[] = [];
-    g.on('edgeRemoved', ({ edge }) => events.push(`e-:${edge.id}`));
-    g.on('nodeRemoved', ({ node }) => events.push(`n-:${node.id}`));
+    g.on('edgeRemoved', ({ edge }: { edge: Edge<string> }) => events.push(`e-:${edge.id}`));
+    g.on('nodeRemoved', ({ node }: { node: Vertex<unknown> }) => events.push(`n-:${node.id}`));
     g.removeNode(id<NodeId>('A'));
     expect(events).toEqual(['e-:e1', 'n-:A']);
   });

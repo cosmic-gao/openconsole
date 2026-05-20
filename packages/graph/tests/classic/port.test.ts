@@ -26,10 +26,10 @@ describe('Port (Input / Output)', () => {
     expect(port.detach(id<EdgeId>('missing'))).toBe(false);
   });
 
-  it('attach 不再做 includes 去重 (Graph.addEdge 已在上游保证)', () => {
+  it('attach 幂等：重复 attach 同一边不再追加，且返回值区分首次 / 重复', () => {
     const port = new Output(Socket.number, id<PortId>('p:o'));
-    port.attach(id<EdgeId>('e1'));
-    port.attach(id<EdgeId>('e1'));
-    expect(port.edges).toHaveLength(2);
+    expect(port.attach(id<EdgeId>('e1'))).toBe(true);
+    expect(port.attach(id<EdgeId>('e1'))).toBe(false);
+    expect(port.edges).toEqual(['e1']);
   });
 });

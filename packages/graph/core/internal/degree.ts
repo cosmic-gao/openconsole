@@ -21,7 +21,8 @@ export function inDegrees<G extends Walkable & Partial<IntoDegree>>(
 ): Map<NodeId, number> {
   const result = new Map<NodeId, number>();
 
-  if (typeof graph.inDegree === 'function') {
+  // 与 algorithms/degree.ts 同款 capability 检测（`in` 操作符，避免 duck typing）。
+  if ('inDegree' in graph && typeof graph.inDegree === 'function') {
     for (const nodeId of graph.nodeIds) result.set(nodeId, graph.inDegree(nodeId));
     return result;
   }

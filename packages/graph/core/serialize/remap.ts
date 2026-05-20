@@ -51,26 +51,28 @@ export interface RemappedCompact {
  * @returns 紧凑格式 + reverse remap 表
  */
 export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
-  // 1. 拓扑序为节点编号
   const { order: nodeOrder } = topology(graph);
   const nodeForward = new Map<string, string>();
-  const nodes: string[] = [];
-  for (let i = 0; i < nodeOrder.length; i++) {
-    const orig = String(nodeOrder[i]);
-    nodeForward.set(orig, String(i));
-    nodes.push(orig);
-  }
-
-  // 2. 按节点 -> input/output 字典顺序为端口编号
   const portForward = new Map<string, string>();
+  const edgeForward = new Map<string, string>();
+  const nodes: string[] = [];
   const ports: string[] = [];
+  const edges: string[] = [];
+  const n: CompactNode[] = [];
+
   const indexPort = (id: PortId): void => {
     portForward.set(String(id), String(ports.length));
     ports.push(String(id));
   };
-  for (const nodeId of nodeOrder) {
+
+  // 1. 节点扫描：按拓扑序分配节点 ID + 端口 ID + 构造 CompactNode（合并原 pass 1+2+4 节点部分）
+  for (let i = 0; i < nodeOrder.length; i++) {
+    const nodeId = nodeOrder[i]!;
     const node = graph.getNode(nodeId);
     if (!node) continue;
+    const orig = String(nodeId);
+    nodeForward.set(orig, String(i));
+    nodes.push(orig);
     for (const portName in node.inputs) {
       const port = node.inputs[portName];
       if (port) indexPort(port.id);
@@ -79,34 +81,23 @@ export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
       const port = node.outputs[portName];
       if (port) indexPort(port.id);
     }
-  }
-
-  // 3. 边按 Map 插入序编号
-  const edgeForward = new Map<string, string>();
-  const edges: string[] = [];
-  for (const edgeId of graph.edges.keys()) {
-    const orig = String(edgeId);
-    edgeForward.set(orig, String(edges.length));
-    edges.push(orig);
-  }
-
-  // 4. 构造紧凑表示（用 forward map 替换所有 ID）
-  const n: CompactNode[] = [];
-  for (const nodeId of nodeOrder) {
-    const node = graph.getNode(nodeId);
-    if (!node) continue;
     n.push([
-      nodeForward.get(String(node.id))! as NodeId,
+      String(i) as NodeId,
       node.weight,
       compactPorts(node.inputs, portForward),
       compactPorts(node.outputs, portForward),
     ]);
   }
 
+  // 2. 边扫描：分配边 ID + 构造 CompactEdge（合并原 pass 3+4 边部分）
   const e: CompactEdge[] = [];
   for (const edge of graph.edges.values()) {
+    const orig = String(edge.id);
+    const compactId = String(edges.length);
+    edgeForward.set(orig, compactId);
+    edges.push(orig);
     e.push([
-      edgeForward.get(String(edge.id))! as EdgeId,
+      compactId as EdgeId,
       nodeForward.get(String(edge.sourceId))! as NodeId,
       portForward.get(String(edge.source.portId))! as PortId,
       nodeForward.get(String(edge.targetId))! as NodeId,

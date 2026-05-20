@@ -115,8 +115,8 @@ describe('apply', () => {
     const base = makeBase();
     const ext = makeExtended();
     const events: string[] = [];
-    base.on('nodeAdded', ({ node }) => events.push(`+n:${node.id}`));
-    base.on('edgeAdded', ({ edge }) => events.push(`+e:${edge.id}`));
+    base.on('nodeAdded', ({ node }: { node: { id: NodeId } }) => events.push(`+n:${node.id}`));
+    base.on('edgeAdded', ({ edge }: { edge: { id: EdgeId } }) => events.push(`+e:${edge.id}`));
     apply(base, diff(base, ext));
     expect(events).toContain('+n:C');
     expect(events).toContain('+e:e2');

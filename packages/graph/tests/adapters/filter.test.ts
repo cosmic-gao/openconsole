@@ -1,9 +1,9 @@
 /**
- * 测试覆盖：NodeFiltered / EdgeFiltered 视图，以及与其它适配器嵌套。
+ * 测试覆盖：NodeFilter / EdgeFilter 视图，以及与其它适配器嵌套。
  */
 import { describe, expect, it } from 'vitest';
 
-import { EdgeFiltered, NodeFiltered, reversed, dfs, toposort, type EdgeId, type NodeId } from '../../core';
+import { EdgeFilter, NodeFilter, reversed, dfs, toposort, type EdgeId, type NodeId } from '../../core';
 import { buildGraph, id } from '../_fixtures';
 
 const linear = () => buildGraph('lin', [
@@ -12,9 +12,9 @@ const linear = () => buildGraph('lin', [
   ['c', 'd', 3],
 ]);
 
-describe('NodeFiltered', () => {
+describe('NodeFilter', () => {
   const filtered = (preds: ReadonlySet<string>) =>
-    new NodeFiltered(linear(), (id) => preds.has(id as unknown as string));
+    new NodeFilter(linear(), (id) => preds.has(id as unknown as string));
 
   it('nodeIds / nodeCount / edgeIds / edgeCount 跳过被隐去节点', () => {
     const view = filtered(new Set(['a', 'b', 'c'])); // d 隐去
@@ -47,7 +47,7 @@ describe('NodeFiltered', () => {
       incomingNeighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
       outgoingNeighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
     };
-    const view = new NodeFiltered(stub, () => true);
+    const view = new NodeFilter(stub, () => true);
     expect([...view.edgeIds]).toEqual([]);
   });
 
@@ -57,10 +57,10 @@ describe('NodeFiltered', () => {
   });
 });
 
-describe('EdgeFiltered', () => {
+describe('EdgeFilter', () => {
   it('节点不变；getEdges 按谓词过滤', () => {
     const inner = linear();
-    const view = new EdgeFiltered(inner, ref => (ref.weight as number) >= 2);
+    const view = new EdgeFilter(inner, ref => (ref.weight as number) >= 2);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c', 'd']);
     expect(view.nodeCount()).toBe(4);
     const refs = [...view.getEdges()].map(r => `${r.source}→${r.target}`);
@@ -69,27 +69,27 @@ describe('EdgeFiltered', () => {
   });
 
   it('outgoingNeighbors / incomingNeighbors 反映过滤后的边', () => {
-    const view = new EdgeFiltered(linear(), ref => (ref.weight as number) >= 2);
+    const view = new EdgeFilter(linear(), ref => (ref.weight as number) >= 2);
     expect([...view.outgoingNeighbors(id<NodeId>('a'))]).toEqual([]); // a→b 被过滤
     expect([...view.incomingNeighbors(id<NodeId>('c'))]).toEqual(['b']);
   });
 
   it('neighbors(direction): direction undefined 同时返回 in + out', () => {
-    const view = new EdgeFiltered(linear(), () => true);
+    const view = new EdgeFilter(linear(), () => true);
     const all = [...view.neighbors(id<NodeId>('b'))].sort();
     expect(all).toEqual(['a', 'c']);
   });
 
   it('与 dfs 组合：滤掉不感兴趣的边后再遍历', () => {
-    const view = new EdgeFiltered(linear(), ref => (ref.weight as number) >= 2);
+    const view = new EdgeFilter(linear(), ref => (ref.weight as number) >= 2);
     // 从 a 出发 a→b 被过滤，故只产出 a 自身
     expect([...dfs(view, id<NodeId>('a'))]).toEqual(['a']);
   });
 });
 
 describe('适配器嵌套', () => {
-  it('reversed(NodeFiltered(g)) 仍是 trait 兼容的视图', () => {
-    const filtered = new NodeFiltered(linear(), id => id !== 'd');
+  it('reversed(NodeFilter(g)) 仍是 trait 兼容的视图', () => {
+    const filtered = new NodeFilter(linear(), id => id !== 'd');
     const view = reversed(filtered);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c']);
     expect([...view.outgoingNeighbors(id<NodeId>('c'))]).toEqual(['b']);

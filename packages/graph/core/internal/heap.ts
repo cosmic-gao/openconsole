@@ -16,32 +16,56 @@ export class Heap<T> {
   private readonly _data: T[] = [];
 
   /**
-   * @param _compare 比较函数：返回负数表示 a 优先（最小堆）。
+   * 构造一个最小堆。
+   *
+   * @param compare 比较函数：`compare(a, b) < 0` 表示 `a` 应排在 `b` 前面（最小堆）。
+   *   参数前缀的 `_` 是 TS "parameter property" 语法的私有字段命名约定，对外仅暴露行为，
+   *   不暴露名字。
    */
   public constructor(private readonly _compare: (a: T, b: T) => number) {}
 
-  /** 当前元素个数。 */
+  /**
+   * 当前元素个数。
+   *
+   * @returns 堆中元素个数
+   */
   public get size(): number {
     return this._data.length;
   }
 
-  /** 堆是否为空。 */
+  /**
+   * 堆是否为空。
+   *
+   * @returns 元素数为 0 时返回 `true`
+   */
   public get isEmpty(): boolean {
     return this._data.length === 0;
   }
 
-  /** 查看堆顶元素（不弹出）；空堆返回 `undefined`。 */
+  /**
+   * 查看堆顶元素（不弹出）。
+   *
+   * @returns 堆顶元素；空堆返回 `undefined`
+   */
   public peek(): T | undefined {
     return this._data[0];
   }
 
-  /** 推入一个元素。 */
+  /**
+   * 推入一个元素。
+   *
+   * @param item 待入堆的元素
+   */
   public push(item: T): void {
     this._data.push(item);
     this._siftUp(this._data.length - 1);
   }
 
-  /** 弹出堆顶元素；空堆返回 `undefined`。 */
+  /**
+   * 弹出堆顶元素。
+   *
+   * @returns 堆顶元素；空堆返回 `undefined`
+   */
   public pop(): T | undefined {
     const data = this._data;
     if (data.length === 0) return undefined;

@@ -51,7 +51,13 @@ export class Edge<W = unknown> {
   /**
    * 给定方向，返回另一端的节点 ID。
    *
-   * @param direction `'input'` 视角（从终点看）返回起点；`'output'` 视角（从起点看）返回终点
+   * @remarks
+   * | direction  | 视角         | 返回           |
+   * | ---------- | ------------ | -------------- |
+   * | `'input'`  | 从终点看入边 | 起点 `source`  |
+   * | `'output'` | 从起点看出边 | 终点 `target`  |
+   *
+   * @param direction 边方向
    * @returns 对侧节点的 ID
    */
   public opposite(direction: Direction): NodeId {

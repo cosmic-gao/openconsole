@@ -2,130 +2,81 @@
  * 图 diff / apply / invert：把两图差异表达为可应用的操作序列，支持撤销重做。
  */
 
-import {
-  Edge,
-  Endpoint,
-  Graph,
-  Node,
-  Socket,
-  type Input,
-  type Output,
-} from '../classic';
-import { lookupPort, portsJson } from '../internal';
-import type {
-  EdgeId,
-  GraphJsonEdge,
-  GraphJsonNode,
-  NodeId,
-  Vertex,
-} from '../types';
+import { Graph } from '../classic';
+import { dumpEdge, dumpNode, loadEdge, loadNode, sameWeight } from './encode';
+import type { GraphOp, GraphPatch } from './ops';
 import { mergeLookup, type SocketLookup } from './sockets';
 
-// ============= 操作类型 =============
+export type {
+  AddEdge,
+  AddNode,
+  GraphOp,
+  GraphPatch,
+  RemoveEdge,
+  RemoveNode,
+  ReweightEdge,
+  ReweightNode,
+} from './ops';
 
-/** 新增节点：携带完整端口/权重快照，确保 apply 时可独立重建节点。 */
-export interface NodeAddOp<N = unknown> {
-  readonly kind: 'addNode';
-  readonly data: GraphJsonNode<N>;
+/** {@link diff} 选项。 */
+export interface DiffOptions {
+  /**
+   * 权重等价回调；默认采用 `===` + JSON 浅比较（详见 {@link sameWeight}）。
+   *
+   * @remarks
+   * 当节点 / 边权重为复杂对象、Map、循环引用或函数时，默认 JSON 比较不准确。
+   * 此时传入自定义 `equals` 函数，例如 `lodash.isEqual`。
+   */
+  equals?: <T>(a: T | undefined, b: T | undefined) => boolean;
 }
-
-/** 删除节点：携带完整快照供 {@link invert} 还原。 */
-export interface NodeRemoveOp<N = unknown> {
-  readonly kind: 'removeNode';
-  readonly data: GraphJsonNode<N>;
-}
-
-/** 新增边：依赖目标图中已存在所需节点 + 端口（addNode 应先于 addEdge 应用）。 */
-export interface EdgeAddOp<E = unknown> {
-  readonly kind: 'addEdge';
-  readonly data: GraphJsonEdge<E>;
-}
-
-/** 删除边。 */
-export interface EdgeRemoveOp<E = unknown> {
-  readonly kind: 'removeEdge';
-  readonly data: GraphJsonEdge<E>;
-}
-
-/** 节点权重更新。 */
-export interface NodeWeightOp<N = unknown> {
-  readonly kind: 'setNodeWeight';
-  readonly id: NodeId;
-  readonly from: N | undefined;
-  readonly to: N | undefined;
-}
-
-/** 边权重更新。 */
-export interface EdgeWeightOp<E = unknown> {
-  readonly kind: 'setEdgeWeight';
-  readonly id: EdgeId;
-  readonly from: E | undefined;
-  readonly to: E | undefined;
-}
-
-/** 单一图操作。 */
-export type GraphOp<N = unknown, E = unknown> =
-  | NodeAddOp<N>
-  | NodeRemoveOp<N>
-  | EdgeAddOp<E>
-  | EdgeRemoveOp<E>
-  | NodeWeightOp<N>
-  | EdgeWeightOp<E>;
-
-/** 操作序列（patch）。 */
-export interface GraphPatch<N = unknown, E = unknown> {
-  readonly ops: ReadonlyArray<GraphOp<N, E>>;
-}
-
-// ============= 核心 API =============
 
 /**
  * 计算把 `before` 转换为 `after` 所需的最小操作序列。
  *
  * @remarks
  * 输出顺序保证 {@link apply} 可以安全顺序执行：
- * 1. removeEdge — 先解开旧边
- * 2. removeNode — 再删除旧节点（此时其入/出边已清空）
- * 3. addNode — 再加入新节点（含端口）
- * 4. setNodeWeight — 然后更新留存节点的权重
- * 5. addEdge — 最后挂上新边（需要双端节点 + 端口已经就绪）
- * 6. setEdgeWeight — 再更新留存边的权重
+ * 1. `removeEdge` — 先解开旧边
+ * 2. `removeNode` — 再删除旧节点（此时其入/出边已清空）
+ * 3. `addNode` + `setNodeWeight` — 加入新节点 / 更新留存节点的权重（合并扫描）
+ * 4. `addEdge` + `setEdgeWeight` — 挂上新边 / 更新留存边的权重（合并扫描）
  *
- * 比较权重时使用浅引用 + JSON 深比较的混合策略；如需自定义可在调用前 / 调用后处理。
+ * 比较权重默认使用 {@link sameWeight}；如需自定义可通过 {@link DiffOptions.equals} 注入。
  *
  * @template N 节点权重类型
  * @template E 边权重类型
  * @param before 基准图
  * @param after 目标图
+ * @param options 可选：自定义 `equals` 比较器
+ * @returns 操作序列
  */
-export function diff<N, E>(before: Graph<N, E>, after: Graph<N, E>): GraphPatch<N, E> {
+export function diff<N, E>(
+  before: Graph<N, E>,
+  after: Graph<N, E>,
+  options?: DiffOptions,
+): GraphPatch<N, E> {
+  const eq = options?.equals ?? sameWeight;
   const ops: GraphOp<N, E>[] = [];
 
   // 1. 删除 before 中存在但 after 中不存在的边
   for (const [edgeId, edge] of before.edges) {
     if (!after.edges.has(edgeId)) {
-      ops.push({ kind: 'removeEdge', data: edgeToJson(edge) });
+      ops.push({ kind: 'removeEdge', data: dumpEdge(edge) });
     }
   }
 
   // 2. 删除 before 中存在但 after 中不存在的节点
   for (const [nodeId, node] of before.nodes) {
     if (!after.nodes.has(nodeId)) {
-      ops.push({ kind: 'removeNode', data: nodeToJson(node) });
+      ops.push({ kind: 'removeNode', data: dumpNode(node) });
     }
   }
 
-  // 3. 加入 after 中新增的节点
-  for (const [nodeId, afterNode] of after.nodes) {
-    if (!before.nodes.has(nodeId)) {
-      ops.push({ kind: 'addNode', data: nodeToJson(afterNode) });
-    }
-  }
-
-  // 4. 节点权重变更
+  // 3. 节点：新增 → 加；留存且权重变 → 更新（合并原 pass 3+4）
   for (const [nodeId, afterNode] of after.nodes) {
     const beforeNode = before.nodes.get(nodeId);
-    if (beforeNode && !sameWeight(beforeNode.weight, afterNode.weight)) {
+    if (!beforeNode) {
+      ops.push({ kind: 'addNode', data: dumpNode(afterNode) });
+    } else if (!eq(beforeNode.weight, afterNode.weight)) {
       ops.push({
         kind: 'setNodeWeight',
         id: nodeId,
@@ -135,17 +86,12 @@ export function diff<N, E>(before: Graph<N, E>, after: Graph<N, E>): GraphPatch<
     }
   }
 
-  // 5. 加入 after 中新增的边
-  for (const [edgeId, afterEdge] of after.edges) {
-    if (!before.edges.has(edgeId)) {
-      ops.push({ kind: 'addEdge', data: edgeToJson(afterEdge) });
-    }
-  }
-
-  // 6. 边权重变更
+  // 4. 边：新增 → 加；留存且权重变 → 更新（合并原 pass 5+6）
   for (const [edgeId, afterEdge] of after.edges) {
     const beforeEdge = before.edges.get(edgeId);
-    if (beforeEdge && !sameWeight(beforeEdge.weight, afterEdge.weight)) {
+    if (!beforeEdge) {
+      ops.push({ kind: 'addEdge', data: dumpEdge(afterEdge) });
+    } else if (!eq(beforeEdge.weight, afterEdge.weight)) {
       ops.push({
         kind: 'setEdgeWeight',
         id: edgeId,
@@ -169,7 +115,8 @@ export function diff<N, E>(before: Graph<N, E>, after: Graph<N, E>): GraphPatch<
  * @template E 边权重类型
  * @param graph 目标图（被修改）
  * @param patch 操作序列
- * @param options.sockets 自定义 Socket 表；addNode 重建端口时使用
+ * @param options 反序列化选项
+ * @param options.sockets 自定义 Socket 表；`addNode` 重建端口时使用
  */
 export function apply<N, E>(
   graph: Graph<N, E>,
@@ -186,10 +133,10 @@ export function apply<N, E>(
         graph.removeNode(op.data.id);
         break;
       case 'addNode':
-        graph.addNode(nodeFromJson(op.data, sockets) as Vertex<N>);
+        graph.addNode(loadNode(op.data, sockets));
         break;
       case 'addEdge':
-        graph.addEdge(edgeFromJson(graph, op.data));
+        graph.addEdge(loadEdge(graph, op.data));
         break;
       case 'setNodeWeight': {
         const n = graph.getNode(op.id);
@@ -206,13 +153,16 @@ export function apply<N, E>(
 }
 
 /**
- * 反转 patch — 把 `add ↔ remove`、`weight from/to` 互换，用于撤销/重做。
+ * 反转 patch — 把 `add ↔ remove`、`weight from/to` 互换，用于撤销 / 重做。
  *
  * @remarks
- * `apply(g, invert(diff(a, b)))` 等价于把 `g` 从 `b` 状态变回 `a` 状态（假定 g 当前是 b 形态）。
+ * `apply(g, invert(diff(a, b)))` 等价于把 `g` 从 `b` 状态变回 `a` 状态
+ * （假定 `g` 当前是 `b` 形态）。
  *
  * @template N 节点权重类型
  * @template E 边权重类型
+ * @param patch 原始操作序列
+ * @returns 反向操作序列
  */
 export function invert<N, E>(patch: GraphPatch<N, E>): GraphPatch<N, E> {
   const inverted: GraphOp<N, E>[] = [];
@@ -232,102 +182,4 @@ export function invert<N, E>(patch: GraphPatch<N, E>): GraphPatch<N, E> {
     }
   }
   return { ops: inverted };
-}
-
-// ============= 内部助手 =============
-
-/**
- * 单个节点 → GraphJsonNode 快照。
- *
- * @internal
- */
-function nodeToJson<N>(node: Vertex<N>): GraphJsonNode<N> {
-  return {
-    id: node.id,
-    weight: node.weight,
-    inputs: portsJson(node.inputs),
-    outputs: portsJson(node.outputs),
-  };
-}
-
-/**
- * 单条边 → GraphJsonEdge 快照。
- *
- * @internal
- */
-function edgeToJson<E>(edge: Edge<E>): GraphJsonEdge<E> {
-  return {
-    id: edge.id,
-    source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
-    target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
-    weight: edge.weight,
-  };
-}
-
-/**
- * GraphJsonNode → 重建的 Node 实例（带端口）。
- *
- * @internal
- */
-function nodeFromJson<N>(
-  data: GraphJsonNode<N>,
-  sockets: ReadonlyMap<string, Socket>,
-): Vertex<N> {
-  const node = new Node(data.id, data.weight) as Vertex<N>;
-  for (const [name, port] of Object.entries(data.inputs)) {
-    if (!port) continue;
-    node.addInput(name, sockets.get(port.socket) ?? Socket.any, port.id);
-  }
-  for (const [name, port] of Object.entries(data.outputs)) {
-    if (!port) continue;
-    node.addOutput(name, sockets.get(port.socket) ?? Socket.any, port.id);
-  }
-  return node;
-}
-
-/**
- * GraphJsonEdge → 重建的 Edge 实例（依赖图中已有节点 + 端口）。
- *
- * @internal
- */
-function edgeFromJson<N, E>(graph: Graph<N, E>, data: GraphJsonEdge<E>): Edge<E> {
-  const sourceNode = graph.getNode(data.source.nodeId);
-  if (!sourceNode) {
-    throw new Error(
-      `[diff/apply] edge "${String(data.id)}": source node "${String(data.source.nodeId)}" not found in target graph.`,
-    );
-  }
-  const targetNode = graph.getNode(data.target.nodeId);
-  if (!targetNode) {
-    throw new Error(
-      `[diff/apply] edge "${String(data.id)}": target node "${String(data.target.nodeId)}" not found in target graph.`,
-    );
-  }
-  const sourcePort = lookupPort<Output>(sourceNode.outputs, data.source.portId);
-  const targetPort = lookupPort<Input>(targetNode.inputs, data.target.portId);
-  if (!sourcePort || !targetPort) {
-    throw new Error(`[diff/apply] edge "${String(data.id)}" references missing ports.`);
-  }
-  return new Edge<E>(
-    data.id,
-    new Endpoint(sourceNode, sourcePort),
-    new Endpoint(targetNode, targetPort),
-    data.weight,
-  );
-}
-
-/**
- * 权重等价比较：先严格相等，再尝试 JSON 深比较（不适合循环引用或函数）。
- *
- * @internal
- */
-function sameWeight<T>(a: T | undefined, b: T | undefined): boolean {
-  if (a === b) return true;
-  if (a === undefined || b === undefined) return false;
-  if (typeof a !== 'object' && typeof b !== 'object') return false;
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
 }

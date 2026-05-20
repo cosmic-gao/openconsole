@@ -9,6 +9,9 @@ import {
   Graph,
   Node,
   Socket,
+  isolated,
+  sinks,
+  sources,
   type EdgeId,
   type GraphId,
   type NodeId,
@@ -171,9 +174,9 @@ describe('Graph - 基础结构', () => {
     g.addNode(A).addNode(B).addNode(C);
     g.addEdge(new Edge(id<EdgeId>('e1'), new Endpoint(A, A.output('y')!), new Endpoint(B, B.input('x')!)));
 
-    expect(g.sources().map(n => n.id).sort()).toEqual(['A', 'C']);
-    expect(g.sinks().map(n => n.id).sort()).toEqual(['B', 'C']);
-    expect(g.isolated().map(n => n.id)).toEqual(['C']);
+    expect(sources(g).sort()).toEqual(['A', 'C']);
+    expect(sinks(g).sort()).toEqual(['B', 'C']);
+    expect(isolated(g)).toEqual(['C']);
   });
 
   it('clear / empty', () => {

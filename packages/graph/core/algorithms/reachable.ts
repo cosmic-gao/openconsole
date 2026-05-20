@@ -22,17 +22,18 @@ export function reachable<G extends Neighbors>(
 ): boolean {
   if (source === target) return true;
 
-  const visited = new Set<NodeId>();
+  // push-time 标记 visited 避免同一节点被多次 pop（出度高的图节省一半 pop 调用）。
+  const visited = new Set<NodeId>([source]);
   const stack: NodeId[] = [source];
 
   while (stack.length > 0) {
     const current = stack.pop()!;
     if (current === target) return true;
-    if (visited.has(current)) continue;
-    visited.add(current);
 
     for (const neighbor of graph.outgoingNeighbors(current)) {
-      if (!visited.has(neighbor)) stack.push(neighbor);
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      stack.push(neighbor);
     }
   }
 

@@ -13,7 +13,7 @@ import { Dfs } from '../visitors';
  * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
  * @param start 起始节点
- * @yields 按 DFS 顺序访问到的节点 ID
+ * @returns 按 DFS 顺序逐个产出节点 ID 的生成器
  */
 export function* dfs<G extends Neighbors>(
   graph: G,

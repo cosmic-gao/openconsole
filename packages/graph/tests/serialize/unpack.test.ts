@@ -82,7 +82,7 @@ describe('unpack', () => {
   });
 
   it('自定义 sockets 表覆盖内置类型', () => {
-    const customNumber = Socket.from('number');
+    const customNumber = new Socket('number');
     const original = makeGraph();
     const restored = unpack(pack(original), { sockets: [customNumber] });
     const A = restored.getNode(id<NodeId>('A'))!;
@@ -92,7 +92,7 @@ describe('unpack', () => {
   it('unknown socket 名退化为 Socket.any', () => {
     const original = new Graph<unknown, unknown>(id<GraphId>('g'));
     const N = new Node(id<NodeId>('N'));
-    N.addInput('p', Socket.from('foo'));
+    N.addInput('p', new Socket('foo'));
     original.addNode(N);
     const restored = unpack(pack(original));
     expect(restored.getNode(id<NodeId>('N'))?.input('p')?.socket).toBe(Socket.any);

@@ -21,14 +21,14 @@ describe('Socket', () => {
   });
 
   it('compatible 列表生效', () => {
-    const a = Socket.from('a', [Socket.number]);
+    const a = new Socket('a', [Socket.number]);
     expect(a.matches(Socket.number)).toBe(true);
     // 单向语义：Socket.number 没有 'a' 兼容声明，因此 Socket.number.matches(a) 为 false
     expect(Socket.number.matches(a)).toBe(false);
   });
 
-  it('Socket.from 工厂复用相同字段', () => {
-    const s = Socket.from('foo', [Socket.string]);
+  it('构造器保留 name 与 compatible 字段', () => {
+    const s = new Socket('foo', [Socket.string]);
     expect(s.name).toBe('foo');
     expect(s.compatible).toEqual([Socket.string]);
   });

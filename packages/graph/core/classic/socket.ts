@@ -27,18 +27,6 @@ export class Socket<T extends string = string> {
   }
 
   /**
-   * 工厂方法：创建一个 Socket。
-   *
-   * @template T Socket 名称的字面量类型
-   * @param name Socket 名称
-   * @param compatible 可与之互连的兼容 Socket 列表
-   * @returns 新建的 Socket 实例
-   */
-  public static from<T extends string>(name: T, compatible?: ReadonlyArray<Socket>): Socket<T> {
-    return new Socket(name, compatible);
-  }
-
-  /**
    * 判断当前 Socket 是否与另一个 Socket 兼容。
    *
    * @remarks
@@ -56,18 +44,27 @@ export class Socket<T extends string = string> {
     return this.compatible?.some(socket => socket.name === other.name) ?? false;
   }
 
-  /** 内置 number 类型 Socket。 */
-  public static readonly number: Socket<'number'> = Object.freeze(new Socket('number')) as Socket<'number'>;
-  /** 内置 string 类型 Socket。 */
-  public static readonly string: Socket<'string'> = Object.freeze(new Socket('string')) as Socket<'string'>;
-  /** 内置 boolean 类型 Socket。 */
-  public static readonly boolean: Socket<'boolean'> = Object.freeze(new Socket('boolean')) as Socket<'boolean'>;
-  /** 内置 object 类型 Socket。 */
-  public static readonly object: Socket<'object'> = Object.freeze(new Socket('object')) as Socket<'object'>;
-  /** 内置 array 类型 Socket。 */
-  public static readonly array: Socket<'array'> = Object.freeze(new Socket('array')) as Socket<'array'>;
-  /** 内置 exec 类型 Socket，用于纯执行流连接，不传递数据。 */
-  public static readonly exec: Socket<'exec'> = Object.freeze(new Socket('exec')) as Socket<'exec'>;
+  /**
+   * 内置 Socket 工厂：构造并冻结一个 Socket 实例。
+   *
+   * @internal
+   */
+  private static frozen<T extends string>(name: T): Socket<T> {
+    return Object.freeze(new Socket(name)) as Socket<T>;
+  }
+
+  /** 内置 `number` 类型 Socket。 */
+  public static readonly number: Socket<'number'> = Socket.frozen('number');
+  /** 内置 `string` 类型 Socket。 */
+  public static readonly string: Socket<'string'> = Socket.frozen('string');
+  /** 内置 `boolean` 类型 Socket。 */
+  public static readonly boolean: Socket<'boolean'> = Socket.frozen('boolean');
+  /** 内置 `object` 类型 Socket。 */
+  public static readonly object: Socket<'object'> = Socket.frozen('object');
+  /** 内置 `array` 类型 Socket。 */
+  public static readonly array: Socket<'array'> = Socket.frozen('array');
+  /** 内置 `exec` 类型 Socket，用于纯执行流连接，不传递数据。 */
+  public static readonly exec: Socket<'exec'> = Socket.frozen('exec');
   /** 通配 Socket，与任意类型兼容。 */
-  public static readonly any: Socket<'*'> = Object.freeze(new Socket('*')) as Socket<'*'>;
+  public static readonly any: Socket<'*'> = Socket.frozen('*');
 }

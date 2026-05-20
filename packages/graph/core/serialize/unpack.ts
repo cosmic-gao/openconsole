@@ -8,7 +8,7 @@ import type { PortId, Vertex } from '../types';
 import type { Compact, CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
-// re-export SocketLookup for backward compatibility (tests / external import)
+// 兼容旧调用：转出 SocketLookup 让外部测试 / 调用方仍可从 './unpack' 直接 import。
 export type { SocketLookup };
 
 /**
