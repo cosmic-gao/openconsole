@@ -6,7 +6,7 @@
 
 - **类型化端口模型**：`Vertex` 携带强类型 `Inputs` / `Outputs`；`Socket` 描述端口数据类型并校验边连接的兼容性
 - **Trait 与存储解耦**：算法仅依赖 `Catalog` / `Neighbors` / `IntoEdges` / `Walkable` 等能力接口，与具体存储无关
-- **两种访问者风格**：状态化遍历器 (`Dfs` / `Bfs` / `Topo` / `Postorder`) 控制推进节奏；事件回调遍历 (`dfsVisit`) 用 `Control` 决定继续 / 剪枝 / 中止
+- **两种访问者风格**：状态化遍历器 (`Dfs` / `Bfs` / `Topo` / `Postorder`) 控制推进节奏；事件回调遍历 (`visit`) 用 `Control` 决定继续 / 剪枝 / 中止
 - **零成本视图适配器**：`Reversed` / `NodeFilter` / `EdgeFilter` 仅做 trait 转发，不复制底层数据，可任意嵌套
 - **完整算法集**：拓扑排序、强连通分量 (Tarjan / Kosaraju)、Dijkstra 最短路径、DFS / BFS、可达性、邻域、压缩图等
 - **增量拓扑**：`IncrementalTopo` 订阅图事件，happy path O(1)，违规时延后做一次性全量重算
@@ -172,7 +172,7 @@ const view = new Reversed(new NodeFilter(graph, isData));
 ## 访问者
 
 ```ts
-import { Dfs, Bfs, Topo, dfsVisit, Control } from '@opendesign/graph';
+import { Dfs, Bfs, Topo, visit, Control } from '@opendesign/graph';
 
 // 1. 状态化遍历器：调用方控节奏
 const it = Dfs.start(graph, root);
@@ -181,7 +181,7 @@ it.reset();
 it.moveTo(another);
 
 // 2. 事件回调遍历：用 Control 决定继续 / 剪枝 / 中止
-dfsVisit(graph, root, {
+visit(graph, root, {
   discover: (id) => (id === target ? Control.Stop : Control.Continue),
   treeEdge: (e) => Control.Continue,
   backEdge: (e) => Control.Continue,     // 环检测点
@@ -229,7 +229,7 @@ core/
 ├── types/        - 品牌 ID、Socket、Trait 与访问者事件（类型层）
 ├── classic/      - Socket / Port / Vertex / Endpoint / Edge / Graph（运行时元模型）
 ├── algorithms/   - toposort / scc / dijkstra / bfs / dfs ...（仅依赖 trait）
-├── visitors/     - Dfs / Bfs / Topo 状态化遍历器 + dfsVisit 事件遍历
+├── visitors/     - Dfs / Bfs / Topo 状态化遍历器 + visit 事件遍历
 ├── adapters/     - Reversed / NodeFilter / EdgeFilter 零成本视图
 ├── serialize/    - pack / unpack / diff / remap 紧凑序列化
 └── internal/     - 内部工具（堆、度数缓存、端口序列化）

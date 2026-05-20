@@ -1,5 +1,5 @@
 /**
- * dfsVisit：事件回调风格的 DFS（三色法）。
+ * visit：事件回调风格的 DFS（三色法）。
  */
 
 import type { Catalog, Control, DfsEvent, Neighbors, NodeId } from '../types';
@@ -44,7 +44,7 @@ const BLACK = 2;
  * @param visitor 回调集合
  * @returns 整体控制流结果
  */
-export function dfsVisit<G extends Catalog & Neighbors>(
+export function visit<G extends Catalog & Neighbors>(
   graph: G,
   starts: Iterable<NodeId> | null,
   visitor: DfsVisitor,

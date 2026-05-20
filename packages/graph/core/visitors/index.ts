@@ -9,7 +9,7 @@
  *    - 支持 `moveTo` / `reset` 重新开始；
  *    - 内部使用 `Set<NodeId>` 维护已访问集合，`O(1)` 查询。
  *
- * 2. **事件回调遍历** ({@link dfsVisit})
+ * 2. **事件回调遍历** ({@link visit})
  *    - 通过 `discover` / `finish` / `treeEdge` / `backEdge` 等事件回调驱动；
  *    - 回调返回 {@link Control} 决定是否继续 / 剪枝 / 中止；
  *    - 用以编写环检测、强连通分量、支配树等高级算法。

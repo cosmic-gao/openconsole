@@ -1,12 +1,12 @@
 /**
- * 测试覆盖：DFS 家族 - Dfs / Postorder 状态化遍历器 + dfsVisit 事件回调。
+ * 测试覆盖：DFS 家族 - Dfs / Postorder 状态化遍历器 + visit 事件回调。
  */
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   Dfs,
   Postorder,
-  dfsVisit,
+  visit,
   type Control,
   type DfsEvent,
   type NodeId,
@@ -104,11 +104,11 @@ describe('Postorder', () => {
   });
 });
 
-describe('dfsVisit', () => {
+describe('visit', () => {
   it('discover / finish / treeEdge / backEdge / crossEdge 分类正确', () => {
     const g = diamond(); // a→b, a→c, b→d, c→d
     const events: string[] = [];
-    dfsVisit(g, [id<NodeId>('a')], {
+    visit(g, [id<NodeId>('a')], {
       discover: (e: DfsEvent) => { events.push(`d:${e.node}`); },
       finish: (e: DfsEvent) => { events.push(`f:${e.node}`); },
       treeEdge: (e: DfsEvent) => { events.push(`t:${e.node}->${e.target}`); },
@@ -124,7 +124,7 @@ describe('dfsVisit', () => {
 
   it('环图 → 至少一条 backEdge', () => {
     const events: string[] = [];
-    dfsVisit(cycle3(), [id<NodeId>('x')], {
+    visit(cycle3(), [id<NodeId>('x')], {
       backEdge: e => { events.push(`b:${e.node}->${e.target}`); },
     });
     expect(events.length).toBeGreaterThanOrEqual(1);
@@ -133,7 +133,7 @@ describe('dfsVisit', () => {
   it('Control: prune 在 treeEdge 阻止下钻', () => {
     const g = diamond();
     const visited: NodeId[] = [];
-    dfsVisit(g, [id<NodeId>('a')], {
+    visit(g, [id<NodeId>('a')], {
       discover: e => { visited.push(e.node); },
       treeEdge: e => (e.target === 'b' ? 'prune' : 'continue') as Control,
     });
@@ -144,7 +144,7 @@ describe('dfsVisit', () => {
 
   it('Control: break 立即终止整次遍历', () => {
     const discoverFn = vi.fn<(e: DfsEvent) => Control>((e) => (e.node === 'b' ? 'break' : 'continue'));
-    const result = dfsVisit(diamond(), [id<NodeId>('a')], { discover: discoverFn });
+    const result = visit(diamond(), [id<NodeId>('a')], { discover: discoverFn });
     expect(result).toBe('break');
     // 'break' 触发后不再 discover 任何新节点
     const discovered = discoverFn.mock.calls.map(c => c[0].node);
@@ -154,14 +154,14 @@ describe('dfsVisit', () => {
   it('starts 为 null 时全图扫描', () => {
     const g = diamond();
     const visited: NodeId[] = [];
-    dfsVisit(g, null, { discover: e => { visited.push(e.node); } });
+    visit(g, null, { discover: e => { visited.push(e.node); } });
     expect(visited.sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('discover 返回 prune 立即 finish 当前节点', () => {
     const g = diamond();
     const finishOrder: NodeId[] = [];
-    dfsVisit(g, [id<NodeId>('a')], {
+    visit(g, [id<NodeId>('a')], {
       discover: e => (e.node === 'b' ? 'prune' : 'continue') as Control,
       finish: e => { finishOrder.push(e.node); },
     });

@@ -1,5 +1,5 @@
 /**
- * 测试覆盖：postorder 函数（基于 dfsVisit 事件流的 finish 收集）。
+ * 测试覆盖：postorder 函数（基于 visit 事件流的 finish 收集）。
  */
 import { describe, expect, it } from 'vitest';
 
