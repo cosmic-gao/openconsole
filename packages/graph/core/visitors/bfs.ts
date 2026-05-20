@@ -59,7 +59,7 @@ export class Bfs {
   public next<G extends Neighbors>(graph: G): NodeId | undefined {
     if (this._head >= this.queue.length) return undefined;
     const nodeId = this.queue[this._head++]!;
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+    for (const neighbor of graph.downstream(nodeId)) {
       if (this.visited.has(neighbor)) continue;
       this.visited.add(neighbor);
       this.queue.push(neighbor);

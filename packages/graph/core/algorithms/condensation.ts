@@ -44,7 +44,7 @@ export function condensation<G extends Walkable>(
   for (const nodeId of graph.nodeIds) {
     const from = index.get(nodeId);
     if (from === undefined) continue;
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+    for (const neighbor of graph.downstream(nodeId)) {
       const to = index.get(neighbor);
       if (to === undefined || to === from) continue;
       const key = from * stride + to;

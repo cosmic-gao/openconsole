@@ -59,7 +59,7 @@ export class DfsPostorder {
     instance.discovered.add(start);
     instance.stack.push({
       node: start,
-      neighbors: graph.outgoingNeighbors(start)[Symbol.iterator](),
+      neighbors: graph.downstream(start)[Symbol.iterator](),
     });
     return instance;
   }
@@ -78,7 +78,7 @@ export class DfsPostorder {
       this.discovered.add(start);
       this.stack.push({
         node: start,
-        neighbors: graph.outgoingNeighbors(start)[Symbol.iterator](),
+        neighbors: graph.downstream(start)[Symbol.iterator](),
       });
     }
 
@@ -94,7 +94,7 @@ export class DfsPostorder {
         this.discovered.add(child);
         this.stack.push({
           node: child,
-          neighbors: graph.outgoingNeighbors(child)[Symbol.iterator](),
+          neighbors: graph.downstream(child)[Symbol.iterator](),
         });
         pushed = true;
         break;

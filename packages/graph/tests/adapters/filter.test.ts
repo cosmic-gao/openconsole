@@ -24,15 +24,15 @@ describe('NodeFilter', () => {
     expect(view.edgeCount()).toBe(2);
   });
 
-  it('outgoingNeighbors / incomingNeighbors 滤掉隐去节点', () => {
+  it('downstream / upstream 滤掉隐去节点', () => {
     const view = filtered(new Set(['a', 'c', 'd'])); // b 隐去
-    expect([...view.outgoingNeighbors(id<NodeId>('a'))]).toEqual([]);
-    expect([...view.incomingNeighbors(id<NodeId>('c'))]).toEqual([]);
+    expect([...view.downstream(id<NodeId>('a'))]).toEqual([]);
+    expect([...view.upstream(id<NodeId>('c'))]).toEqual([]);
   });
 
   it('被隐去节点出发查询 returns empty', () => {
     const view = filtered(new Set(['a']));
-    expect([...view.outgoingNeighbors(id<NodeId>('b'))]).toEqual([]);
+    expect([...view.downstream(id<NodeId>('b'))]).toEqual([]);
     expect([...view.neighbors(id<NodeId>('b'))]).toEqual([]);
   });
 
@@ -44,8 +44,8 @@ describe('NodeFilter', () => {
       nodeCount: () => 2,
       edgeCount: () => 2,
       neighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
-      incomingNeighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
-      outgoingNeighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
+      upstream: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
+      downstream: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
     };
     const view = new NodeFilter(stub, () => true);
     expect([...view.edgeIds]).toEqual([]);
@@ -68,10 +68,10 @@ describe('EdgeFilter', () => {
     expect(view.edgeCount()).toBe(2);
   });
 
-  it('outgoingNeighbors / incomingNeighbors 反映过滤后的边', () => {
+  it('downstream / upstream 反映过滤后的边', () => {
     const view = new EdgeFilter(linear(), ref => (ref.weight as number) >= 2);
-    expect([...view.outgoingNeighbors(id<NodeId>('a'))]).toEqual([]); // a→b 被过滤
-    expect([...view.incomingNeighbors(id<NodeId>('c'))]).toEqual(['b']);
+    expect([...view.downstream(id<NodeId>('a'))]).toEqual([]); // a→b 被过滤
+    expect([...view.upstream(id<NodeId>('c'))]).toEqual(['b']);
   });
 
   it('neighbors(direction): direction undefined 同时返回 in + out', () => {
@@ -92,6 +92,6 @@ describe('适配器嵌套', () => {
     const filtered = new NodeFilter(linear(), id => id !== 'd');
     const view = reversed(filtered);
     expect([...view.nodeIds].sort()).toEqual(['a', 'b', 'c']);
-    expect([...view.outgoingNeighbors(id<NodeId>('c'))]).toEqual(['b']);
+    expect([...view.downstream(id<NodeId>('c'))]).toEqual(['b']);
   });
 });

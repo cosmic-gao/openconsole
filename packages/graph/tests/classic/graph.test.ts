@@ -118,7 +118,7 @@ describe('Graph - 基础结构', () => {
     expect(g.edgeCount()).toBe(0);
   });
 
-  it('findEdge / edgeEndpoints / edgesBetween / edgesConnecting', () => {
+  it('findEdge / endpoints / between / connecting', () => {
     const g = newGraph();
     const A = portNode('A');
     const B = portNode('B');
@@ -128,12 +128,12 @@ describe('Graph - 基础结构', () => {
 
     expect(g.findEdge(id<NodeId>('A'), id<NodeId>('B'))?.id).toBe('e1');
     expect(g.findEdge(id<NodeId>('A'), id<NodeId>('Missing'))).toBeUndefined();
-    expect(g.edgeEndpoints(id<EdgeId>('e1'))).toEqual(['A', 'B']);
-    expect(g.edgesBetween(id<NodeId>('A'), id<NodeId>('B')).map(e => e.id)).toEqual(['e1']);
-    expect(g.edgesConnecting(id<NodeId>('A'), id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
+    expect(g.endpoints(id<EdgeId>('e1'))).toEqual(['A', 'B']);
+    expect(g.between(id<NodeId>('A'), id<NodeId>('B')).map(e => e.id)).toEqual(['e1']);
+    expect(g.connecting(id<NodeId>('A'), id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
   });
 
-  it('incidentEdges 包含入边与出边，自环只出现一次', () => {
+  it('incident 包含入边与出边，自环只出现一次', () => {
     const g = newGraph();
     const A = portNode('A');
     const B = portNode('B');
@@ -145,8 +145,8 @@ describe('Graph - 基础结构', () => {
     // A 上的自环（A 出 + A 入，去重后应只出现一次）
     g.addEdge(new Edge(id<EdgeId>('loop'), new Endpoint(A, A.output('y')!), new Endpoint(A, A.input('x')!)));
 
-    expect(g.incidentEdges(id<NodeId>('A')).map(e => e.id).sort()).toEqual(['e1', 'e2', 'loop']);
-    expect(g.incidentEdges(id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
+    expect(g.incident(id<NodeId>('A')).map(e => e.id).sort()).toEqual(['e1', 'e2', 'loop']);
+    expect(g.incident(id<NodeId>('B')).map(e => e.id).sort()).toEqual(['e1', 'e2']);
   });
 
   it('predecessors / successors / adjacencies / degree', () => {

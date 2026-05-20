@@ -45,7 +45,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
     onStack.add(nodeId);
     callStack.push({
       nodeId,
-      neighbors: graph.outgoingNeighbors(nodeId)[Symbol.iterator](),
+      neighbors: graph.downstream(nodeId)[Symbol.iterator](),
       pendingChild: null,
     });
   };

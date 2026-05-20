@@ -38,7 +38,7 @@ export function kosaraju<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
       if (visited.has(node)) continue;
       visited.add(node);
       component.push(node);
-      for (const neighbor of reversedGraph.outgoingNeighbors(node)) {
+      for (const neighbor of reversedGraph.downstream(node)) {
         if (!visited.has(neighbor)) stack.push(neighbor);
       }
     }

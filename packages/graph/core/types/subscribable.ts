@@ -14,7 +14,7 @@ import type { Vertex } from './port';
  * @template N 节点权重类型
  * @template E 边权重类型
  */
-export interface EventMap<N = unknown, E = unknown> {
+export interface Events<N = unknown, E = unknown> {
   /** 新节点入图。 */
   nodeAdded: { node: Vertex<N> };
   /** 节点已离开图（其入/出边已先一步触发 `edgeRemoved`）。 */
@@ -24,9 +24,6 @@ export interface EventMap<N = unknown, E = unknown> {
   /** 边已离开图。 */
   edgeRemoved: { edge: Edge<E> };
 }
-
-/** 事件名集合。 */
-export type EventName = keyof EventMap;
 
 /** 事件订阅者回调签名。 */
 export type Listener<P> = (payload: P) => void;
@@ -50,8 +47,8 @@ export interface Subscribable<N = unknown, E = unknown> {
    * @param listener 回调
    * @returns 取消订阅函数
    */
-  on<K extends EventName>(
+  on<K extends keyof Events>(
     event: K,
-    listener: Listener<EventMap<N, E>[K]>,
+    listener: Listener<Events<N, E>[K]>,
   ): () => void;
 }

@@ -63,7 +63,7 @@ export class Dfs {
       this.discovered.add(nodeId);
 
       // 反向压栈以保持出邻居的原始访问顺序。
-      const neighbors = Array.from(graph.outgoingNeighbors(nodeId));
+      const neighbors = Array.from(graph.downstream(nodeId));
       for (let i = neighbors.length - 1; i >= 0; i--) {
         const neighbor = neighbors[i]!;
         if (!this.discovered.has(neighbor)) this.stack.push(neighbor);

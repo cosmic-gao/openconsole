@@ -64,19 +64,19 @@ implements Catalog, Neighbors, IntoEdges<E> {
 
   /** 邻居：跳过被隐去的边；`direction` 缺省时返回 in + out。 */
   public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
-    if (direction !== 'input') yield* this.outgoingNeighbors(nodeId);
-    if (direction !== 'output') yield* this.incomingNeighbors(nodeId);
+    if (direction !== 'input') yield* this.downstream(nodeId);
+    if (direction !== 'output') yield* this.upstream(nodeId);
   }
 
   /** 入邻居：根据保留的入边推导。 */
-  public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
+  public *upstream(nodeId: NodeId): Iterable<NodeId> {
     for (const view of this.inner.getIncoming(nodeId)) {
       if (this.predicate(view)) yield view.source;
     }
   }
 
   /** 出邻居：根据保留的出边推导。 */
-  public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
+  public *downstream(nodeId: NodeId): Iterable<NodeId> {
     for (const view of this.inner.getOutgoing(nodeId)) {
       if (this.predicate(view)) yield view.target;
     }

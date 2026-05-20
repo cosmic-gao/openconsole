@@ -11,9 +11,9 @@ import type { IntoDegree, NodeId, Walkable } from '../types';
  *
  * @remarks
  * - 快路径：图实现 {@link IntoDegree} 时直接读取 (O(N))；
- * - 慢路径：扫 `outgoingNeighbors` 重建 (O(N + E))。
+ * - 慢路径：扫 `downstream` 重建 (O(N + E))。
  *
- * 慢路径只对 `nodeIds` 中已知的节点累计；`outgoingNeighbors` 偶发返回的"孤儿"
+ * 慢路径只对 `nodeIds` 中已知的节点累计；`downstream` 偶发返回的"孤儿"
  * 邻居（不在 `nodeIds` 拓扑空间）不计入，避免被后续 Kahn 算法误纳入。
  */
 export function inDegrees<G extends Walkable & Partial<IntoDegree>>(
@@ -29,7 +29,7 @@ export function inDegrees<G extends Walkable & Partial<IntoDegree>>(
 
   for (const nodeId of graph.nodeIds) result.set(nodeId, 0);
   for (const nodeId of graph.nodeIds) {
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+    for (const neighbor of graph.downstream(nodeId)) {
       const current = result.get(neighbor);
       if (current === undefined) continue;
       result.set(neighbor, current + 1);

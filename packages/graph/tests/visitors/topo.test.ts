@@ -44,8 +44,8 @@ describe('Topo', () => {
 
   it('Topo 已防孤儿邻居（与 topology 1.1 修复同源）', () => {
     const g = buildGraph('orphan', [], ['a']);
-    const real = g.outgoingNeighbors.bind(g);
-    (g as unknown as { outgoingNeighbors: typeof g.outgoingNeighbors }).outgoingNeighbors =
+    const real = g.downstream.bind(g);
+    (g as unknown as { downstream: typeof g.downstream }).downstream =
       function* (n: NodeId) {
         yield* real(n);
         if (n === 'a') yield id<NodeId>('ghost');

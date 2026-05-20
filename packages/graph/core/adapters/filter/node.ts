@@ -93,15 +93,15 @@ implements Catalog, Neighbors, IntoEdges<E> {
   }
 
   /** 入邻居（剔除被隐去的节点）。 */
-  public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
+  public *upstream(nodeId: NodeId): Iterable<NodeId> {
     if (!this.predicate(nodeId)) return;
-    for (const n of this.inner.incomingNeighbors(nodeId)) if (this.predicate(n)) yield n;
+    for (const n of this.inner.upstream(nodeId)) if (this.predicate(n)) yield n;
   }
 
   /** 出邻居（剔除被隐去的节点）。 */
-  public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
+  public *downstream(nodeId: NodeId): Iterable<NodeId> {
     if (!this.predicate(nodeId)) return;
-    for (const n of this.inner.outgoingNeighbors(nodeId)) if (this.predicate(n)) yield n;
+    for (const n of this.inner.downstream(nodeId)) if (this.predicate(n)) yield n;
   }
 
   /** 全图边视图（两端都需保留）。 */

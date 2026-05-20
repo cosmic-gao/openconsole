@@ -13,10 +13,10 @@ const linear = () => buildGraph('lin', [
 ]);
 
 describe('Reversed', () => {
-  it('outgoingNeighbors / incomingNeighbors 互换', () => {
+  it('downstream / upstream 互换', () => {
     const r = reversed(linear());
-    expect([...r.outgoingNeighbors(id<NodeId>('b'))]).toEqual(['a']);
-    expect([...r.incomingNeighbors(id<NodeId>('b'))]).toEqual(['c']);
+    expect([...r.downstream(id<NodeId>('b'))]).toEqual(['a']);
+    expect([...r.upstream(id<NodeId>('b'))]).toEqual(['c']);
   });
 
   it('inDegree / outDegree 互换', () => {
@@ -35,10 +35,10 @@ describe('Reversed', () => {
       nodeCount: () => 3,
       edgeCount: () => 0,
       neighbors: function* (_n: NodeId): Iterable<NodeId> { /* empty */ },
-      incomingNeighbors: function* (n: NodeId): Iterable<NodeId> {
+      upstream: function* (n: NodeId): Iterable<NodeId> {
         if (n === 'b') yield id<NodeId>('a');
       },
-      outgoingNeighbors: function* (n: NodeId): Iterable<NodeId> {
+      downstream: function* (n: NodeId): Iterable<NodeId> {
         if (n === 'a') { yield id<NodeId>('b'); yield id<NodeId>('c'); }
       },
     };

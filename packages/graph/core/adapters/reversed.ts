@@ -31,7 +31,7 @@ interface Caps {
  * 反向图视图：把所有边方向翻转后呈现给算法。
  *
  * @remarks
- * - 对 `outgoingNeighbors` 调用，返回内层的 `incomingNeighbors`，反之亦然；
+ * - 对 `downstream` 调用，返回内层的 `upstream`，反之亦然；
  * - 同样翻转 `getIncoming` / `getOutgoing`，并交换每条边引用的 `source` / `target`；
  * - 入 / 出度互换；
  * - 不复制底层数据，包装本身是 O(1) 内存；
@@ -113,22 +113,22 @@ implements
 
   /**
    * 反向图的邻居：缺省合并 in + out（无向语义不受翻转影响）；指定方向时复用本类
-   * 已翻转的 {@link incomingNeighbors} / {@link outgoingNeighbors}。
+   * 已翻转的 {@link upstream} / {@link downstream}。
    */
   public neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
-    if (direction === 'input') return this.incomingNeighbors(nodeId);
-    if (direction === 'output') return this.outgoingNeighbors(nodeId);
+    if (direction === 'input') return this.upstream(nodeId);
+    if (direction === 'output') return this.downstream(nodeId);
     return this.inner.neighbors(nodeId);
   }
 
-  /** 反向后的 `incomingNeighbors` = 原图的 `outgoingNeighbors`。 */
-  public incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    return this.inner.outgoingNeighbors(nodeId);
+  /** 反向后的 `upstream` = 原图的 `downstream`。 */
+  public upstream(nodeId: NodeId): Iterable<NodeId> {
+    return this.inner.downstream(nodeId);
   }
 
-  /** 反向后的 `outgoingNeighbors` = 原图的 `incomingNeighbors`。 */
-  public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    return this.inner.incomingNeighbors(nodeId);
+  /** 反向后的 `downstream` = 原图的 `upstream`。 */
+  public downstream(nodeId: NodeId): Iterable<NodeId> {
+    return this.inner.upstream(nodeId);
   }
 
   /** 全图边视图（`source` / `target` 已互换）。 */
@@ -154,7 +154,7 @@ implements
    *
    * @remarks
    * 反向后的入度 = 原图的出度。inner 实现了 {@link IntoDegree} 时直接转发；
-   * 否则枚举 `inner.outgoingNeighbors` 计数，与遍历语义一致。
+   * 否则枚举 `inner.downstream` 计数，与遍历语义一致。
    *
    * **性能注记**：fallback 路径下 `inDegree(v)` 与 {@link outDegree}(v) 各自做一次邻居枚举，
    *   若 caller 同时调用两者会重复枚举。需要双向度数时优先让 inner 实现 {@link IntoDegree}，
@@ -163,7 +163,7 @@ implements
   public inDegree(nodeId: NodeId): number {
     if (this._caps.degree) return this.inner.outDegree!(nodeId);
     let count = 0;
-    for (const _ of this.inner.outgoingNeighbors(nodeId)) count++;
+    for (const _ of this.inner.downstream(nodeId)) count++;
     return count;
   }
 
@@ -175,7 +175,7 @@ implements
   public outDegree(nodeId: NodeId): number {
     if (this._caps.degree) return this.inner.inDegree!(nodeId);
     let count = 0;
-    for (const _ of this.inner.incomingNeighbors(nodeId)) count++;
+    for (const _ of this.inner.upstream(nodeId)) count++;
     return count;
   }
 

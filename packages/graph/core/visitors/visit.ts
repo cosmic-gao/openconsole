@@ -64,7 +64,7 @@ export function dfsVisit<G extends Catalog & Neighbors>(
       color.set(node, BLACK);
       return visitor.finish?.({ kind: 'finish', node, time: timer++ }) ?? 'continue';
     }
-    stack.push({ node, neighbors: graph.outgoingNeighbors(node)[Symbol.iterator]() });
+    stack.push({ node, neighbors: graph.downstream(node)[Symbol.iterator]() });
     return 'continue';
   };
 

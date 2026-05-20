@@ -61,11 +61,11 @@ describe('toposort', () => {
     expect(order.sort()).toEqual(['x', 'y', 'z']);
   });
 
-  // 1.1 回归：topology 不应把 outgoingNeighbors 返回的孤儿节点纳入 order
-  it('1.1 fix: outgoingNeighbors 返回的孤儿节点不会污染 order', () => {
+  // 1.1 回归：topology 不应把 downstream 返回的孤儿节点纳入 order
+  it('1.1 fix: downstream 返回的孤儿节点不会污染 order', () => {
     const g = buildGraph('orphan', [], ['a', 'b']);
-    const real = g.outgoingNeighbors.bind(g);
-    (g as unknown as { outgoingNeighbors: typeof g.outgoingNeighbors }).outgoingNeighbors =
+    const real = g.downstream.bind(g);
+    (g as unknown as { downstream: typeof g.downstream }).downstream =
       function* (n: NodeId) {
         yield* real(n);
         if (n === 'a') yield id<NodeId>('ghost');

@@ -82,7 +82,7 @@ export class Topo {
     if (this._head >= this.queue.length) return undefined;
     const nodeId = this.queue[this._head++]!;
     this._emitted++;
-    for (const neighbor of graph.outgoingNeighbors(nodeId)) {
+    for (const neighbor of graph.downstream(nodeId)) {
       // 跳过孤儿邻居（不在 nodeIds 拓扑空间内的节点）。否则会因 `?? 1 - 1 = 0`
       // 把它意外纳入队列，最终被 next() 输出。
       const current = this._pending.get(neighbor);

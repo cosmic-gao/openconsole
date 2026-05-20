@@ -30,7 +30,7 @@ export function reachable<G extends Neighbors>(
     const current = stack.pop()!;
     if (current === target) return true;
 
-    for (const neighbor of graph.outgoingNeighbors(current)) {
+    for (const neighbor of graph.downstream(current)) {
       if (visited.has(neighbor)) continue;
       visited.add(neighbor);
       stack.push(neighbor);

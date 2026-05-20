@@ -29,7 +29,7 @@ export function validate<E>(
   const targetPort = edge.target.port;
 
   // 端点必须指向当前图实际持有的 Node 实例；否则端口列表会被记到一个"孤儿"节点上，
-  // 导致 graph.outgoingEdges(sourceId) 等邻接查询读不到这条边。
+  // 导致 graph.outgoing(sourceId) 等邻接查询读不到这条边。
   if (nodes.get(edge.sourceId) !== edge.source.node) {
     throw new Error(
       `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source endpoint references a Node that is not the one registered under id "${String(edge.sourceId)}" in this graph.`,
