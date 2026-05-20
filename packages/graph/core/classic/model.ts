@@ -1,6 +1,8 @@
 /**
- * Model：图的数据模型层 —— 储存 + CRUD + 基础 trait + 事件订阅（组合 {@link Emitter}）。
+ * Model：图的数据模型层 —— 储存 + CRUD + 基础 trait + 事件订阅（组合 {@link Signal}）。
  */
+
+import { Signal } from '@opendesign/signal';
 
 import type {
   EdgeId,
@@ -13,7 +15,6 @@ import type {
   Vertex,
 } from '../types';
 import { Edge } from './edge';
-import { Emitter } from './emitter';
 import { Endpoint } from './endpoint';
 import type { Node } from './node';
 import { Registry } from './registry';
@@ -24,7 +25,7 @@ import { validate } from './validate';
  *
  * @remarks 通过组合两个服务实例完成职责委派：
  * - {@link Registry}：节点 ID ↔ 稠密索引双向映射，承接 NodeIndexable trait；
- * - {@link Emitter}：类型化事件总线，承接 Subscribable trait（{@link on} / {@link off} facade）。
+ * - {@link Signal}：类型化事件总线，承接 Subscribable trait（{@link on} / {@link off} facade）。
  *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
@@ -40,7 +41,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
   private readonly _registry = new Registry();
 
   /** 事件总线（组合）：承载 {@link Events}。 */
-  private readonly _emitter = new Emitter<N, E>();
+  private readonly _signal = new Signal<Events<N, E>>();
 
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
@@ -68,7 +69,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     const vertex = toVertex(node);
     this.nodes.set(node.id, vertex);
     this._registry.add(node.id);
-    this._emitter.emit('nodeAdded', { node: vertex });
+    this._signal.emit('nodeAdded', { node: vertex });
     return this;
   }
 
@@ -102,12 +103,12 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
       if (edge.sourceId !== nodeId) edge.source.port.detach(edge.id);
       if (edge.targetId !== nodeId) edge.target.port.detach(edge.id);
       this.edges.delete(edgeId);
-      this._emitter.emit('edgeRemoved', { edge });
+      this._signal.emit('edgeRemoved', { edge });
     }
 
     this._registry.remove(nodeId);
     this.nodes.delete(nodeId);
-    this._emitter.emit('nodeRemoved', { node });
+    this._signal.emit('nodeRemoved', { node });
     return node;
   }
 
@@ -183,7 +184,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     this.edges.set(edge.id, edge);
     edge.source.port.attach(edge.id);
     edge.target.port.attach(edge.id);
-    this._emitter.emit('edgeAdded', { edge });
+    this._signal.emit('edgeAdded', { edge });
     return this;
   }
 
@@ -251,7 +252,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     edge.source.port.detach(edge.id);
     edge.target.port.detach(edge.id);
     this.edges.delete(edgeId);
-    this._emitter.emit('edgeRemoved', { edge });
+    this._signal.emit('edgeRemoved', { edge });
     return edge;
   }
 
@@ -342,7 +343,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
 
   // #endregion
 
-  // #region 事件订阅（委托给 _emitter）
+  // #region 事件订阅（委托给 _signal）
 
   /**
    * 订阅图变更事件。
@@ -362,7 +363,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     event: K,
     listener: Listener<Events<N, E>[K]>,
   ): () => void {
-    return this._emitter.on(event, listener);
+    return this._signal.on(event, listener);
   }
 
   /**
@@ -376,7 +377,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     event: K,
     listener: Listener<Events<N, E>[K]>,
   ): void {
-    this._emitter.off(event, listener);
+    this._signal.off(event, listener);
   }
 
   // #endregion
