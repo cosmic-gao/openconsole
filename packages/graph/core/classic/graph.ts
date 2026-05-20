@@ -123,7 +123,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public addNode<I extends Sockets, O extends Sockets>(node: Node<I, O, N>): this {
     if (this.nodes.has(node.id)) {
-      throw this._err('addNode', `a node with id "${String(node.id)}" already exists.`);
+      throw this._error('addNode', `a node with id "${String(node.id)}" already exists.`);
     }
     const vertex = toVertex(node);
     this.nodes.set(node.id, vertex);
@@ -263,16 +263,16 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public addEdge(edge: Edge<E>): this {
     if (this.edges.has(edge.id)) {
-      throw this._err('addEdge', `an edge with id "${String(edge.id)}" already exists.`);
+      throw this._error('addEdge', `an edge with id "${String(edge.id)}" already exists.`);
     }
     if (!this.nodes.has(edge.sourceId)) {
-      throw this._err(
+      throw this._error(
         `addEdge "${String(edge.id)}"`,
         `source node "${String(edge.sourceId)}" does not exist.`,
       );
     }
     if (!this.nodes.has(edge.targetId)) {
-      throw this._err(
+      throw this._error(
         `addEdge "${String(edge.id)}"`,
         `target node "${String(edge.targetId)}" does not exist.`,
       );
@@ -304,23 +304,23 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
 
     const sourceNode = this.nodes.get(sourceNodeId);
     if (!sourceNode) {
-      throw this._err('connect', `source node "${String(sourceNodeId)}" not found.`);
+      throw this._error('connect', `source node "${String(sourceNodeId)}" not found.`);
     }
     const targetNode = this.nodes.get(targetNodeId);
     if (!targetNode) {
-      throw this._err('connect', `target node "${String(targetNodeId)}" not found.`);
+      throw this._error('connect', `target node "${String(targetNodeId)}" not found.`);
     }
 
     const sourcePort = sourceNode.outputs[sourcePortName];
     if (!sourcePort) {
-      throw this._err(
+      throw this._error(
         'connect',
         `output port "${sourcePortName}" not found on node "${String(sourceNodeId)}".`,
       );
     }
     const targetPort = targetNode.inputs[targetPortName];
     if (!targetPort) {
-      throw this._err(
+      throw this._error(
         'connect',
         `input port "${targetPortName}" not found on node "${String(targetNodeId)}".`,
       );
@@ -658,7 +658,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    *
    * @internal
    */
-  private _err(op: string, msg: string): Error {
+  private _error(op: string, msg: string): Error {
     return new Error(`[Graph "${String(this.id)}"] ${op}: ${msg}`);
   }
 
