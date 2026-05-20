@@ -48,6 +48,8 @@ importers:
         specifier: workspace:*
         version: link:../signal
 
+  packages/heap: {}
+
   packages/signal: {}
 
   packages/tunnel:

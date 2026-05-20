@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": [
+    "@opendesign/tsconfig/lib",
+    "@opendesign/tsconfig/esm"
+  ],
+  "include": [
+    "index.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}
