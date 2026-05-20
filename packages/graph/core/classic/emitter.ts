@@ -1,40 +1,31 @@
 /**
- * Emitter：在 {@link Model} 之上叠加事件订阅能力。
+ * Emitter：类型化的图变更事件总线（封装 `@opendesign/signal`）。
  */
 
 import { Signal } from '@opendesign/signal';
 
-import type { Events, Listener, Subscribable } from '../types';
-import { Model } from './model';
+import type { Events, Listener } from '../types';
 
 /**
- * 事件层：覆写 {@link Model._emit} 模板钩子，把 CRUD 路径上的事件接入
- * `@opendesign/signal`，并暴露 {@link on} / {@link off} 订阅 API。
+ * 类型化的图变更事件总线，按 {@link Events} 形状约束载荷。
  *
- * @remarks 与 Model 的关系：Model 决定"何时派发"（事件触发点固定在 CRUD 内部），
- *   Emitter 决定"如何派发"（接到 Signal）。继承叠加而非组合，是为了让 CRUD 调用
- *   路径上的 `_emit` 直接走到子类覆写版本，零额外间接层。
+ * @remarks 与 `Signal` 的区别仅在于把泛型固化为 `Events<N, E>`，使 `on / emit`
+ *   的事件名与载荷在编译期获得强约束。{@link Model} 通过组合持有一个 Emitter
+ *   实例并把 `on / off` facade 出去。
  *
- * @template N 节点附带的数据载荷类型
- * @template E 边附带的数据载荷类型
+ * @template N 节点权重类型
+ * @template E 边权重类型
  */
-export class Emitter<N = unknown, E = unknown> extends Model<N, E> implements Subscribable<N, E> {
-  /** 内置事件总线，承载 {@link Events}（基于 `@opendesign/signal`）。 */
+export class Emitter<N = unknown, E = unknown> {
   private readonly _signal = new Signal<Events<N, E>>();
 
   /**
-   * 订阅图变更事件。
+   * 订阅事件。
    *
    * @template K 事件名
    * @param event 事件名
    * @param listener 回调
    * @returns 取消订阅函数
-   *
-   * @example
-   * ```ts
-   * const off = graph.on('edgeAdded', ({ edge }) => console.log(edge.id));
-   * off(); // 取消订阅
-   * ```
    */
   public on<K extends keyof Events>(
     event: K,
@@ -57,12 +48,8 @@ export class Emitter<N = unknown, E = unknown> extends Model<N, E> implements Su
     this._signal.off(event, listener);
   }
 
-  /**
-   * 覆写 Model 的派发钩子，把事件接入 Signal。
-   *
-   * @internal
-   */
-  protected override _emit<K extends keyof Events>(event: K, payload: Events<N, E>[K]): void {
+  /** 同步派发事件给所有订阅者。 */
+  public emit<K extends keyof Events>(event: K, payload: Events<N, E>[K]): void {
     this._signal.emit(event, payload);
   }
 }

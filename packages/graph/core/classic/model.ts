@@ -1,31 +1,35 @@
 /**
- * Model：图的数据模型层 —— 储存 + CRUD + 基础 trait（不含事件能力）。
- *
- * @remarks 通过 `protected _emit` 模板方法钩子在 CRUD 路径上预留事件派发点；
- *   本层默认 no-op。{@link Emitter} 通过继承覆写 `_emit` 引入真正的事件总线。
+ * Model：图的数据模型层 —— 储存 + CRUD + 基础 trait + 事件订阅（组合 {@link Emitter}）。
  */
 
 import type {
   EdgeId,
   Events,
   GraphId,
+  Listener,
   NodeId,
   Sockets,
+  Subscribable,
   Vertex,
 } from '../types';
 import { Edge } from './edge';
+import { Emitter } from './emitter';
 import { Endpoint } from './endpoint';
 import type { Node } from './node';
 import { Registry } from './registry';
 import { validate } from './validate';
 
 /**
- * 图模型层：储存 + CRUD + Catalog / NodeIndexable / Visitable trait。
+ * 图模型层：储存 + CRUD + Catalog / NodeIndexable / Visitable trait + 事件订阅。
+ *
+ * @remarks 通过组合两个服务实例完成职责委派：
+ * - {@link Registry}：节点 ID ↔ 稠密索引双向映射，承接 NodeIndexable trait；
+ * - {@link Emitter}：类型化事件总线，承接 Subscribable trait（{@link on} / {@link off} facade）。
  *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
  */
-export class Model<N = unknown, E = unknown> {
+export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 节点存储：NodeId → Vertex。 */
   public readonly nodes = new Map<NodeId, Vertex<N>>();
 
@@ -34,6 +38,9 @@ export class Model<N = unknown, E = unknown> {
 
   /** 稠密索引（组合）：维护节点 ID ↔ 索引的双向映射。 */
   private readonly _registry = new Registry();
+
+  /** 事件总线（组合）：承载 {@link Events}。 */
+  private readonly _emitter = new Emitter<N, E>();
 
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
@@ -61,7 +68,7 @@ export class Model<N = unknown, E = unknown> {
     const vertex = toVertex(node);
     this.nodes.set(node.id, vertex);
     this._registry.add(node.id);
-    this._emit('nodeAdded', { node: vertex });
+    this._emitter.emit('nodeAdded', { node: vertex });
     return this;
   }
 
@@ -95,12 +102,12 @@ export class Model<N = unknown, E = unknown> {
       if (edge.sourceId !== nodeId) edge.source.port.detach(edge.id);
       if (edge.targetId !== nodeId) edge.target.port.detach(edge.id);
       this.edges.delete(edgeId);
-      this._emit('edgeRemoved', { edge });
+      this._emitter.emit('edgeRemoved', { edge });
     }
 
     this._registry.remove(nodeId);
     this.nodes.delete(nodeId);
-    this._emit('nodeRemoved', { node });
+    this._emitter.emit('nodeRemoved', { node });
     return node;
   }
 
@@ -176,7 +183,7 @@ export class Model<N = unknown, E = unknown> {
     this.edges.set(edge.id, edge);
     edge.source.port.attach(edge.id);
     edge.target.port.attach(edge.id);
-    this._emit('edgeAdded', { edge });
+    this._emitter.emit('edgeAdded', { edge });
     return this;
   }
 
@@ -244,7 +251,7 @@ export class Model<N = unknown, E = unknown> {
     edge.source.port.detach(edge.id);
     edge.target.port.detach(edge.id);
     this.edges.delete(edgeId);
-    this._emit('edgeRemoved', { edge });
+    this._emitter.emit('edgeRemoved', { edge });
     return edge;
   }
 
@@ -335,21 +342,46 @@ export class Model<N = unknown, E = unknown> {
 
   // #endregion
 
-  // #region 内部 helpers
+  // #region 事件订阅（委托给 _emitter）
 
   /**
-   * 事件派发钩子。模型层默认 no-op，{@link Emitter} 覆写为真正的派发。
+   * 订阅图变更事件。
    *
-   * @remarks 把"何时触发事件"的决策权留给本层（CRUD 路径已固定调用点），把
-   *   "如何派发"的实现留给子类 —— 经典模板方法模式。
+   * @template K 事件名
+   * @param event 事件名
+   * @param listener 回调
+   * @returns 取消订阅函数
    *
-   * @internal
+   * @example
+   * ```ts
+   * const off = graph.on('edgeAdded', ({ edge }) => console.log(edge.id));
+   * off(); // 取消订阅
+   * ```
    */
-  protected _emit<K extends keyof Events>(event: K, payload: Events<N, E>[K]): void {
-    void event;
-    void payload;
-    // no-op；由 Emitter 覆写
+  public on<K extends keyof Events>(
+    event: K,
+    listener: Listener<Events<N, E>[K]>,
+  ): () => void {
+    return this._emitter.on(event, listener);
   }
+
+  /**
+   * 取消订阅指定回调。
+   *
+   * @template K 事件名
+   * @param event 事件名
+   * @param listener 之前传给 {@link on} 的回调
+   */
+  public off<K extends keyof Events>(
+    event: K,
+    listener: Listener<Events<N, E>[K]>,
+  ): void {
+    this._emitter.off(event, listener);
+  }
+
+  // #endregion
+
+  // #region 内部 helpers
 
   /**
    * 分配下一个可用边 ID（跳过已存在 ID 以避免冲突）。

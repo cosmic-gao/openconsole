@@ -13,16 +13,16 @@ import type {
   NodeId,
 } from '../types';
 import type { Edge } from './edge';
-import { Emitter } from './emitter';
+import { Model } from './model';
 
 /**
  * 有向图，承载节点 (`Node`) 与边 (`Edge`)，并提供基础邻接查询。
  *
  * @remarks
  * 设计要点：
- * - **分层结构**：{@link Model}（储存 + CRUD + 基础 trait） → {@link Emitter}
- *   （叠加事件能力） → {@link Graph}（查询层）三层继承；本类只追加查询层
- *   （边查询、邻居、IntoEdges trait、度数、序列化）。
+ * - **分层结构**：{@link Model}（储存 + CRUD + 基础 trait + 事件订阅，内部组合
+ *   {@link Registry} 与 {@link Emitter}） → {@link Graph}（查询层）单层继承；本类只
+ *   追加查询层（边查询、邻居、IntoEdges trait、度数、序列化）。
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
  * - **O(1) NodeIndexable**：通过 {@link Model} 组合的 {@link Registry}，
@@ -46,7 +46,7 @@ import { Emitter } from './emitter';
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
  */
-export class Graph<N = unknown, E = unknown> extends Emitter<N, E> {
+export class Graph<N = unknown, E = unknown> extends Model<N, E> {
   // #region 内部迭代器
 
   /**
