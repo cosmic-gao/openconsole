@@ -18,4 +18,5 @@ export * from './reachable';
 export * from './degree';
 export * from './neighborhood';
 export * from './dijkstra';
+export * from './bidijkstra';
 export * from './weighted';

@@ -60,6 +60,9 @@ importers:
 
   packages/graph:
     dependencies:
+      '@opendesign/heap':
+        specifier: workspace:*
+        version: link:../heap
       '@opendesign/signal':
         specifier: workspace:*
         version: link:../signal

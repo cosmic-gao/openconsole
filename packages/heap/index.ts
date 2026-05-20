@@ -38,7 +38,7 @@ export class BinaryHeap<T> {
     if (count === 0) return this.heap.length;
 
     if (count === 1) {
-      const node = nodes[0];
+      const node = nodes[0]!;
       const index = this.heap.length;
       this.heap.push(node);
       this.indices.set(node, index);
@@ -50,7 +50,7 @@ export class BinaryHeap<T> {
     // 同时把索引登记合并进单趟遍历。
     const start = this.heap.length;
     for (let i = 0; i < count; i++) {
-      const node = nodes[i];
+      const node = nodes[i]!;
       this.heap.push(node);
       this.indices.set(node, start + i);
     }
@@ -70,7 +70,7 @@ export class BinaryHeap<T> {
       return undefined;
     }
 
-    const top = this.heap[0];
+    const top = this.heap[0]!;
     this.indices.delete(top);
     this.heap[0] = node;
     this.indices.set(node, 0);
@@ -104,11 +104,11 @@ export class BinaryHeap<T> {
    * 相比逐对交换，写次数减半（O(log n) → O(log n) 次写，但常数 ~1/2）。
    */
   protected heapifyUp(index: number = this.heap.length - 1): void {
-    const node = this.heap[index];
+    const node = this.heap[index]!;
 
     while (index > 0) {
       const parentIndex = (index - 1) >> 1;
-      const parent = this.heap[parentIndex];
+      const parent = this.heap[parentIndex]!;
       if (this.comparator(node, parent) >= 0) break;
 
       this.heap[index] = parent;
@@ -124,7 +124,7 @@ export class BinaryHeap<T> {
    * Sift-down：与 {@link BinaryHeap.heapifyUp} 对称。
    */
   protected heapifyDown(index: number = 0): void {
-    const node = this.heap[index];
+    const node = this.heap[index]!;
     const length = this.heap.length;
     const halfIndex = length >> 1;
 
@@ -132,11 +132,11 @@ export class BinaryHeap<T> {
       let smallestIndex = (index << 1) + 1;
       const rightIndex = smallestIndex + 1;
 
-      if (rightIndex < length && this.comparator(this.heap[rightIndex], this.heap[smallestIndex]) < 0) {
+      if (rightIndex < length && this.comparator(this.heap[rightIndex]!, this.heap[smallestIndex]!) < 0) {
         smallestIndex = rightIndex;
       }
 
-      const smallest = this.heap[smallestIndex];
+      const smallest = this.heap[smallestIndex]!;
       if (this.comparator(node, smallest) <= 0) break;
 
       this.heap[index] = smallest;
@@ -150,7 +150,7 @@ export class BinaryHeap<T> {
 
   protected deleteAt(index: number = 0): T {
     const lastIndex = this.heap.length - 1;
-    const removed = this.heap[index];
+    const removed = this.heap[index]!;
     this.indices.delete(removed);
 
     if (index === lastIndex) {
@@ -163,7 +163,7 @@ export class BinaryHeap<T> {
     this.indices.set(last, index);
 
     const parentIndex = (index - 1) >> 1;
-    if (index > 0 && this.comparator(last, this.heap[parentIndex]) < 0) {
+    if (index > 0 && this.comparator(last, this.heap[parentIndex]!) < 0) {
       this.heapifyUp(index);
     } else {
       this.heapifyDown(index);

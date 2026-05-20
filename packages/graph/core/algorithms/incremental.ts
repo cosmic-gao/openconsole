@@ -1,16 +1,13 @@
 /**
- * IncrementalTopo：基于事件订阅的增量拓扑维护。
+ * IncrementalTopo：基于事件订阅的增量拓扑维护（Pearce-Kelly 局部重排）。
  *
  * @remarks
- * 订阅图的 add / remove 事件并维护 ranks 映射。设计策略：
- * - **happy path**：节点添加在末尾分配新 rank（O(1)）；不破坏拓扑的边变更不触发重排（O(1)）。
- * - **violation path**：当一条新边导致 `rank(source) >= rank(target)` 时，标记 dirty，下次
- *   `rank()` / `sorted()` / `hasCycle` 查询时触发完整 {@link topology} 重算（O(V+E)）。
+ * 节点新增 / 不破坏拓扑的边新增走 O(1) 快路径；违反拓扑但无环时走 Pearce-Kelly
+ * O(|δ|) 局部重排；检测到环 / 节点未注册 / 已知含环时降级为 dirty，由下次查询触发
+ * 完整 {@link topology} 重算。
  *
- * 这种"懒重排"策略对节点编辑器 / 可视化编程场景最实用：用户多数情况下按拓扑顺序连线，
- * 维护成本接近 O(1)；偶尔的违规也只承担一次延后的全量重算。
- *
- * 更激进的优化（如 Pearce-Kelly 的真 O(|delta|) 局部重排）可以作为 v2 在不改 API 的前提下替换。
+ * @see Pearce, D.J. & Kelly, P.H.J. (2007). "A Dynamic Topological Sort Algorithm
+ *   for Directed Acyclic Graphs." ACM JEA 12.
  */
 
 import type { NodeId, Subscribable, Walkable } from '../types';
@@ -219,22 +216,91 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   }
 
   /**
-   * 边入图回调：`rank(source) < rank(target)` 时无操作；否则标记 dirty。
+   * 边入图回调：Pearce-Kelly 局部重排；环 / 退化情形降级为 dirty。
    *
    * @internal
    */
   private _addEdge(sourceId: NodeId, targetId: NodeId): void {
-    const rs = this._ranks.get(sourceId);
-    const rt = this._ranks.get(targetId);
-    if (rs === undefined || rt === undefined) {
-      // 罕见情况：边端节点尚未进入 rank（事件乱序），保险起见 dirty
+    if (sourceId === targetId || this._hasCycle) {
       this._dirty = true;
       return;
     }
-    if (rs >= rt) {
-      // 违反：要么实际上是环，要么需要局部重排；统一交给下次重算
+    const ru = this._ranks.get(sourceId);
+    const rv = this._ranks.get(targetId);
+    if (ru === undefined || rv === undefined) {
       this._dirty = true;
+      return;
     }
+    if (ru < rv) return;
+
+    const lb = rv;
+    const ub = ru;
+    const graph = this._graph;
+    const ranks = this._ranks;
+
+    const fwd = this._collect(targetId, (n) => graph.downstream(n), (r) => r <= ub, sourceId);
+    if (fwd === null) {
+      this._dirty = true;
+      return;
+    }
+    const bwd = this._collect(sourceId, (n) => graph.upstream(n), (r) => r >= lb);
+
+    const byRank = (a: NodeId, b: NodeId): number => ranks.get(a)! - ranks.get(b)!;
+    bwd.sort(byRank);
+    fwd.sort(byRank);
+
+    // bwd ∪ fwd 原本占用的槽位（无重叠：若相交即环，已在前向遍历拦截）。
+    const slots: number[] = new Array(bwd.length + fwd.length);
+    let i = 0;
+    for (const n of bwd) slots[i++] = ranks.get(n)!;
+    for (const n of fwd) slots[i++] = ranks.get(n)!;
+    slots.sort((a, b) => a - b);
+
+    // bwd 占小槽位、fwd 占大槽位——u 必排到 v 之前，新边的拓扑约束自动满足。
+    i = 0;
+    for (const n of bwd) ranks.set(n, slots[i++]!);
+    for (const n of fwd) ranks.set(n, slots[i++]!);
+  }
+
+  /**
+   * PK 受影响区域 DFS：从 `start` 出发按 `expand` 邻接遍历，仅收集 rank 满足 `accept`
+   * 的节点。途中若遇到 `abort`，返回 `null` 标识环。
+   *
+   * @internal
+   */
+  private _collect(
+    start: NodeId,
+    expand: (n: NodeId) => Iterable<NodeId>,
+    accept: (r: number) => boolean,
+  ): NodeId[];
+  private _collect(
+    start: NodeId,
+    expand: (n: NodeId) => Iterable<NodeId>,
+    accept: (r: number) => boolean,
+    abort: NodeId,
+  ): NodeId[] | null;
+  private _collect(
+    start: NodeId,
+    expand: (n: NodeId) => Iterable<NodeId>,
+    accept: (r: number) => boolean,
+    abort?: NodeId,
+  ): NodeId[] | null {
+    const visited = new Set<NodeId>([start]);
+    const region: NodeId[] = [start];
+    const stack: NodeId[] = [start];
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      for (const adj of expand(node)) {
+        if (visited.has(adj)) continue;
+        if (adj === abort) return null;
+        const rank = this._ranks.get(adj);
+        if (rank === undefined || !accept(rank)) continue;
+        visited.add(adj);
+        region.push(adj);
+        stack.push(adj);
+      }
+    }
+    return region;
   }
 
   /**

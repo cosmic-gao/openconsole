@@ -1,99 +1,104 @@
 /**
- * scc：Tarjan 强连通分量算法（迭代实现，避免深图栈溢出）。
+ * scc：Tarjan 强连通分量算法（迭代 + typed-array）。
  */
 
 import type { NodeId, Walkable } from '../types';
 
 /**
- * 强连通分量（Tarjan 算法，迭代实现避免深图栈溢出）。
+ * 强连通分量（Tarjan 算法，迭代 + typed-array 实现）。
  *
  * @remarks
- * 经典递归 Tarjan 在深图上会爆栈，这里用显式栈模拟递归。状态机要点：
- *
- * - `callStack`：模拟函数调用栈，每帧 `{nodeId, neighbors, pendingChild}` 表示
- *   "正在处理 `nodeId`、待遍历的邻居迭代器、上一次递归调用的子节点"。
- * - `tarjanStack` + `onStack`：经典 Tarjan 的辅助栈，跟踪当前 SCC 候选成员。
- * - **`pendingChild` 字段是迭代版的关键**：递归版在子调用返回后能立刻用子的
- *   `lowlink` 更新自身，但迭代版需要在"再次回到父帧"时才能做这件事 — 因此把
- *   即将进入的子节点记在 `pendingChild`，下一轮 while 循环开头读到它就更新
- *   `lowlink(parent) = min(lowlink(parent), lowlink(child))`。
- * - 当 `lowlink(node) === index(node)` 且邻居耗尽时，从 `tarjanStack` 弹栈直到
- *   弹出 `node` 自身，这串元素就是一个分量。
- *
- * 分量内节点顺序：按 **DFS discover 顺序**（reverse 弹栈结果）。
+ * 状态机要点：`pending` 字段解决"子调用返回后才能更新父 `low`"的迭代-递归差异——
+ * 递归版在子帧返回时立刻 `low(parent) = min(low(parent), low(child))`，迭代版必须
+ * 等下一轮 while 回到父帧才能做这件事，所以把待回流的子节点 idx 记在父帧上。
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
  * @returns 各分量的节点 ID 数组；分量内按 discover 顺序排列
+ *
+ * @see Tarjan, R. (1972). "Depth-first search and linear graph algorithms." SIAM J. Comput.
+ * @see Pearce, D.J. (2016). "A space-efficient algorithm for finding SCCs." IPL 116(1).
+ * @see Tarjan, R. & Zwick, U. (2024). "Finding strong components using DFS." EJC 119.
  */
 export function scc<G extends Walkable>(graph: G): NodeId[][] {
+  const nodes: NodeId[] = [];
   const index = new Map<NodeId, number>();
-  const lowlink = new Map<NodeId, number>();
-  const onStack = new Set<NodeId>();
-  const tarjanStack: NodeId[] = [];
+  for (const id of graph.nodeIds) {
+    if (!index.has(id)) {
+      index.set(id, nodes.length);
+      nodes.push(id);
+    }
+  }
+  const n = nodes.length;
+
+  const UNVISITED = -1;
+  const disc = new Int32Array(n).fill(UNVISITED);
+  const low = new Int32Array(n);
+  const onStack = new Uint8Array(n);
+  const stack: number[] = [];
   const components: NodeId[][] = [];
   let counter = 0;
 
-  type Frame = { nodeId: NodeId; neighbors: Iterator<NodeId>; pendingChild: NodeId | null };
-  const callStack: Frame[] = [];
+  type Frame = { node: number; iter: Iterator<NodeId>; pending: number };
+  const NONE = -1;
+  const frames: Frame[] = [];
 
-  const enter = (nodeId: NodeId): void => {
-    index.set(nodeId, counter);
-    lowlink.set(nodeId, counter);
+  const enter = (node: number): void => {
+    disc[node] = counter;
+    low[node] = counter;
     counter++;
-    tarjanStack.push(nodeId);
-    onStack.add(nodeId);
-    callStack.push({
-      nodeId,
-      neighbors: graph.downstream(nodeId)[Symbol.iterator](),
-      pendingChild: null,
+    stack.push(node);
+    onStack[node] = 1;
+    frames.push({
+      node,
+      iter: graph.downstream(nodes[node]!)[Symbol.iterator](),
+      pending: NONE,
     });
   };
 
-  for (const root of graph.nodeIds) {
-    if (index.has(root)) continue;
+  for (let root = 0; root < n; root++) {
+    if (disc[root] !== UNVISITED) continue;
     enter(root);
 
-    while (callStack.length > 0) {
-      const frame = callStack[callStack.length - 1]!;
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!;
 
-      if (frame.pendingChild !== null) {
-        const child = frame.pendingChild;
-        frame.pendingChild = null;
-        lowlink.set(frame.nodeId, Math.min(lowlink.get(frame.nodeId)!, lowlink.get(child)!));
+      if (frame.pending !== NONE) {
+        const child = frame.pending;
+        frame.pending = NONE;
+        const childLow = low[child]!;
+        if (childLow < low[frame.node]!) low[frame.node] = childLow;
       }
 
-      const next = frame.neighbors.next();
-      if (!next.done) {
-        const neighbor = next.value;
-        if (!index.has(neighbor)) {
-          frame.pendingChild = neighbor;
-          enter(neighbor);
-        } else if (onStack.has(neighbor)) {
-          lowlink.set(
-            frame.nodeId,
-            Math.min(lowlink.get(frame.nodeId)!, index.get(neighbor)!),
-          );
+      const step = frame.iter.next();
+      if (!step.done) {
+        const target = index.get(step.value);
+        // 边指向 nodeIds 之外的孤儿节点：静默跳过（同 internal/degree.ts 约定）。
+        if (target === undefined) continue;
+        if (disc[target] === UNVISITED) {
+          frame.pending = target;
+          enter(target);
+        } else if (onStack[target] === 1) {
+          const d = disc[target]!;
+          if (d < low[frame.node]!) low[frame.node] = d;
         }
         continue;
       }
 
-      if (lowlink.get(frame.nodeId) === index.get(frame.nodeId)) {
+      if (low[frame.node] === disc[frame.node]) {
         const component: NodeId[] = [];
-        let popped: NodeId | undefined;
+        let popped: number;
         do {
-          popped = tarjanStack.pop();
-          if (popped !== undefined) {
-            onStack.delete(popped);
-            component.push(popped);
-          }
-        } while (popped !== undefined && popped !== frame.nodeId);
-        // Tarjan 弹栈顺序是 LIFO（晚发现的节点先出），reverse 后还原为 discover 顺序。
+          popped = stack.pop()!;
+          onStack[popped] = 0;
+          component.push(nodes[popped]!);
+        } while (popped !== frame.node);
+        // stack 弹出是 LIFO（晚发现的先出），reverse 还原 discover 顺序。
         component.reverse();
         components.push(component);
       }
 
-      callStack.pop();
+      frames.pop();
     }
   }
 

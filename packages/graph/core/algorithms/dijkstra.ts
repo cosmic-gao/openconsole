@@ -1,9 +1,10 @@
 /**
- * dijkstra：单源最短路径（非负权重，二叉堆优化）。
+ * dijkstra：单源最短路径（非负权重，配对堆 + 真 decrease-key）。
  */
 
+import { PairingHeap, type PairingNode } from '@opendesign/heap';
+
 import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
-import { Heap } from '../internal';
 
 /** 堆中的待处理项：节点 + 距起点距离。 */
 interface Entry {
@@ -15,12 +16,10 @@ interface Entry {
  * Dijkstra 单源最短路径（非负权重）。
  *
  * @remarks
- * - 仅依赖 {@link IntoEdges}，与具体存储解耦；
- * - 使用二叉最小堆，复杂度 O((V+E) log V)；
- * - 采用 lazy decrease-key：发现更短路径时重新入堆，pop 时跳过过期条目；
- * - 返回 `start` 到所有可达节点的最短距离；可选 `end` 提前终止；
- * - 不支持负权边；`edgeCost` 返回负数时**立即抛错**而不是静默给出错误答案。
- *   如需支持负权请改用 Bellman-Ford。
+ * 用 {@link PairingHeap} 配合稳定句柄 {@link PairingNode} 提供 O(1) 摊销 decrease-key：
+ * 每个节点在堆中至多一份，relax 命中触发 `update` 而非重复入堆。
+ *
+ * 不支持负权边；`edgeCost` 返回负数时立即抛错而不是静默给出错误答案。
  *
  * @template E 边权重类型
  * @template G 满足 {@link Catalog} + {@link IntoEdges} 的图类型
@@ -38,22 +37,21 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
   edgeCost: (edge: EdgeView<E>) => number,
 ): Map<NodeId, number> {
   const distances = new Map<NodeId, number>();
+  const handles = new Map<NodeId, PairingNode<Entry>>();
   const visited = new Set<NodeId>();
-  const heap = new Heap<Entry>((a, b) => a.dist - b.dist);
+  const heap = new PairingHeap<Entry>((a, b) => a.dist - b.dist);
 
   distances.set(start, 0);
-  heap.push({ node: start, dist: 0 });
+  handles.set(start, heap.push({ node: start, dist: 0 }));
 
-  while (!heap.isEmpty) {
-    const { node: current, dist } = heap.pop()!;
-    // 过期条目（之前 push 时记录的 dist > 当前已确认的最短）— 跳过
-    if (visited.has(current)) continue;
-    // 安全检查：dist 与 distances 中记录不同 — 也是过期条目
-    if (distances.get(current) !== dist) continue;
-    visited.add(current);
-    if (current === end) break;
+  while (!heap.empty()) {
+    const entry = heap.poll()!;
+    const node = entry.node;
+    handles.delete(node);
+    visited.add(node);
+    if (node === end) break;
 
-    for (const edge of graph.getOutgoing(current)) {
+    for (const edge of graph.getOutgoing(node)) {
       if (visited.has(edge.target)) continue;
       const cost = edgeCost(edge);
       if (cost < 0) {
@@ -61,11 +59,16 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
           `dijkstra: negative edge cost ${cost} on edge "${String(edge.id)}"; use Bellman-Ford for negative weights.`,
         );
       }
-      const candidate = dist + cost;
-      const recorded = distances.get(edge.target) ?? Infinity;
-      if (candidate < recorded) {
+      const candidate = entry.dist + cost;
+      const handle = handles.get(edge.target);
+      if (handle !== undefined) {
+        if (candidate < handle.value.dist) {
+          heap.update(handle, { node: edge.target, dist: candidate });
+          distances.set(edge.target, candidate);
+        }
+      } else {
         distances.set(edge.target, candidate);
-        heap.push({ node: edge.target, dist: candidate });
+        handles.set(edge.target, heap.push({ node: edge.target, dist: candidate }));
       }
     }
   }

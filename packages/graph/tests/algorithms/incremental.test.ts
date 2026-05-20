@@ -80,6 +80,44 @@ describe('IncrementalTopo', () => {
     topo.dispose();
   });
 
+  it('PK 局部重排：菱形 + 反向交叉边重新分层', () => {
+    // 初始：a → b → d, a → c → d（菱形）。
+    // 再加孤立节点 e、f 不连接。
+    const g = buildGraph('pk2', [
+      ['a', 'b'],
+      ['a', 'c'],
+      ['b', 'd'],
+      ['c', 'd'],
+    ], ['e', 'f']);
+    const topo = new IncrementalTopo(g);
+
+    // 加边 e → a：rank(e)=4 >= rank(a)=0，违反；e 必须排到 a 之前。
+    // PK 应把 e 与 {a,b,c,d}（forward DFS from a）的位置重新分配；e 优先排到最前。
+    g.connect([id<NodeId>('e'), 'y'], [id<NodeId>('a'), 'x']);
+
+    expect(topo.hasCycle).toBe(false);
+    // 验证 e 在 a/b/c/d 之前
+    const eRank = topo.rank(id<NodeId>('e'))!;
+    expect(eRank).toBeLessThan(topo.rank(id<NodeId>('a'))!);
+    expect(eRank).toBeLessThan(topo.rank(id<NodeId>('b'))!);
+    expect(eRank).toBeLessThan(topo.rank(id<NodeId>('c'))!);
+    expect(eRank).toBeLessThan(topo.rank(id<NodeId>('d'))!);
+    // 验证 a < b < d 与 a < c < d 仍然成立
+    expect(topo.rank(id<NodeId>('a'))!).toBeLessThan(topo.rank(id<NodeId>('b'))!);
+    expect(topo.rank(id<NodeId>('b'))!).toBeLessThan(topo.rank(id<NodeId>('d'))!);
+    expect(topo.rank(id<NodeId>('a'))!).toBeLessThan(topo.rank(id<NodeId>('c'))!);
+    expect(topo.rank(id<NodeId>('c'))!).toBeLessThan(topo.rank(id<NodeId>('d'))!);
+    topo.dispose();
+  });
+
+  it('PK 自环：直接判环', () => {
+    const g = buildGraph('self', [['a', 'b']]);
+    const topo = new IncrementalTopo(g);
+    g.connect([id<NodeId>('a'), 'y'], [id<NodeId>('a'), 'x']);
+    expect(topo.hasCycle).toBe(true);
+    topo.dispose();
+  });
+
   it('removeNode 删除 rank（不压紧 — gap 可接受）', () => {
     const g = diamond();
     const topo = new IncrementalTopo(g);

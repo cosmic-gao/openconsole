@@ -7,7 +7,10 @@ import { reversed } from '../adapters';
 import { dfs } from './dfs';
 
 /**
- * `source` 是否能到达 `target`。
+ * `source` 是否能到达 `target`（双向 BFS，meet-in-middle）。
+ *
+ * @remarks
+ * 每轮挑较小的前沿前进——这是分支因子不对称时避免一侧爆炸的关键。
  *
  * @template G 实现 {@link Neighbors} 的图类型
  * @param graph 图实例
@@ -22,18 +25,34 @@ export function reachable<G extends Neighbors>(
 ): boolean {
   if (source === target) return true;
 
-  // push-time 标记 visited 避免同一节点被多次 pop（出度高的图节省一半 pop 调用）。
-  const visited = new Set<NodeId>([source]);
-  const stack: NodeId[] = [source];
+  const fwd = new Set<NodeId>([source]);
+  const bwd = new Set<NodeId>([target]);
+  let fwdFront: NodeId[] = [source];
+  let bwdFront: NodeId[] = [target];
 
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    if (current === target) return true;
-
-    for (const neighbor of graph.downstream(current)) {
-      if (visited.has(neighbor)) continue;
-      visited.add(neighbor);
-      stack.push(neighbor);
+  while (fwdFront.length > 0 && bwdFront.length > 0) {
+    if (fwdFront.length <= bwdFront.length) {
+      const next: NodeId[] = [];
+      for (const node of fwdFront) {
+        for (const adj of graph.downstream(node)) {
+          if (bwd.has(adj)) return true;
+          if (fwd.has(adj)) continue;
+          fwd.add(adj);
+          next.push(adj);
+        }
+      }
+      fwdFront = next;
+    } else {
+      const next: NodeId[] = [];
+      for (const node of bwdFront) {
+        for (const adj of graph.upstream(node)) {
+          if (fwd.has(adj)) return true;
+          if (bwd.has(adj)) continue;
+          bwd.add(adj);
+          next.push(adj);
+        }
+      }
+      bwdFront = next;
     }
   }
 
