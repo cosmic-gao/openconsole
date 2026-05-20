@@ -1,5 +1,5 @@
 /**
- * DfsPostorder：DFS 后序状态化遍历器（finish-time 顺序）。
+ * Postorder：DFS 后序状态化遍历器（finish-time 顺序）。
  */
 
 import type { Neighbors, NodeId } from '../types';
@@ -15,7 +15,7 @@ import { toIterator } from './iterator';
  *
  * @example
  * ```ts
- * const post = DfsPostorder.start(graph, root);
+ * const post = Postorder.start(graph, root);
  * while (true) {
  *   const node = post.next(graph);
  *   if (node === undefined) break;
@@ -23,7 +23,7 @@ import { toIterator } from './iterator';
  * }
  * ```
  */
-export class DfsPostorder {
+export class Postorder {
   /** 当前 DFS 调用栈：每帧持有节点与其后继迭代器。 */
   public readonly stack: Array<{ node: NodeId; neighbors: Iterator<NodeId> }>;
 
@@ -54,8 +54,8 @@ export class DfsPostorder {
    * @param start 起点节点 ID
    * @returns 新建的遍历器
    */
-  public static start<G extends Neighbors>(graph: G, start: NodeId): DfsPostorder {
-    const instance = new DfsPostorder();
+  public static start<G extends Neighbors>(graph: G, start: NodeId): Postorder {
+    const instance = new Postorder();
     instance.discovered.add(start);
     instance.stack.push({
       node: start,

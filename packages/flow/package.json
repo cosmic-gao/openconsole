@@ -1,0 +1,20 @@
+{
+  "name": "@opendesign/flow",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "demo": "tsx index.ts",
+    "demo:langgraph": "tsx langgraph.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opendesign/graph": "workspace:*"
+  },
+  "devDependencies": {
+    "@opendesign/tsconfig": "workspace:*",
+    "@types/node": "^25.4.0",
+    "tsx": "^4.20.7"
+  }
+}

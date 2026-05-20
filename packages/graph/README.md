@@ -6,7 +6,7 @@
 
 - **类型化端口模型**：`Vertex` 携带强类型 `Inputs` / `Outputs`；`Socket` 描述端口数据类型并校验边连接的兼容性
 - **Trait 与存储解耦**：算法仅依赖 `Catalog` / `Neighbors` / `IntoEdges` / `Walkable` 等能力接口，与具体存储无关
-- **两种访问者风格**：状态化遍历器 (`Dfs` / `Bfs` / `Topo` / `DfsPostorder`) 控制推进节奏；事件回调遍历 (`dfsVisit`) 用 `Control` 决定继续 / 剪枝 / 中止
+- **两种访问者风格**：状态化遍历器 (`Dfs` / `Bfs` / `Topo` / `Postorder`) 控制推进节奏；事件回调遍历 (`dfsVisit`) 用 `Control` 决定继续 / 剪枝 / 中止
 - **零成本视图适配器**：`Reversed` / `NodeFilter` / `EdgeFilter` 仅做 trait 转发，不复制底层数据，可任意嵌套
 - **完整算法集**：拓扑排序、强连通分量 (Tarjan / Kosaraju)、Dijkstra 最短路径、DFS / BFS、可达性、邻域、压缩图等
 - **增量拓扑**：`IncrementalTopo` 订阅图事件，happy path O(1)，违规时延后做一次性全量重算
@@ -126,7 +126,7 @@ import {
 - **拓扑排序**：`toposort` / `topology` / `ranks`（Kahn 算法 + `Topo` 状态化遍历）
 - **强连通分量**：`scc` (Tarjan, 一遍 DFS) / `kosaraju`（两遍 DFS，第二遍在 `Reversed` 上）
 - **压缩图**：`condensation` 把每个 SCC 折叠成一个超节点，结果是 DAG
-- **遍历**：`dfs` / `bfs` / `postorder` 函数式入口，底层复用 `Dfs` / `Bfs` / `DfsPostorder` 遍历器
+- **遍历**：`dfs` / `bfs` / `postorder` 函数式入口，底层复用 `Dfs` / `Bfs` / `Postorder` 遍历器
 - **可达性**：`reachable` / `reachableFrom`
 - **度数**：`inDegrees` / `outDegrees`（图实现 `IntoDegree` 时走 O(1)，否则回退到边枚举）
 - **邻域**：`neighborhood(graph, start, k)` k-跳邻域

@@ -1,11 +1,11 @@
 /**
- * 测试覆盖：DFS 家族 - Dfs / DfsPostorder 状态化遍历器 + dfsVisit 事件回调。
+ * 测试覆盖：DFS 家族 - Dfs / Postorder 状态化遍历器 + dfsVisit 事件回调。
  */
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   Dfs,
-  DfsPostorder,
+  Postorder,
   dfsVisit,
   type Control,
   type DfsEvent,
@@ -74,15 +74,15 @@ describe('Dfs', () => {
   });
 });
 
-describe('DfsPostorder', () => {
+describe('Postorder', () => {
   it('返回 finish 顺序：叶子先于内部', () => {
     const g = diamond();
-    expect(drain(DfsPostorder.start(g, id<NodeId>('a')).iterator(g))).toEqual(['d', 'b', 'c', 'a']);
+    expect(drain(Postorder.start(g, id<NodeId>('a')).iterator(g))).toEqual(['d', 'b', 'c', 'a']);
   });
 
   it('lazy 起点构造（new + next 才入栈）', () => {
     const g = diamond();
-    const post = new DfsPostorder(id<NodeId>('a'));
+    const post = new Postorder(id<NodeId>('a'));
     expect(post.stack.length).toBe(0); // 尚未消费
     const seq: NodeId[] = [];
     while (true) {
@@ -95,7 +95,7 @@ describe('DfsPostorder', () => {
 
   it('reset 清空全部', () => {
     const g = diamond();
-    const post = DfsPostorder.start(g, id<NodeId>('a'));
+    const post = Postorder.start(g, id<NodeId>('a'));
     drain(post.iterator(g));
     post.reset();
     expect(post.discovered.size).toBe(0);

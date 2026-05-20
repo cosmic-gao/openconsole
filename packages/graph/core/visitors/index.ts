@@ -4,7 +4,7 @@
  * @remarks
  * 提供两种访问风格：
  *
- * 1. **状态化遍历器** ({@link Dfs}、{@link Bfs}、{@link DfsPostorder}、{@link Topo})
+ * 1. **状态化遍历器** ({@link Dfs}、{@link Bfs}、{@link Postorder}、{@link Topo})
  *    - 暴露 `next(graph)` 接口，调用方控制推进节奏；
  *    - 支持 `moveTo` / `reset` 重新开始；
  *    - 内部使用 `Set<NodeId>` 维护已访问集合，`O(1)` 查询。
