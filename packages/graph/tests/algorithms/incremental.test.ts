@@ -125,4 +125,48 @@ describe('IncrementalTopo', () => {
     g.addNode(new Node(id<NodeId>('ghost')));
     expect(topo.rank(id<NodeId>('ghost'))).toBeUndefined();
   });
+
+  it('sorted() dense 快路径：连续 add 保持稠密、按 rank 直接填入', () => {
+    const g = buildGraph('seq', [['a', 'b']]);
+    const topo = new IncrementalTopo(g);
+
+    // 连续追加孤立节点 — 始终稠密
+    g.addNode(new Node(id<NodeId>('c')));
+    g.addNode(new Node(id<NodeId>('d')));
+    g.addNode(new Node(id<NodeId>('e')));
+
+    // dense 路径走 new Array(size) + 按 rank 下标填入 — O(N)
+    expect(topo.sorted()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    topo.dispose();
+  });
+
+  it('sorted() dense 边界：删末位 rank 仍保持稠密', () => {
+    const g = buildGraph('seq', [['a', 'b']]);
+    const topo = new IncrementalTopo(g);
+    g.addNode(new Node(id<NodeId>('c')));
+    expect(topo.sorted()).toEqual(['a', 'b', 'c']);
+
+    // 删末位 c — _maxRank 应自动下降，dense=true 维持
+    g.removeNode(id<NodeId>('c'));
+    expect(topo.sorted()).toEqual(['a', 'b']);
+
+    // 再 add d — 占用刚释放的 rank 槽位，仍稠密
+    g.addNode(new Node(id<NodeId>('d')));
+    expect(topo.sorted()).toEqual(['a', 'b', 'd']);
+    topo.dispose();
+  });
+
+  it('sorted() sparse 路径：删中间 rank 退化为 sort', () => {
+    const g = buildGraph('seq', [['a', 'b']]);
+    const topo = new IncrementalTopo(g);
+    g.addNode(new Node(id<NodeId>('c')));
+    g.addNode(new Node(id<NodeId>('d')));
+
+    // 删中间 b（rank=1）— 留空隙，dense=false
+    g.removeNode(id<NodeId>('b'));
+
+    // sparse 路径走 entries + sort — 仍正确
+    expect(topo.sorted()).toEqual(['a', 'c', 'd']);
+    topo.dispose();
+  });
 });

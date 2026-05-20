@@ -3,12 +3,23 @@
  */
 
 /**
+ * 比较函数：`compare(a, b) < 0` 表示 `a` 应排在 `b` 前面（升序 / 最小堆语义）。
+ *
+ * @remarks 内部类型，仅在 {@link Heap} 构造器签名中使用，不向外部暴露
+ *   （维持"Heap 是内部工具"的封装约束）。
+ *
+ * @template T 元素类型
+ * @internal
+ */
+type Comparator<T> = (a: T, b: T) => number;
+
+/**
  * 通用二叉最小堆。
  *
  * @remarks
- * - 用比较函数排序（默认升序）；
+ * - 用 {@link Comparator} 比较函数排序（默认升序）；
  * - 不支持原地 decrease-key — 算法调用方采用"重复入堆 + 出堆时跳过过期条目"的 lazy 模式。
- *   这是 Dijkstra/Prim 的常见做法，复杂度依旧是 O((V+E) log V)，多 push 一次的开销可忽略。
+ *   这是 Dijkstra / Prim 的常见做法，复杂度依旧是 O((V+E) log V)，多 push 一次的开销可忽略。
  *
  * @template T 元素类型
  */
@@ -18,11 +29,10 @@ export class Heap<T> {
   /**
    * 构造一个最小堆。
    *
-   * @param compare 比较函数：`compare(a, b) < 0` 表示 `a` 应排在 `b` 前面（最小堆）。
-   *   参数前缀的 `_` 是 TS "parameter property" 语法的私有字段命名约定，对外仅暴露行为，
-   *   不暴露名字。
+   * @param compare 比较函数；参数前缀的 `_` 是 TS "parameter property" 语法的私有字段
+   *   命名约定，对外仅暴露行为，不暴露名字。
    */
-  public constructor(private readonly _compare: (a: T, b: T) => number) {}
+  public constructor(private readonly _compare: Comparator<T>) {}
 
   /**
    * 当前元素个数。

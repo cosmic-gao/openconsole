@@ -5,6 +5,7 @@
 import type {
   Direction,
   EdgeId,
+  EdgeOf,
   EdgeView,
   Catalog,
   IntoDegree,
@@ -13,11 +14,6 @@ import type {
   NodeId,
 } from '../../types';
 import type { Predicate } from '../predicate';
-
-/**
- * 由图类型 `G` 推导边权重类型 `E`；G 不实现 {@link IntoEdges} 时退化为 `unknown`。
- */
-type EdgeOf<G> = G extends IntoEdges<infer E> ? E : unknown;
 
 /**
  * 节点过滤视图：仅暴露满足谓词的节点及与之相连的边。

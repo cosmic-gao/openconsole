@@ -199,10 +199,21 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   /**
    * 节点离图回调：从 ranks 中删除；不压紧（留空隙换 O(1)）。
    *
+   * @remarks 删除的若是末位 rank（且 `_dense=true` 即未提前破坏），降下 `_maxRank` 仍可
+   *   保持稠密；只有删中间位置才真正变稀疏。
+   *
    * @internal
    */
   private _removeNode(nodeId: NodeId): void {
-    if (this._ranks.delete(nodeId)) this._dense = false;
+    const rank = this._ranks.get(nodeId);
+    if (rank === undefined) return;
+    this._ranks.delete(nodeId);
+    if (rank === this._maxRank && this._dense) {
+      // 删的是末位且之前稠密 — 可压紧 _maxRank 而保持稠密
+      this._maxRank--;
+    } else {
+      this._dense = false;
+    }
     // 若被删节点曾在环上，环路信息也过期了（O(1) 查询）
     if (this._cycleSet.has(nodeId)) this._dirty = true;
   }

@@ -45,3 +45,12 @@ export interface IntoEdges<E = unknown> {
   /** 流出 `nodeId` 的边视图。 */
   getOutgoing(nodeId: NodeId): Iterable<EdgeView<E>>;
 }
+
+/**
+ * 由图类型 `G` 推导边权重类型 `E`；`G` 不实现 {@link IntoEdges} 时退化为 `unknown`。
+ *
+ * @remarks 适配器（{@link Reversed} / {@link NodeFilter} 等）的边权重泛型推导共享此 helper。
+ *
+ * @template G 图类型
+ */
+export type EdgeOf<G> = G extends IntoEdges<infer E> ? E : unknown;

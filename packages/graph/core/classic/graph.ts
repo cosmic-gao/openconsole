@@ -41,6 +41,16 @@ import { validate } from './validate';
  * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
  *   {@link topology} / {@link scc} 等独立函数（仅依赖访问者 trait）。
  *
+ * **两套边访问 API 如何选**：
+ *
+ * | API                              | 返回                       | 适用       |
+ * | -------------------------------- | -------------------------- | ---------- |
+ * | {@link incomingEdges} / {@link outgoingEdges} / {@link incidentEdges} | `Edge<E>[]`（数组 + 完整 Edge） | 用户面，需要直接读端口 / Endpoint |
+ * | {@link getEdges} / {@link getIncoming} / {@link getOutgoing}          | `Iterable<EdgeView<E>>`（lazy + 轻量视图） | 算法 / 适配器层，跨 trait 复用 |
+ *
+ * **邻居 API 同理**：{@link predecessors} / {@link successors} / {@link adjacencies} 返回数组，
+ * {@link incomingNeighbors} / {@link outgoingNeighbors} / {@link neighbors} 返回 lazy generator。
+ *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
  */
@@ -67,6 +77,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param id 图的唯一标识
    */
   public constructor(public readonly id: GraphId) {}
+
+  // #region 内部迭代器
 
   /**
    * 流式生成节点在指定方向上的边 ID（直接读端口的 `edges` 列表）。
@@ -96,6 +108,10 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     }
   }
 
+  // #endregion
+
+  // #region 节点与边的 CRUD
+
   /**
    * 加入一个节点。
    *
@@ -103,15 +119,13 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @template O 节点的输出 Sockets 形态
    * @param node 待加入的节点
    * @returns 当前图实例（链式调用）
-   * @throws 当同 ID 节点已存在时
+   * @throws {Error} 当同 ID 节点已存在时
    */
   public addNode<I extends Sockets, O extends Sockets>(node: Node<I, O, N>): this {
     if (this.nodes.has(node.id)) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] addNode: a node with id "${String(node.id)}" already exists.`,
-      );
+      throw this._err('addNode', `a node with id "${String(node.id)}" already exists.`);
     }
-    const vertex = node as unknown as Vertex<N>;
+    const vertex = toVertex(node);
     this.nodes.set(node.id, vertex);
     this._index.set(node.id, this._order.length);
     this._order.push(node.id);
@@ -240,7 +254,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    *
    * @param edge 待加入的边
    * @returns 当前图实例（链式调用）
-   * @throws 当出现以下任一情况：
+   * @throws {Error} 当出现以下任一情况：
    *  - 同 ID 的边已存在
    *  - 起点 / 终点节点不存在或与图中已注册实例不一致
    *  - 起点 / 终点端口在对应节点上找不到
@@ -249,18 +263,18 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    */
   public addEdge(edge: Edge<E>): this {
     if (this.edges.has(edge.id)) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] addEdge: an edge with id "${String(edge.id)}" already exists.`,
-      );
+      throw this._err('addEdge', `an edge with id "${String(edge.id)}" already exists.`);
     }
     if (!this.nodes.has(edge.sourceId)) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] addEdge "${String(edge.id)}": source node "${String(edge.sourceId)}" does not exist.`,
+      throw this._err(
+        `addEdge "${String(edge.id)}"`,
+        `source node "${String(edge.sourceId)}" does not exist.`,
       );
     }
     if (!this.nodes.has(edge.targetId)) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] addEdge "${String(edge.id)}": target node "${String(edge.targetId)}" does not exist.`,
+      throw this._err(
+        `addEdge "${String(edge.id)}"`,
+        `target node "${String(edge.targetId)}" does not exist.`,
       );
     }
     validate(this.id, edge, this.nodes);
@@ -278,7 +292,7 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param to `[目标节点 ID, 输入端口名]`
    * @param options 可选：自定义 `id` 与 `weight`
    * @returns 创建的 {@link Edge} 实例
-   * @throws 节点或端口不存在；或 {@link addEdge} 抛出的任何错误
+   * @throws {Error} 节点或端口不存在；或 {@link addEdge} 抛出的任何错误
    */
   public connect(
     from: readonly [NodeId, string],
@@ -290,27 +304,25 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
 
     const sourceNode = this.nodes.get(sourceNodeId);
     if (!sourceNode) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] connect: source node "${String(sourceNodeId)}" not found.`,
-      );
+      throw this._err('connect', `source node "${String(sourceNodeId)}" not found.`);
     }
     const targetNode = this.nodes.get(targetNodeId);
     if (!targetNode) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] connect: target node "${String(targetNodeId)}" not found.`,
-      );
+      throw this._err('connect', `target node "${String(targetNodeId)}" not found.`);
     }
 
     const sourcePort = sourceNode.outputs[sourcePortName];
     if (!sourcePort) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] connect: output port "${sourcePortName}" not found on node "${String(sourceNodeId)}".`,
+      throw this._err(
+        'connect',
+        `output port "${sourcePortName}" not found on node "${String(sourceNodeId)}".`,
       );
     }
     const targetPort = targetNode.inputs[targetPortName];
     if (!targetPort) {
-      throw new Error(
-        `[Graph "${String(this.id)}"] connect: input port "${targetPortName}" not found on node "${String(targetNodeId)}".`,
+      throw this._err(
+        'connect',
+        `input port "${targetPortName}" not found on node "${String(targetNodeId)}".`,
       );
     }
 
@@ -341,6 +353,10 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     return edge;
   }
 
+  // #endregion
+
+  // #region 边查询
+
   /**
    * 流入指定节点的所有边。
    *
@@ -362,7 +378,12 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   }
 
   /**
-   * 与指定节点关联的所有边（流入 + 流出，自环只出现一次）。
+   * 与指定节点关联的所有边（流入 + 流出，**自环边只出现一次** — 边集去重语义）。
+   *
+   * @remarks 与 {@link adjacencies} / {@link neighbors} 的"端点序列"语义不同：
+   *   后者对自环节点会 yield 两次（一次 as predecessor、一次 as successor）。
+   *
+   * @see {@link adjacencies}
    *
    * @param nodeId 节点 ID
    * @returns 边数组
@@ -408,38 +429,47 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     return [...this.edgesBetween(left, right), ...this.edgesBetween(right, left)];
   }
 
+  // #endregion
+
+  // #region 邻居与度数（用户面数组形式）
+
   /**
    * 指定节点的前驱节点（直接指向它的节点）。
+   *
+   * @remarks 等价于 `Array.from(incomingNeighbors(nodeId))`，为用户面提供的数组形式便捷封装；
+   *   算法层应优先用 {@link incomingNeighbors}（lazy generator）以避免中间数组。
    *
    * @param nodeId 节点 ID
    * @returns 节点 ID 数组
    */
   public predecessors(nodeId: NodeId): NodeId[] {
-    const result: NodeId[] = [];
-    for (const edge of this._edgesOf(nodeId, 'input')) result.push(edge.sourceId);
-    return result;
+    return Array.from(this.incomingNeighbors(nodeId));
   }
 
   /**
    * 指定节点的后继节点（被它直接指向的节点）。
    *
+   * @remarks 等价于 `Array.from(outgoingNeighbors(nodeId))`，为用户面提供的数组形式便捷封装。
+   *
    * @param nodeId 节点 ID
    * @returns 节点 ID 数组
    */
   public successors(nodeId: NodeId): NodeId[] {
-    const result: NodeId[] = [];
-    for (const edge of this._edgesOf(nodeId, 'output')) result.push(edge.targetId);
-    return result;
+    return Array.from(this.outgoingNeighbors(nodeId));
   }
 
   /**
    * 指定节点的所有邻居（前驱 + 后继）。
    *
+   * @remarks 等价于 `Array.from(neighbors(nodeId))`。**自环节点会出现 2 次**（一次作为 pred，
+   *   一次作为 succ），与 {@link incidentEdges} 的"自环只 1 次"语义不同 — 一个是端点序列，
+   *   一个是边集去重。如需唯一邻居集合，自行用 `new Set(adjacencies(id))`。
+   *
    * @param nodeId 节点 ID
    * @returns 节点 ID 数组
    */
   public adjacencies(nodeId: NodeId): NodeId[] {
-    return [...this.predecessors(nodeId), ...this.successors(nodeId)];
+    return Array.from(this.neighbors(nodeId));
   }
 
   /**
@@ -502,6 +532,10 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     return this.findEdge(source, target) !== undefined;
   }
 
+  // #endregion
+
+  // #region 杂项 / 序列化
+
   /**
    * 图是否为空（不含任何节点）。
    *
@@ -530,20 +564,30 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @returns 描述当前图的 {@link GraphJson} 结构
    */
   public toJson(): GraphJson<N, E> {
-    const nodes: JsonNode<N>[] = Array.from(this.nodes.values()).map(node => ({
-      id: node.id,
-      weight: node.weight,
-      inputs: portsJson(node.inputs),
-      outputs: portsJson(node.outputs),
-    }));
-    const edges: JsonEdge<E>[] = Array.from(this.edges.values()).map(edge => ({
-      id: edge.id,
-      source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
-      target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
-      weight: edge.weight,
-    }));
+    const nodes: JsonNode<N>[] = [];
+    for (const node of this.nodes.values()) {
+      nodes.push({
+        id: node.id,
+        weight: node.weight,
+        inputs: portsJson(node.inputs),
+        outputs: portsJson(node.outputs),
+      });
+    }
+    const edges: JsonEdge<E>[] = [];
+    for (const edge of this.edges.values()) {
+      edges.push({
+        id: edge.id,
+        source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
+        target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
+        weight: edge.weight,
+      });
+    }
     return { id: this.id, nodes, edges };
   }
+
+  // #endregion
+
+  // #region 事件订阅
 
   /**
    * 订阅图变更事件。
@@ -589,6 +633,10 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     this._signal.emit(event, payload);
   }
 
+  // #endregion
+
+  // #region 内部 helpers
+
   /**
    * 分配下一个可用边 ID（跳过已存在 ID 以避免冲突）。
    *
@@ -601,6 +649,22 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
     } while (this.edges.has(id));
     return id;
   }
+
+  /**
+   * 构造带图 ID 前缀的 Error；统一错误消息格式 `[Graph "<id>"] <op>: <msg>`。
+   *
+   * @remarks 保留 throw 在调用方原行号 — 仅 `new Error(...)` 在此函数内，不影响 stack trace
+   *   定位到具体的 throw 语句。
+   *
+   * @internal
+   */
+  private _err(op: string, msg: string): Error {
+    return new Error(`[Graph "${String(this.id)}"] ${op}: ${msg}`);
+  }
+
+  // #endregion
+
+  // #region Trait 实现（Catalog / Neighbors / IntoEdges / NodeIndexable / Visitable）
 
   /**
    * {@inheritDoc Catalog.nodeIds}
@@ -634,30 +698,40 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   /**
    * {@inheritDoc Neighbors.neighbors}
    *
-   * @remarks `direction` 省略时直接 yield 流入 + 流出邻居，避免 `adjacencies()`
-   *   构造中间数组。
+   * @remarks
+   * - `direction='input'`：仅前驱（{@link incomingNeighbors}）；
+   * - `direction='output'`：仅后继（{@link outgoingNeighbors}）；
+   * - 省略：流入邻居 + 流出邻居，**自环节点会出现 2 次**（端点序列语义）。
    */
   public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
     if (direction === 'input') {
-      for (const edge of this._edgesOf(nodeId, 'input')) yield edge.sourceId;
+      yield* this.incomingNeighbors(nodeId);
       return;
     }
     if (direction === 'output') {
-      for (const edge of this._edgesOf(nodeId, 'output')) yield edge.targetId;
+      yield* this.outgoingNeighbors(nodeId);
       return;
     }
+    yield* this.incomingNeighbors(nodeId);
+    yield* this.outgoingNeighbors(nodeId);
+  }
+
+  /**
+   * {@inheritDoc Neighbors.incomingNeighbors}
+   *
+   * @remarks lazy generator；不构造中间数组。
+   */
+  public *incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     for (const edge of this._edgesOf(nodeId, 'input')) yield edge.sourceId;
+  }
+
+  /**
+   * {@inheritDoc Neighbors.outgoingNeighbors}
+   *
+   * @remarks lazy generator；不构造中间数组。
+   */
+  public *outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
     for (const edge of this._edgesOf(nodeId, 'output')) yield edge.targetId;
-  }
-
-  /** {@inheritDoc Neighbors.incomingNeighbors} */
-  public incomingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    return this.predecessors(nodeId);
-  }
-
-  /** {@inheritDoc Neighbors.outgoingNeighbors} */
-  public outgoingNeighbors(nodeId: NodeId): Iterable<NodeId> {
-    return this.successors(nodeId);
   }
 
   /** {@inheritDoc IntoEdges.getEdges} */
@@ -701,6 +775,8 @@ export class Graph<N = unknown, E = unknown> implements Subscribable<N, E> {
   public reset(map: Map<NodeId, boolean>): void {
     for (const key of map.keys()) map.set(key, false);
   }
+
+  // #endregion
 }
 
 /**
@@ -715,4 +791,19 @@ function viewOf<E>(edge: Edge<E>): EdgeView<E> {
     target: edge.targetId,
     weight: edge.weight,
   };
+}
+
+/**
+ * 把用户面 {@link Node}`<I, O, W>` 投影为图存储面 {@link Vertex}`<W>`。
+ *
+ * @remarks
+ * 双层 `as unknown as` 是必要的类型擦除：`Node<I, O, N>` 与 `Node<Sockets, Sockets, N>`
+ * 在 TS 中不直接 assignable —— `inputs: Inputs<I>` 是 mapped type，且 Node 内部有可变字段
+ * （weight setter）使泛型保持 invariant。把 cast 集中到这个 helper 让调用方无须重复，并把
+ * "这是有意的、安全的擦除"集中文档化。
+ *
+ * @internal
+ */
+function toVertex<I extends Sockets, O extends Sockets, N>(node: Node<I, O, N>): Vertex<N> {
+  return node as unknown as Vertex<N>;
 }

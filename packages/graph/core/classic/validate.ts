@@ -18,7 +18,7 @@ import type { Port } from './port';
  * @param graphId 图 ID（错误消息上下文）
  * @param edge 待加入的边
  * @param nodes 图当前持有的节点 Map（按 ID 查找）
- * @throws 端点节点 / 端口未注册、方向错误或 Socket 不兼容时
+ * @throws {Error} 端点节点 / 端口未注册、方向错误或 Socket 不兼容时
  */
 export function validate<E>(
   graphId: unknown,

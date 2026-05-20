@@ -3,7 +3,7 @@
  */
 
 import { Graph } from '../classic';
-import { dumpEdge, dumpNode, loadEdge, loadNode, sameWeight } from './encode';
+import { dumpEdge, dumpNode, loadEdge, loadNode, sameWeight } from './internal';
 import type { GraphOp, GraphPatch } from './ops';
 import { mergeLookup, type SocketLookup } from './sockets';
 

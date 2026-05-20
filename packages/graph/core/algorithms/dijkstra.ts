@@ -58,7 +58,7 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
       const cost = edgeCost(edge);
       if (cost < 0) {
         throw new Error(
-          `dijkstra: 检测到负权边代价 ${cost}（边 "${String(edge.id)}"）；负权请改用 Bellman-Ford。`,
+          `dijkstra: negative edge cost ${cost} on edge "${String(edge.id)}"; use Bellman-Ford for negative weights.`,
         );
       }
       const candidate = dist + cost;

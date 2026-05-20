@@ -5,6 +5,7 @@
 import type {
   Direction,
   EdgeId,
+  EdgeOf,
   EdgeView,
   Catalog,
   IntoDegree,
@@ -14,11 +15,6 @@ import type {
   NodeIndexable,
   Visitable,
 } from '../types';
-
-/**
- * 由图类型 `G` 推导边权重类型 `E`；G 不实现 {@link IntoEdges} 时退化为 `unknown`。
- */
-type EdgeOf<G> = G extends IntoEdges<infer E> ? E : unknown;
 
 /** 空可迭代对象，O(1) 内存，用于 inner 缺 `getEdges` 时的安全回退。 */
 const EMPTY: Iterable<never> = { *[Symbol.iterator]() { /* 空迭代器，无元素 */ } };
@@ -159,6 +155,10 @@ implements
    * @remarks
    * 反向后的入度 = 原图的出度。inner 实现了 {@link IntoDegree} 时直接转发；
    * 否则枚举 `inner.outgoingNeighbors` 计数，与遍历语义一致。
+   *
+   * **性能注记**：fallback 路径下 `inDegree(v)` 与 {@link outDegree}(v) 各自做一次邻居枚举，
+   *   若 caller 同时调用两者会重复枚举。需要双向度数时优先让 inner 实现 {@link IntoDegree}，
+   *   或调用方自行缓存结果（如 {@link degrees}）。
    */
   public inDegree(nodeId: NodeId): number {
     if (this._caps.degree) return this.inner.outDegree!(nodeId);
@@ -170,7 +170,7 @@ implements
   /**
    * {@inheritDoc IntoDegree.outDegree}
    *
-   * @remarks 反向后的出度 = 原图的入度。
+   * @remarks 反向后的出度 = 原图的入度。fallback 性能注记同 {@link inDegree}。
    */
   public outDegree(nodeId: NodeId): number {
     if (this._caps.degree) return this.inner.inDegree!(nodeId);

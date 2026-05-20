@@ -12,9 +12,9 @@ import {
   Socket,
   type Input,
   type Output,
-} from '../classic';
-import { lookupPort, portsJson } from '../internal';
-import type { JsonEdge, JsonNode, Vertex } from '../types';
+} from '../../classic';
+import { lookupPort, portsJson } from '../../internal';
+import type { JsonEdge, JsonNode, Vertex } from '../../types';
 
 /**
  * 单个节点 → {@link JsonNode} 快照。
