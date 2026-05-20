@@ -12,7 +12,7 @@ import type { Catalog, Control, DfsEvent, Neighbors, NodeId } from '../types';
  * - 回调返回 {@link Control} 决定遍历继续 / 剪枝 / 中止；
  * - 事件参数详见 {@link DfsEvent}。
  */
-export interface DfsVisitor {
+export interface Visitor {
   /** 节点首次进入栈，准备访问其后继。 */
   discover?(event: DfsEvent): Control | void;
   /** 节点的所有后继都访问完毕，回溯前调用。 */
@@ -47,7 +47,7 @@ const BLACK = 2;
 export function visit<G extends Catalog & Neighbors>(
   graph: G,
   starts: Iterable<NodeId> | null,
-  visitor: DfsVisitor,
+  visitor: Visitor,
 ): Control {
   const color = new Map<NodeId, number>();
   let timer = 0;
