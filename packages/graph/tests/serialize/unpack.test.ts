@@ -7,7 +7,7 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   pack,
   Socket,
   unpack,
@@ -20,7 +20,7 @@ import {
 import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
-  const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
+  const n = new Vertex<Sockets, Sockets, T>(id<NodeId>(name), weight);
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;
@@ -59,7 +59,7 @@ describe('unpack', () => {
 
   it('target 选项：清空已有图后加载', () => {
     const target = new Graph<unknown, unknown>(id<GraphId>('placeholder'));
-    target.addNode(new Node(id<NodeId>('orphan')));
+    target.addNode(new Vertex(id<NodeId>('orphan')));
     const original = makeGraph();
     const restored = unpack(pack(original), { target });
     expect(restored).toBe(target);
@@ -91,7 +91,7 @@ describe('unpack', () => {
 
   it('unknown socket 名退化为 Socket.any', () => {
     const original = new Graph<unknown, unknown>(id<GraphId>('g'));
-    const N = new Node(id<NodeId>('N'));
+    const N = new Vertex(id<NodeId>('N'));
     N.addInput('p', new Socket('foo'));
     original.addNode(N);
     const restored = unpack(pack(original));

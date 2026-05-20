@@ -8,7 +8,7 @@
  * @internal
  */
 
-import type { NodeId, PortDict, Vertex } from '../types';
+import type { Node, NodeId, Ports } from '../types';
 import type { Edge } from './edge';
 import type { Port } from './port';
 
@@ -23,21 +23,21 @@ import type { Port } from './port';
 export function validate<E>(
   graphId: unknown,
   edge: Edge<E>,
-  nodes: ReadonlyMap<NodeId, Vertex<unknown>>,
+  nodes: ReadonlyMap<NodeId, Node<unknown>>,
 ): void {
   const sourcePort = edge.source.port;
   const targetPort = edge.target.port;
 
-  // 端点必须指向当前图实际持有的 Node 实例；否则端口列表会被记到一个"孤儿"节点上，
+  // 端点必须指向当前图实际持有的 Vertex 实例；否则端口列表会被记到一个"孤儿"节点上，
   // 导致 graph.outgoing(sourceId) 等邻接查询读不到这条边。
   if (nodes.get(edge.sourceId) !== edge.source.node) {
     throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source endpoint references a Node that is not the one registered under id "${String(edge.sourceId)}" in this graph.`,
+      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source endpoint references a Vertex that is not the one registered under id "${String(edge.sourceId)}" in this graph.`,
     );
   }
   if (nodes.get(edge.targetId) !== edge.target.node) {
     throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": target endpoint references a Node that is not the one registered under id "${String(edge.targetId)}" in this graph.`,
+      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": target endpoint references a Vertex that is not the one registered under id "${String(edge.targetId)}" in this graph.`,
     );
   }
 
@@ -75,7 +75,7 @@ export function validate<E>(
  *
  * @internal
  */
-function owns(ports: PortDict, target: Port): boolean {
+function owns(ports: Ports, target: Port): boolean {
   for (const key in ports) {
     if (ports[key] === target) return true;
   }

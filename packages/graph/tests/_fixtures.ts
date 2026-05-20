@@ -5,14 +5,14 @@
  * 每个节点固定一个 `x` 输入端口和 `y` 输出端口（均为 `Socket.number`），
  * 因此测试只需关注边的拓扑形态，不必关心端口绑定细节。
  */
-import { Edge, Endpoint, Graph, Node, Socket, type EdgeId, type GraphId, type NodeId, type Sockets, type Vertex } from '../core';
+import { Edge, Endpoint, Graph, Vertex, Socket, type EdgeId, type GraphId, type NodeId, type Sockets, type Node } from '../core';
 
 /** 把任意字符串字面量转为带品牌的 ID 类型，仅供测试代码使用。 */
 export const id = <T extends string>(v: string) => v as unknown as T;
 
 /** 创建带默认 `x`/`y` 端口的端口节点。 */
 export const portNode = (name: string) => {
-  const n = new Node(id<NodeId>(name));
+  const n = new Vertex(id<NodeId>(name));
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;
@@ -40,7 +40,7 @@ export function buildGraph<N = unknown, E = unknown>(
     if (!n) {
       n = portNode(name);
       cache.set(name, n);
-      g.addNode(n as Node<Sockets, Sockets, N> as unknown as Vertex<N>);
+      g.addNode(n as Vertex<Sockets, Sockets, N> as unknown as Node<N>);
     }
     return n;
   };

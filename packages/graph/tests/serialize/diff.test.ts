@@ -10,7 +10,7 @@ import {
   Endpoint,
   Graph,
   invert,
-  Node,
+  Vertex,
   Socket,
   type EdgeId,
   type GraphId,
@@ -20,7 +20,7 @@ import {
 import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
-  const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
+  const n = new Vertex<Sockets, Sockets, T>(id<NodeId>(name), weight);
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;
@@ -115,8 +115,8 @@ describe('apply', () => {
     const base = makeBase();
     const ext = makeExtended();
     const events: string[] = [];
-    base.on('nodeAdded', ({ node }: { node: { id: NodeId } }) => events.push(`+n:${node.id}`));
-    base.on('edgeAdded', ({ edge }: { edge: { id: EdgeId } }) => events.push(`+e:${edge.id}`));
+    base.signal.on('nodeAdded', ({ node }: { node: { id: NodeId } }) => events.push(`+n:${node.id}`));
+    base.signal.on('edgeAdded', ({ edge }: { edge: { id: EdgeId } }) => events.push(`+e:${edge.id}`));
     apply(base, diff(base, ext));
     expect(events).toContain('+n:C');
     expect(events).toContain('+e:e2');

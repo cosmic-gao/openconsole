@@ -2,9 +2,9 @@
  * unpack：从紧凑格式恢复完整图。
  */
 
-import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
+import { Edge, Endpoint, Graph, Vertex, Socket, type Input, type Output } from '../classic';
 import { lookupPort } from '../internal';
-import type { PortId, Vertex } from '../types';
+import type { PortId, Node } from '../types';
 import type { Compact, CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
@@ -32,11 +32,11 @@ export function unpack<N, E>(
 
   const sockets = mergeLookup(options?.sockets);
 
-  const nodeMap = new Map<typeof data.n[number][0], Vertex<unknown>>();
+  const nodeMap = new Map<typeof data.n[number][0], Node<unknown>>();
   for (const nodeData of data.n) {
     const node = unpackNode(nodeData, sockets);
     nodeMap.set(node.id, node);
-    graph.addNode(node as Vertex<N>);
+    graph.addNode(node as Node<N>);
   }
 
   for (const edgeData of data.e) {
@@ -70,7 +70,7 @@ export function unpack<N, E>(
 }
 
 /**
- * 还原 {@link CompactNode} 元组到 {@link Node} 实例。
+ * 还原 {@link CompactNode} 元组到 {@link Vertex} 实例。
  *
  * @param data 压缩节点元组
  * @param sockets Socket 名 → Socket 实例的查找表
@@ -79,9 +79,9 @@ export function unpack<N, E>(
 function unpackNode(
   data: CompactNode,
   sockets: ReadonlyMap<string, Socket>,
-): Vertex<unknown> {
+): Node<unknown> {
   const [id, weight, inputs, outputs] = data;
-  const node = new Node(id, weight) as Vertex<unknown>;
+  const node = new Vertex(id, weight) as Node<unknown>;
   unpackPorts(inputs, sockets, (name, socket, portId) => {
     node.addInput(name, socket, portId);
   });

@@ -8,7 +8,7 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   Socket,
   type EdgeId,
   type GraphId,
@@ -18,7 +18,7 @@ import {
 import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
-  const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
+  const n = new Vertex<Sockets, Sockets, T>(id<NodeId>(name), weight);
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;
@@ -55,7 +55,7 @@ describe('compressionRatio', () => {
 
   it('UTF-8 多字节字符长度准确', () => {
     const g = new Graph<string, unknown>(id<GraphId>('emoji'));
-    g.addNode(new Node(id<NodeId>('节点-🎉'), '中文节点权重 🚀'));
+    g.addNode(new Vertex(id<NodeId>('节点-🎉'), '中文节点权重 🚀'));
     const r = compressionRatio(g);
     expect(r.compressedBytes).toBeGreaterThan(0);
     expect(Number.isFinite(r.ratio)).toBe(true);

@@ -1,5 +1,5 @@
 /**
- * Node：图中的节点，携带类型化的输入/输出端口与数据载荷。
+ * Vertex：图中的节点，携带类型化的输入/输出端口与数据载荷。
  */
 
 import type { Inputs, NodeId, Outputs, PortId, Sockets } from '../types';
@@ -18,13 +18,13 @@ import { Output } from './output';
  * type AddIn = { lhs: Socket<'number'>; rhs: Socket<'number'> };
  * type AddOut = { sum: Socket<'number'> };
  *
- * const adder = new Node<AddIn, AddOut, { label: string }>('n1' as NodeId, { label: 'add' });
+ * const adder = new Vertex<AddIn, AddOut, { label: string }>('n1' as NodeId, { label: 'add' });
  * adder.addInput('lhs', Socket.number);
  * adder.addInput('rhs', Socket.number);
  * adder.addOutput('sum', Socket.number);
  * ```
  */
-export class Node<
+export class Vertex<
   I extends Sockets = Sockets,
   O extends Sockets = Sockets,
   W = unknown,

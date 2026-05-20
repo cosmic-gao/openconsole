@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { IncrementalTopo, Node, type NodeId } from '../../core';
+import { IncrementalTopo, Vertex, type NodeId } from '../../core';
 import { buildGraph, id } from '../_fixtures';
 
 const diamond = () => buildGraph('dmd', [
@@ -44,7 +44,7 @@ describe('IncrementalTopo', () => {
     expect(before).toEqual(['a', 'b', 'c', 'd']);
 
     // 加入孤立节点，应追加在末尾
-    g.addNode(new Node(id<NodeId>('extra')));
+    g.addNode(new Vertex(id<NodeId>('extra')));
     expect(topo.rank(id<NodeId>('extra'))).toBe(4);
     topo.dispose();
   });
@@ -122,7 +122,7 @@ describe('IncrementalTopo', () => {
     topo.dispose();
 
     // 加节点不应影响 topo 内部状态
-    g.addNode(new Node(id<NodeId>('ghost')));
+    g.addNode(new Vertex(id<NodeId>('ghost')));
     expect(topo.rank(id<NodeId>('ghost'))).toBeUndefined();
   });
 
@@ -131,9 +131,9 @@ describe('IncrementalTopo', () => {
     const topo = new IncrementalTopo(g);
 
     // 连续追加孤立节点 — 始终稠密
-    g.addNode(new Node(id<NodeId>('c')));
-    g.addNode(new Node(id<NodeId>('d')));
-    g.addNode(new Node(id<NodeId>('e')));
+    g.addNode(new Vertex(id<NodeId>('c')));
+    g.addNode(new Vertex(id<NodeId>('d')));
+    g.addNode(new Vertex(id<NodeId>('e')));
 
     // dense 路径走 new Array(size) + 按 rank 下标填入 — O(N)
     expect(topo.sorted()).toEqual(['a', 'b', 'c', 'd', 'e']);
@@ -143,7 +143,7 @@ describe('IncrementalTopo', () => {
   it('sorted() dense 边界：删末位 rank 仍保持稠密', () => {
     const g = buildGraph('seq', [['a', 'b']]);
     const topo = new IncrementalTopo(g);
-    g.addNode(new Node(id<NodeId>('c')));
+    g.addNode(new Vertex(id<NodeId>('c')));
     expect(topo.sorted()).toEqual(['a', 'b', 'c']);
 
     // 删末位 c — _maxRank 应自动下降，dense=true 维持
@@ -151,7 +151,7 @@ describe('IncrementalTopo', () => {
     expect(topo.sorted()).toEqual(['a', 'b']);
 
     // 再 add d — 占用刚释放的 rank 槽位，仍稠密
-    g.addNode(new Node(id<NodeId>('d')));
+    g.addNode(new Vertex(id<NodeId>('d')));
     expect(topo.sorted()).toEqual(['a', 'b', 'd']);
     topo.dispose();
   });
@@ -159,8 +159,8 @@ describe('IncrementalTopo', () => {
   it('sorted() sparse 路径：删中间 rank 退化为 sort', () => {
     const g = buildGraph('seq', [['a', 'b']]);
     const topo = new IncrementalTopo(g);
-    g.addNode(new Node(id<NodeId>('c')));
-    g.addNode(new Node(id<NodeId>('d')));
+    g.addNode(new Vertex(id<NodeId>('c')));
+    g.addNode(new Vertex(id<NodeId>('d')));
 
     // 删中间 b（rank=1）— 留空隙，dense=false
     g.removeNode(id<NodeId>('b'));

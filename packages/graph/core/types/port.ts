@@ -1,8 +1,8 @@
 /**
- * 端口字典派生类型：Sockets 形态 → Inputs/Outputs/Vertex/PortDict。
+ * 端口字典派生类型：Sockets 形态 → Inputs/Outputs/Node/Ports。
  */
 
-import type { Input, Node, Output, Port, Socket } from '../classic';
+import type { Input, Vertex, Output, Port, Socket } from '../classic';
 
 /** 节点端口名 → Socket 的映射，用于声明节点的输入/输出形态。 */
 export type Sockets = { readonly [key: string]: Socket };
@@ -22,23 +22,27 @@ export type Inputs<I extends Sockets> = { [K in keyof I]?: Input<I[K]> };
 export type Outputs<O extends Sockets> = { [K in keyof O]?: Output<O[K]> };
 
 /**
- * 图中的顶点（Graph 视角下的节点形态）。
+ * 图存储面的节点形态：把 {@link Vertex} 的 Sockets 泛型擦除为通用 {@link Sockets}，
+ * 仅保留权重 `W`，使 `Graph<N, E>` 可无差别容纳任意端口形态的节点。
  *
  * @remarks
- * 与用户面 {@link Node}`<I, O, W>` 对应的图存储形态：
- * - 用户面 {@link Node} 保留具体的输入 / 输出 Sockets 形态以做端口连接的编译期校验；
- * - 图存储面 `Vertex<W>` 把 Sockets 泛型擦除为通用 {@link Sockets}，仅保留节点权重 `W`，
- *   使 `Graph<N, E>` 可以无差别容纳任意端口形态的节点。
+ * 配对关系：
+ * - {@link Vertex}`<I, O, W>`：用户面构造类，保留具体 socket 类型契约（端口连接编译期校验）；
+ * - `Node<W>`：存储面别名，等价于 `Vertex<Sockets, Sockets, W>`。
  *
- * 借用图论术语：`Node` 是带强类型 socket 契约的"用户节点"，`Vertex` 是图存储意义上的"顶点"。
+ * 同一个实例在 TS 类型上两种视角自由切换 —— 用户调用 `addNode(vertex)` 时传入 {@link Vertex}，
+ * 一旦入图就以 `Node` 形态存于 `Graph.nodes` Map。
  *
  * @template W 节点数据载荷类型
  */
-export type Vertex<W = unknown> = Node<Sockets, Sockets, W>;
+export type Node<W = unknown> = Vertex<Sockets, Sockets, W>;
 
 /**
- * 端口字典抽象 - 给底层算法/序列化用。
+ * 端口集合的抽象形态 —— 端口名 → 端口实例的字典，供底层算法 / 序列化遍历。
+ *
+ * @remarks 与具名字典 {@link Inputs}`<I>` / {@link Outputs}`<O>` 的区别：本类型不绑定
+ *   具体 Sockets 形态，仅按端口的运行时类型 `P` 参数化，便于复用端口处理逻辑。
  *
  * @template P 端口具体类型
  */
-export type PortDict<P extends Port = Port> = { readonly [key: string]: P | undefined };
+export type Ports<P extends Port = Port> = { readonly [key: string]: P | undefined };

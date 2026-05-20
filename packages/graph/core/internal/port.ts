@@ -7,7 +7,7 @@
 // 仅类型 import：internal ↔ classic（barrel 中含 Graph，Graph 又依赖 internal）
 // 构成循环；只有保持 `import type` 才能让 TS 擦除消解，不可升级为值 import。
 import type { Port } from '../classic';
-import type { PortDict, PortId } from '../types';
+import type { Ports, PortId } from '../types';
 
 /** 压缩格式中单个端口的元组形态：`[name, portId, socketName]`。 */
 type Tuple = [string, PortId, string];
@@ -23,7 +23,7 @@ type Tuple = [string, PortId, string];
  * @returns 命中的端口；未找到时返回 `undefined`
  */
 export function lookupPort<P extends Port>(
-  ports: PortDict<P>,
+  ports: Ports<P>,
   id: PortId,
 ): P | undefined {
   for (const key in ports) {
@@ -41,7 +41,7 @@ export function lookupPort<P extends Port>(
  * @returns 紧凑元组数组；空字典返回 `null`
  */
 export function compactPorts(
-  ports: PortDict,
+  ports: Ports,
   forward?: ReadonlyMap<string, string>,
 ): ReadonlyArray<Tuple> | null {
   const result: Tuple[] = [];
@@ -61,7 +61,7 @@ export function compactPorts(
  * @returns `{ portName: { id, socket } | null }` 形态
  */
 export function portsJson(
-  ports: PortDict,
+  ports: Ports,
 ): Record<string, { id: PortId; socket: string } | null> {
   const result: Record<string, { id: PortId; socket: string } | null> = {};
   for (const name in ports) {

@@ -7,7 +7,7 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   Socket,
   isolated,
   sinks,
@@ -21,7 +21,7 @@ import { id, portNode } from '../_fixtures';
 const newGraph = () => new Graph<unknown, unknown>(id<GraphId>('g'));
 
 const makeStrNode = (name: string) => {
-  const n = new Node(id<NodeId>(name));
+  const n = new Vertex(id<NodeId>(name));
   n.addInput('s', Socket.string);
   n.addOutput('s', Socket.string);
   return n;
@@ -54,7 +54,7 @@ describe('Graph - 基础结构', () => {
       g.addEdge(new Edge(id<EdgeId>('e2'),
         new Endpoint(fakeA, fakeA.output('y')!),
         new Endpoint(B, B.input('x')!)));
-    }).toThrow(/source endpoint references a Node that is not the one registered/);
+    }).toThrow(/source endpoint references a Vertex that is not the one registered/);
 
     // 3. source 是 input 端口：先在 _owns 阶段被拒（input 不属于 node.outputs）
     expect(() => {

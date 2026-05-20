@@ -8,31 +8,30 @@ import type {
   EdgeId,
   Events,
   GraphId,
-  Listener,
+  Node,
   NodeId,
   Sockets,
   Subscribable,
-  Vertex,
 } from '../types';
 import { Edge } from './edge';
 import { Endpoint } from './endpoint';
-import type { Node } from './node';
 import { Registry } from './registry';
 import { validate } from './validate';
+import type { Vertex } from './vertex';
 
 /**
  * 图模型层：储存 + CRUD + Catalog / NodeIndexable / Visitable trait + 事件订阅。
  *
  * @remarks 通过组合两个服务实例完成职责委派：
  * - {@link Registry}：节点 ID ↔ 稠密索引双向映射，承接 NodeIndexable trait；
- * - {@link Signal}：类型化事件总线，承接 Subscribable trait（{@link on} / {@link off} facade）。
+ * - {@link Signal}：类型化事件总线，作为 `signal` 字段直接暴露，承接 Subscribable trait。
  *
  * @template N 节点附带的数据载荷类型
  * @template E 边附带的数据载荷类型
  */
 export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
-  /** 节点存储：NodeId → Vertex。 */
-  public readonly nodes = new Map<NodeId, Vertex<N>>();
+  /** 节点存储：NodeId → Node。 */
+  public readonly nodes = new Map<NodeId, Node<N>>();
 
   /** 边存储：EdgeId → Edge。 */
   public readonly edges = new Map<EdgeId, Edge<E>>();
@@ -40,8 +39,13 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 稠密索引（组合）：维护节点 ID ↔ 索引的双向映射。 */
   private readonly _registry = new Registry();
 
-  /** 事件总线（组合）：承载 {@link Events}。 */
-  private readonly _signal = new Signal<Events<N, E>>();
+  /**
+   * 事件总线（组合）：承载 {@link Events}。
+   *
+   * @remarks 直接对外暴露 —— 调用方使用 `signal.on / once / watch / off` 等全套 API
+   *   订阅图变更事件。
+   */
+  public readonly signal = new Signal<Events<N, E>>();
 
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
@@ -58,18 +62,18 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    *
    * @template I 节点的输入 Sockets 形态
    * @template O 节点的输出 Sockets 形态
-   * @param node 待加入的节点
+   * @param vertex 待加入的节点（强类型 {@link Vertex}，入图后以 {@link Node} 形态存储）
    * @returns 当前图实例（链式调用）
    * @throws {Error} 当同 ID 节点已存在时
    */
-  public addNode<I extends Sockets, O extends Sockets>(node: Node<I, O, N>): this {
-    if (this.nodes.has(node.id)) {
-      throw this._error('addNode', `a node with id "${String(node.id)}" already exists.`);
+  public addNode<I extends Sockets, O extends Sockets>(vertex: Vertex<I, O, N>): this {
+    if (this.nodes.has(vertex.id)) {
+      throw this._error('addNode', `a node with id "${String(vertex.id)}" already exists.`);
     }
-    const vertex = toVertex(node);
-    this.nodes.set(node.id, vertex);
-    this._registry.add(node.id);
-    this._signal.emit('nodeAdded', { node: vertex });
+    const node = toNode(vertex);
+    this.nodes.set(vertex.id, node);
+    this._registry.add(vertex.id);
+    this.signal.emit('nodeAdded', { node });
     return this;
   }
 
@@ -82,7 +86,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    * @returns 被移除的节点；不存在时返回 `undefined`
    */
-  public removeNode(nodeId: NodeId): Vertex<N> | undefined {
+  public removeNode(nodeId: NodeId): Node<N> | undefined {
     const node = this.nodes.get(nodeId);
     if (!node) return undefined;
 
@@ -103,12 +107,12 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
       if (edge.sourceId !== nodeId) edge.source.port.detach(edge.id);
       if (edge.targetId !== nodeId) edge.target.port.detach(edge.id);
       this.edges.delete(edgeId);
-      this._signal.emit('edgeRemoved', { edge });
+      this.signal.emit('edgeRemoved', { edge });
     }
 
     this._registry.remove(nodeId);
     this.nodes.delete(nodeId);
-    this._signal.emit('nodeRemoved', { node });
+    this.signal.emit('nodeRemoved', { node });
     return node;
   }
 
@@ -118,7 +122,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param nodeId 节点 ID
    * @returns 节点实例；不存在时返回 `undefined`
    */
-  public getNode(nodeId: NodeId): Vertex<N> | undefined {
+  public getNode(nodeId: NodeId): Node<N> | undefined {
     return this.nodes.get(nodeId);
   }
 
@@ -184,7 +188,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     this.edges.set(edge.id, edge);
     edge.source.port.attach(edge.id);
     edge.target.port.attach(edge.id);
-    this._signal.emit('edgeAdded', { edge });
+    this.signal.emit('edgeAdded', { edge });
     return this;
   }
 
@@ -252,7 +256,7 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     edge.source.port.detach(edge.id);
     edge.target.port.detach(edge.id);
     this.edges.delete(edgeId);
-    this._signal.emit('edgeRemoved', { edge });
+    this.signal.emit('edgeRemoved', { edge });
     return edge;
   }
 
@@ -343,45 +347,6 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
 
   // #endregion
 
-  // #region 事件订阅（委托给 _signal）
-
-  /**
-   * 订阅图变更事件。
-   *
-   * @template K 事件名
-   * @param event 事件名
-   * @param listener 回调
-   * @returns 取消订阅函数
-   *
-   * @example
-   * ```ts
-   * const off = graph.on('edgeAdded', ({ edge }) => console.log(edge.id));
-   * off(); // 取消订阅
-   * ```
-   */
-  public on<K extends keyof Events>(
-    event: K,
-    listener: Listener<Events<N, E>[K]>,
-  ): () => void {
-    return this._signal.on(event, listener);
-  }
-
-  /**
-   * 取消订阅指定回调。
-   *
-   * @template K 事件名
-   * @param event 事件名
-   * @param listener 之前传给 {@link on} 的回调
-   */
-  public off<K extends keyof Events>(
-    event: K,
-    listener: Listener<Events<N, E>[K]>,
-  ): void {
-    this._signal.off(event, listener);
-  }
-
-  // #endregion
-
   // #region 内部 helpers
 
   /**
@@ -413,16 +378,16 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
 }
 
 /**
- * 把用户面 {@link Node}`<I, O, W>` 投影为图存储面 {@link Vertex}`<W>`。
+ * 把用户面 {@link Vertex}`<I, O, W>` 投影为图存储面 {@link Node}`<W>`。
  *
  * @remarks
- * 双层 `as unknown as` 是必要的类型擦除：`Node<I, O, N>` 与 `Node<Sockets, Sockets, N>`
- * 在 TS 中不直接 assignable —— `inputs: Inputs<I>` 是 mapped type，且 Node 内部有可变字段
+ * 双层 `as unknown as` 是必要的类型擦除：`Vertex<I, O, N>` 与 `Vertex<Sockets, Sockets, N>`
+ * 在 TS 中不直接 assignable —— `inputs: Inputs<I>` 是 mapped type，且 Vertex 内部有可变字段
  * （weight setter）使泛型保持 invariant。把 cast 集中到这个 helper 让调用方无须重复，并把
  * "这是有意的、安全的擦除"集中文档化。
  *
  * @internal
  */
-function toVertex<I extends Sockets, O extends Sockets, N>(node: Node<I, O, N>): Vertex<N> {
-  return node as unknown as Vertex<N>;
+function toNode<I extends Sockets, O extends Sockets, N>(vertex: Vertex<I, O, N>): Node<N> {
+  return vertex as unknown as Node<N>;
 }

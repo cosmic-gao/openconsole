@@ -79,10 +79,10 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   ) {
     this._recompute();
     this._unsubscribers.push(
-      _graph.on('nodeAdded', ({ node }) => this._addNode(node.id)),
-      _graph.on('nodeRemoved', ({ node }) => this._removeNode(node.id)),
-      _graph.on('edgeAdded', ({ edge }) => this._addEdge(edge.sourceId, edge.targetId)),
-      _graph.on('edgeRemoved', () => this._removeEdge()),
+      _graph.signal.on('nodeAdded', ({ node }) => this._addNode(node.id)),
+      _graph.signal.on('nodeRemoved', ({ node }) => this._removeNode(node.id)),
+      _graph.signal.on('edgeAdded', ({ edge }) => this._addEdge(edge.sourceId, edge.targetId)),
+      _graph.signal.on('edgeRemoved', () => this._removeEdge()),
     );
   }
 

@@ -7,7 +7,7 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   packRemap,
   Socket,
   unpackRemap,
@@ -19,7 +19,7 @@ import {
 import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
-  const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
+  const n = new Vertex<Sockets, Sockets, T>(id<NodeId>(name), weight);
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;

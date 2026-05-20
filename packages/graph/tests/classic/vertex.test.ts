@@ -1,14 +1,14 @@
 /**
- * 测试覆盖：Node 端口注册 / 移除 / 查询与 weight 读写。
+ * 测试覆盖：Vertex 端口注册 / 移除 / 查询与 weight 读写。
  */
 import { describe, expect, it } from 'vitest';
 
-import { Node, Socket, type NodeId, type Sockets } from '../../core';
+import { Vertex, Socket, type NodeId, type Sockets } from '../../core';
 import { id, portNode } from '../_fixtures';
 
-describe('Node', () => {
+describe('Vertex', () => {
   it('addInput / addOutput 注册端口并自动生成 ID', () => {
-    const n = new Node(id<NodeId>('A'));
+    const n = new Vertex(id<NodeId>('A'));
     const inp = n.addInput('x', Socket.number);
     const out = n.addOutput('y', Socket.number);
     expect(inp.id).toBe('A:input:x');
@@ -29,7 +29,7 @@ describe('Node', () => {
   });
 
   it('weight 可读写', () => {
-    const n = new Node<Sockets, Sockets, { label: string }>(id<NodeId>('A'), { label: 'init' });
+    const n = new Vertex<Sockets, Sockets, { label: string }>(id<NodeId>('A'), { label: 'init' });
     expect(n.weight).toEqual({ label: 'init' });
     n.weight = { label: 'changed' };
     expect(n.weight?.label).toBe('changed');

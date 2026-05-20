@@ -12,13 +12,13 @@
  * - **边顺序**：保留图内 Map 插入顺序。
  */
 
-import { Edge, Endpoint, Graph, Node, Socket, type Input, type Output } from '../classic';
+import { Edge, Endpoint, Graph, Vertex, Socket, type Input, type Output } from '../classic';
 import { compactPorts, lookupPort } from '../internal';
 import type {
   EdgeId,
   NodeId,
   PortId,
-  Vertex,
+  Node,
 } from '../types';
 import { topology } from '../algorithms';
 import type { Compact, CompactEdge, CompactNode } from './compact';
@@ -143,10 +143,10 @@ export function unpackRemap<N, E>(
     keep ? (compactId as EdgeId) : (data.remap.edges[Number(compactId)] as EdgeId);
 
   // 重建节点
-  const nodeMap = new Map<NodeId, Vertex<unknown>>();
+  const nodeMap = new Map<NodeId, Node<unknown>>();
   for (const [compactId, weight, inputs, outputs] of data.compact.n) {
     const id = restoreNode(String(compactId));
-    const node = new Node(id, weight as N) as Vertex<N>;
+    const node = new Vertex(id, weight as N) as Node<N>;
     if (inputs) {
       for (const [name, portCompactId, socketName] of inputs) {
         node.addInput(
@@ -165,7 +165,7 @@ export function unpackRemap<N, E>(
         );
       }
     }
-    nodeMap.set(id, node as Vertex<unknown>);
+    nodeMap.set(id, node as Node<unknown>);
     graph.addNode(node);
   }
 

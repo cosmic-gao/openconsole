@@ -3,7 +3,7 @@
  */
 
 import type { NodeId, PortId } from '../types';
-import type { Node } from './node';
+import type { Vertex } from './vertex';
 import type { Port } from './port';
 
 /**
@@ -12,7 +12,7 @@ import type { Port } from './port';
  * @template N 节点类型
  * @template P 端口类型
  */
-export class Endpoint<N extends Node = Node, P extends Port = Port> {
+export class Endpoint<N extends Vertex = Vertex, P extends Port = Port> {
   /**
    * @param node 端点所在的节点
    * @param port 端点对应的端口

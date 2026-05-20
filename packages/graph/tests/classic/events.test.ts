@@ -1,9 +1,9 @@
 /**
- * 测试覆盖：Graph 事件系统 on/off/emit。
+ * 测试覆盖：Graph 事件系统（`signal.on / off / emit`）。
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { Graph, type Edge, type EdgeId, type GraphId, type NodeId, type Vertex } from '../../core';
+import { Graph, type Edge, type EdgeId, type GraphId, type NodeId, type Node } from '../../core';
 import { id, portNode } from '../_fixtures';
 
 const newGraph = () => new Graph<unknown, string>(id<GraphId>('g'));
@@ -12,7 +12,7 @@ describe('Graph events', () => {
   it('nodeAdded 在 addNode 后触发，回调收到节点引用', () => {
     const g = newGraph();
     const seen: string[] = [];
-    g.on('nodeAdded', ({ node }: { node: Vertex<unknown> }) => seen.push(String(node.id)));
+    g.signal.on('nodeAdded', ({ node }: { node: Node<unknown> }) => seen.push(String(node.id)));
     g.addNode(portNode('A'));
     g.addNode(portNode('B'));
     expect(seen).toEqual(['A', 'B']);
@@ -25,7 +25,7 @@ describe('Graph events', () => {
     g.addNode(A).addNode(B);
 
     const seen: EdgeId[] = [];
-    g.on('edgeAdded', ({ edge }: { edge: Edge<string> }) => seen.push(edge.id));
+    g.signal.on('edgeAdded', ({ edge }: { edge: Edge<string> }) => seen.push(edge.id));
     g.connect([id<NodeId>('A'), 'y'], [id<NodeId>('B'), 'x'], { id: id<EdgeId>('e1') });
     expect(seen).toEqual(['e1']);
   });
@@ -38,8 +38,8 @@ describe('Graph events', () => {
     g.connect([id<NodeId>('A'), 'y'], [id<NodeId>('B'), 'x'], { id: id<EdgeId>('e1') });
 
     const events: string[] = [];
-    g.on('edgeRemoved', ({ edge }: { edge: Edge<string> }) => events.push(`e-:${edge.id}`));
-    g.on('nodeRemoved', ({ node }: { node: Vertex<unknown> }) => events.push(`n-:${node.id}`));
+    g.signal.on('edgeRemoved', ({ edge }: { edge: Edge<string> }) => events.push(`e-:${edge.id}`));
+    g.signal.on('nodeRemoved', ({ node }: { node: Node<unknown> }) => events.push(`n-:${node.id}`));
     g.removeNode(id<NodeId>('A'));
     expect(events).toEqual(['e-:e1', 'n-:A']);
   });
@@ -47,10 +47,10 @@ describe('Graph events', () => {
   it('off 取消订阅', () => {
     const g = newGraph();
     const cb = vi.fn();
-    g.on('nodeAdded', cb);
+    g.signal.on('nodeAdded', cb);
     g.addNode(portNode('A'));
     expect(cb).toHaveBeenCalledTimes(1);
-    g.off('nodeAdded', cb);
+    g.signal.off('nodeAdded', cb);
     g.addNode(portNode('B'));
     expect(cb).toHaveBeenCalledTimes(1);
   });
@@ -58,7 +58,7 @@ describe('Graph events', () => {
   it('on 返回的取消函数等价于 off', () => {
     const g = newGraph();
     const cb = vi.fn();
-    const off = g.on('nodeAdded', cb);
+    const off = g.signal.on('nodeAdded', cb);
     g.addNode(portNode('A'));
     off();
     g.addNode(portNode('B'));
@@ -69,8 +69,8 @@ describe('Graph events', () => {
     const g = newGraph();
     const cb1 = vi.fn();
     const cb2 = vi.fn();
-    g.on('nodeAdded', cb1);
-    g.on('nodeAdded', cb2);
+    g.signal.on('nodeAdded', cb1);
+    g.signal.on('nodeAdded', cb2);
     g.addNode(portNode('A'));
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).toHaveBeenCalledTimes(1);
@@ -80,8 +80,8 @@ describe('Graph events', () => {
     const g = newGraph();
     g.addNode(portNode('A'));
     const cb = vi.fn();
-    g.on('nodeRemoved', cb);
-    g.on('edgeRemoved', cb);
+    g.signal.on('nodeRemoved', cb);
+    g.signal.on('edgeRemoved', cb);
     g.clear();
     expect(cb).not.toHaveBeenCalled();
   });

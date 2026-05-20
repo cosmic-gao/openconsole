@@ -2,11 +2,13 @@
  * 图变更事件载体与可订阅 trait。
  */
 
+import type { Signal } from '@opendesign/signal';
+
 // 仅类型 import：types ↔ classic 经 barrel 形成的循环只在 `import type` 下被
 // TS 擦除消解；切忌把下面的 `import type` 升级为值 import，否则会触发真正的
 // 运行时循环依赖。
 import type { Edge } from '../classic';
-import type { Vertex } from './port';
+import type { Node } from './port';
 
 /**
  * 图变更事件载体类型。
@@ -16,20 +18,18 @@ import type { Vertex } from './port';
  */
 export interface Events<N = unknown, E = unknown> {
   /** 新节点入图。 */
-  nodeAdded: { node: Vertex<N> };
+  nodeAdded: { node: Node<N> };
   /** 节点已离开图（其入/出边已先一步触发 `edgeRemoved`）。 */
-  nodeRemoved: { node: Vertex<N> };
+  nodeRemoved: { node: Node<N> };
   /** 新边入图。 */
   edgeAdded: { edge: Edge<E> };
   /** 边已离开图。 */
   edgeRemoved: { edge: Edge<E> };
 }
 
-/** 事件订阅者回调签名。 */
-export type Listener<P> = (payload: P) => void;
-
 /**
- * 可订阅图变更事件的能力 trait。
+ * 可订阅图变更事件的能力 trait —— 直接暴露内置 {@link Signal}，
+ * 调用方按需使用 `signal.on / once / watch / off` 等全套 API。
  *
  * @remarks
  * `IncrementalTopo` 等增量算法依赖此 trait 订阅原图的变更。
@@ -39,16 +39,5 @@ export type Listener<P> = (payload: P) => void;
  * @template E 边权重类型
  */
 export interface Subscribable<N = unknown, E = unknown> {
-  /**
-   * 订阅图变更事件。
-   *
-   * @template K 事件名
-   * @param event 事件名
-   * @param listener 回调
-   * @returns 取消订阅函数
-   */
-  on<K extends keyof Events>(
-    event: K,
-    listener: Listener<Events<N, E>[K]>,
-  ): () => void;
+  readonly signal: Signal<Events<N, E>>;
 }

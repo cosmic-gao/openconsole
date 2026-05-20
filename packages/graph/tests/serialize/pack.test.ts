@@ -7,7 +7,7 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   pack,
   Socket,
   type EdgeId,
@@ -18,7 +18,7 @@ import {
 import { id } from '../_fixtures';
 
 const makeNode = <T = unknown>(name: string, weight?: T) => {
-  const n = new Node<Sockets, Sockets, T>(id<NodeId>(name), weight);
+  const n = new Vertex<Sockets, Sockets, T>(id<NodeId>(name), weight);
   n.addInput('x', Socket.number);
   n.addOutput('y', Socket.number);
   return n;
@@ -68,7 +68,7 @@ describe('pack', () => {
 
   it('无端口的节点 inputs / outputs 字段为 null（节省字节）', () => {
     const g = new Graph<unknown, unknown>(id<GraphId>('g'));
-    g.addNode(new Node<Sockets, Sockets>(id<NodeId>('bare')));
+    g.addNode(new Vertex<Sockets, Sockets>(id<NodeId>('bare')));
     const packed = pack(g);
     expect(packed.n[0]).toEqual(['bare', undefined, null, null]);
   });

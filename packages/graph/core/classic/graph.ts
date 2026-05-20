@@ -21,15 +21,15 @@ import { Model } from './model';
  * @remarks
  * 设计要点：
  * - **分层结构**：{@link Model}（储存 + CRUD + 基础 trait + 事件订阅，内部组合
- *   {@link Registry} 与 {@link Emitter}） → {@link Graph}（查询层）单层继承；本类只
+ *   {@link Registry} 与 `Signal`） → {@link Graph}（查询层）单层继承；本类只
  *   追加查询层（边查询、邻居、IntoEdges trait、度数、序列化）。
  * - **无中央缓存**：邻接关系直接由各端口自有的 {@link Port.edges} 列表派生，
  *   任何结构变更后查询立刻反映新状态，无失效钩子；
  * - **O(1) NodeIndexable**：通过 {@link Model} 组合的 {@link Registry}，
  *   {@link at} / {@link indexOf} / {@link bound} 全部 O(1)；`removeNode` 使用 swap-and-pop，
  *   节点索引顺序在删除时**可能被打乱**；
- * - **变更事件**：通过 {@link on} 订阅节点 / 边的 add / remove，可用于增量算法
- *   （如 `IncrementalTopo`）订阅。
+ * - **变更事件**：通过 {@link signal}（`signal.on / once / watch / off`）订阅节点 / 边的
+ *   add / remove，可用于增量算法（如 `IncrementalTopo`）订阅。
  * - 拓扑排序、强连通分量等高阶算法不再挂在 Graph 上，请改用 {@link toposort} /
  *   {@link topology} / {@link scc} 等独立函数（仅依赖访问者 trait）。
  *

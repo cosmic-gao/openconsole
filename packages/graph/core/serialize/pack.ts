@@ -4,7 +4,7 @@
 
 import { Edge, Graph } from '../classic';
 import { compactPorts } from '../internal';
-import type { Vertex } from '../types';
+import type { Node } from '../types';
 import type { Compact, CompactEdge, CompactNode } from './compact';
 
 /**
@@ -32,7 +32,7 @@ export function pack<N, E>(graph: Graph<N, E>): Compact {
  *
  * @internal
  */
-function packNode(node: Vertex<unknown>): CompactNode {
+function packNode(node: Node<unknown>): CompactNode {
   return [node.id, node.weight, compactPorts(node.inputs), compactPorts(node.outputs)];
 }
 

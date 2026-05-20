@@ -1,5 +1,5 @@
 /**
- * Node / Edge ↔ JsonNode / JsonEdge 编解码（diff/apply 内部用）。
+ * Vertex / Edge ↔ JsonNode / JsonEdge 编解码（diff/apply 内部用）。
  *
  * @internal
  */
@@ -8,20 +8,20 @@ import {
   Edge,
   Endpoint,
   Graph,
-  Node,
+  Vertex,
   Socket,
   type Input,
   type Output,
 } from '../../classic';
 import { lookupPort, portsJson } from '../../internal';
-import type { JsonEdge, JsonNode, Vertex } from '../../types';
+import type { JsonEdge, JsonNode, Node } from '../../types';
 
 /**
  * 单个节点 → {@link JsonNode} 快照。
  *
  * @internal
  */
-export function dumpNode<N>(node: Vertex<N>): JsonNode<N> {
+export function dumpNode<N>(node: Node<N>): JsonNode<N> {
   return {
     id: node.id,
     weight: node.weight,
@@ -45,15 +45,15 @@ export function dumpEdge<E>(edge: Edge<E>): JsonEdge<E> {
 }
 
 /**
- * {@link JsonNode} → 重建的 Node 实例（带端口）。
+ * {@link JsonNode} → 重建的 Vertex 实例（带端口）。
  *
  * @internal
  */
 export function loadNode<N>(
   data: JsonNode<N>,
   sockets: ReadonlyMap<string, Socket>,
-): Vertex<N> {
-  const node = new Node(data.id, data.weight) as Vertex<N>;
+): Node<N> {
+  const node = new Vertex(data.id, data.weight) as Node<N>;
   for (const name in data.inputs) {
     const port = data.inputs[name];
     if (!port) continue;
