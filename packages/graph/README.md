@@ -2,6 +2,8 @@
 
 类型化端口、Trait 解耦、零成本视图与紧凑序列化的有向图核心模型。
 
+> 📚 **新手教程**：见 [`docs/index.md`](./docs/index.md) — 按主题拆分的 15 篇教程（intro / model / query / traits / traversal / toposort / scc / shortest / analysis / adapters / events / csr / serialize / errors / recipes）。
+
 ## 特性
 
 - **类型化端口模型**：`Vertex` 携带强类型 `Inputs` / `Outputs`；`Socket` 描述端口数据类型并校验边连接的兼容性
