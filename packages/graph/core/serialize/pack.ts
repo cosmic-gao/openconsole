@@ -5,7 +5,7 @@
 import { Edge, Graph } from '../classic';
 import { compactPorts } from '../internal';
 import type { Node } from '../types';
-import type { Compact, CompactEdge, CompactNode } from './compact';
+import { VERSION, type Compact, type CompactEdge, type CompactNode } from './compact';
 
 /**
  * 将图序列化为压缩格式（可用于 `JSON.stringify`）。
@@ -24,7 +24,7 @@ export function pack<N, E>(graph: Graph<N, E>): Compact {
   for (const node of graph.nodes.values()) nodes.push(packNode(node));
   const edges: CompactEdge[] = [];
   for (const edge of graph.edges.values()) edges.push(packEdge(edge));
-  return { g: graph.id, n: nodes, e: edges };
+  return { v: VERSION, g: graph.id, n: nodes, e: edges };
 }
 
 /**

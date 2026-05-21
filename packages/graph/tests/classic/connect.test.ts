@@ -40,19 +40,19 @@ describe('Graph.connect', () => {
     expect(edge.id).toBe('my-edge');
   });
 
-  it('未知节点抛错', () => {
+  it('未知节点抛 Missing', () => {
     const g = newGraph();
     g.addNode(portNode('A'));
     expect(() =>
       g.connect([id<NodeId>('A'), 'y'], [id<NodeId>('missing'), 'x']),
-    ).toThrow(/target node "missing" not found/);
+    ).toThrow(/node "missing" not found.*connect target/);
   });
 
-  it('未知端口名抛错', () => {
+  it('未知端口名抛 Missing', () => {
     const g = newGraph();
     g.addNode(portNode('A')).addNode(portNode('B'));
     expect(() =>
       g.connect([id<NodeId>('A'), 'nonexistent'], [id<NodeId>('B'), 'x']),
-    ).toThrow(/output port "nonexistent" not found/);
+    ).toThrow(/port "A:nonexistent" not found/);
   });
 });

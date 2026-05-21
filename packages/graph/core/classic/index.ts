@@ -19,3 +19,14 @@ export { Vertex } from './vertex';
 export { Endpoint } from './endpoint';
 export { Edge } from './edge';
 export { Graph } from './graph';
+export {
+  GraphError,
+  Duplicate,
+  Missing,
+  Cycle,
+  SocketMismatch,
+  Misdirected,
+  Negative,
+  Schema,
+  type Code,
+} from './errors';

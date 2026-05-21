@@ -1,23 +1,32 @@
 /**
- * scc：Tarjan 强连通分量算法（迭代 + typed-array）。
+ * scc：Pearce 2016 强连通分量算法（迭代 + 单 typed-array）。
  */
 
 import type { NodeId, Walkable } from '../types';
 
 /**
- * 强连通分量（Tarjan 算法，迭代 + typed-array 实现）。
+ * 强连通分量（Pearce 2016 算法，迭代 + 单 typed-array 实现）。
  *
  * @remarks
- * 状态机要点：`pending` 字段解决"子调用返回后才能更新父 `low`"的迭代-递归差异——
- * 递归版在子帧返回时立刻 `low(parent) = min(low(parent), low(child))`，迭代版必须
- * 等下一轮 while 回到父帧才能做这件事，所以把待回流的子节点 idx 记在父帧上。
+ * 相比 Tarjan 经典三数组实现（`disc` / `low` / `onStack` 共 ~9n 字节），本算法只用单个
+ * `rindex: Int32Array`（~4n 字节）+ 一个 SCC 候选栈，空间约 1/2、缓存命中显著更好。
+ *
+ * **rindex 三态编码**（同一个 slot 三段语义复用，靠正负号区分）：
+ * | 取值 | 含义 |
+ * | --- | --- |
+ * | `0` | 未访问 |
+ * | `> 0` | 当前 DFS 子树的 lowlink（初始 = preorder；遇 back/cross 到栈上节点时被拉低） |
+ * | `< 0` | 已完成，编码为 `-(component + 1)`，对应分量号 = `-rindex - 1` |
+ *
+ * **迭代-递归差异**：用 `pending` 字段挂在父栈帧上记下"子刚返回需要回流 low"，与 Tarjan 实现保持
+ * 同款技巧。每帧额外保留 `preorder` 字段以便 SCC 根判定（`rindex[v] === preorder[v]` ⇔ root）。
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
  * @returns 各分量的节点 ID 数组；分量内按 discover 顺序排列
  *
- * @see Tarjan, R. (1972). "Depth-first search and linear graph algorithms." SIAM J. Comput.
  * @see Pearce, D.J. (2016). "A space-efficient algorithm for finding SCCs." IPL 116(1).
+ * @see Tarjan, R. (1972). "Depth-first search and linear graph algorithms." SIAM J. Comput.
  * @see Tarjan, R. & Zwick, U. (2024). "Finding strong components using DFS." EJC 119.
  */
 export function scc<G extends Walkable>(graph: G): NodeId[][] {
@@ -31,71 +40,79 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
   }
   const n = nodes.length;
 
-  const UNVISITED = -1;
-  const disc = new Int32Array(n).fill(UNVISITED);
-  const low = new Int32Array(n);
-  const onStack = new Uint8Array(n);
+  const rindex = new Int32Array(n);
   const stack: number[] = [];
   const components: NodeId[][] = [];
-  let counter = 0;
 
-  type Frame = { node: number; iter: Iterator<NodeId>; pending: number };
+  let preorder = 1;
+  let component = 0;
+
+  type Frame = {
+    readonly node: number;
+    /** 入栈时的 preorder，用于根判定（rindex 可能被拉低，必须独立保留）。 */
+    readonly mark: number;
+    readonly iter: Iterator<NodeId>;
+    /** 上一轮下钻的子节点 idx；下一轮 while 顶部回流其 low 到当前 frame。 */
+    pending: number;
+  };
   const NONE = -1;
   const frames: Frame[] = [];
 
   const enter = (node: number): void => {
-    disc[node] = counter;
-    low[node] = counter;
-    counter++;
+    const mark = preorder++;
+    rindex[node] = mark;
     stack.push(node);
-    onStack[node] = 1;
     frames.push({
       node,
+      mark,
       iter: graph.downstream(nodes[node]!)[Symbol.iterator](),
       pending: NONE,
     });
   };
 
   for (let root = 0; root < n; root++) {
-    if (disc[root] !== UNVISITED) continue;
+    if (rindex[root] !== 0) continue;
     enter(root);
 
     while (frames.length > 0) {
       const frame = frames[frames.length - 1]!;
 
+      // 回流时只接受仍在栈上（>0）的子；已并入分量的子不再代表"可达祖先"。
       if (frame.pending !== NONE) {
         const child = frame.pending;
         frame.pending = NONE;
-        const childLow = low[child]!;
-        if (childLow < low[frame.node]!) low[frame.node] = childLow;
+        const childLow = rindex[child]!;
+        if (childLow > 0 && childLow < rindex[frame.node]!) {
+          rindex[frame.node] = childLow;
+        }
       }
 
       const step = frame.iter.next();
       if (!step.done) {
         const target = index.get(step.value);
-        // 边指向 nodeIds 之外的孤儿节点：静默跳过（同 internal/degree.ts 约定）。
-        if (target === undefined) continue;
-        if (disc[target] === UNVISITED) {
+        if (target === undefined) continue;        // 孤儿邻居：约定见 internal/degree.ts
+        const targetRank = rindex[target]!;
+        if (targetRank === 0) {
           frame.pending = target;
           enter(target);
-        } else if (onStack[target] === 1) {
-          const d = disc[target]!;
-          if (d < low[frame.node]!) low[frame.node] = d;
+        } else if (targetRank > 0 && targetRank < rindex[frame.node]!) {
+          rindex[frame.node] = targetRank;
         }
         continue;
       }
 
-      if (low[frame.node] === disc[frame.node]) {
-        const component: NodeId[] = [];
-        let popped: number;
+      // root[v] ⇔ rindex[v] 仍等于入栈时 mark（从未被拉低）。
+      if (rindex[frame.node] === frame.mark) {
+        const member: NodeId[] = [];
+        let w: number;
         do {
-          popped = stack.pop()!;
-          onStack[popped] = 0;
-          component.push(nodes[popped]!);
-        } while (popped !== frame.node);
-        // stack 弹出是 LIFO（晚发现的先出），reverse 还原 discover 顺序。
-        component.reverse();
-        components.push(component);
+          w = stack.pop()!;
+          rindex[w] = -(component + 1);
+          member.push(nodes[w]!);
+        } while (w !== frame.node);
+        member.reverse();                          // LIFO 弹出 → 反转恢复 discover 序
+        components.push(member);
+        component++;
       }
 
       frames.pop();

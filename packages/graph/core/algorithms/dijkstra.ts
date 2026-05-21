@@ -4,6 +4,7 @@
 
 import { PairingHeap, type PairingNode } from '@opendesign/heap';
 
+import { Negative } from '../classic';
 import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
 
 /** 堆中的待处理项：节点 + 距起点距离。 */
@@ -54,11 +55,7 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
     for (const edge of graph.getOutgoing(node)) {
       if (visited.has(edge.target)) continue;
       const cost = edgeCost(edge);
-      if (cost < 0) {
-        throw new Error(
-          `dijkstra: negative edge cost ${cost} on edge "${String(edge.id)}"; use Bellman-Ford for negative weights.`,
-        );
-      }
+      if (cost < 0) throw new Negative(cost, edge.id);
       const candidate = entry.dist + cost;
       const handle = handles.get(edge.target);
       if (handle !== undefined) {

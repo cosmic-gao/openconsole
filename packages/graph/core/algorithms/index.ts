@@ -19,4 +19,8 @@ export * from './degree';
 export * from './neighborhood';
 export * from './dijkstra';
 export * from './bidijkstra';
+export * from './astar';
+export * from './bridges';
+export * from './dominator';
+export * from './csr';
 export * from './weighted';

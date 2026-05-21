@@ -12,7 +12,7 @@
  * - **边顺序**：保留图内 Map 插入顺序。
  */
 
-import { Edge, Endpoint, Graph, Vertex, Socket, type Input, type Output } from '../classic';
+import { Edge, Endpoint, Graph, Schema, Vertex, Socket, type Input, type Output } from '../classic';
 import { compactPorts, lookupPort } from '../internal';
 import type {
   EdgeId,
@@ -21,7 +21,7 @@ import type {
   Node,
 } from '../types';
 import { topology } from '../algorithms';
-import type { Compact, CompactEdge, CompactNode } from './compact';
+import { VERSION, type Compact, type CompactEdge, type CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
 /**
@@ -107,7 +107,7 @@ export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
   }
 
   return {
-    compact: { g: graph.id, n, e },
+    compact: { v: VERSION, g: graph.id, n, e },
     remap: { nodes, edges, ports },
   };
 }
@@ -130,6 +130,9 @@ export function unpackRemap<N, E>(
     keepCompactIds?: boolean;
   },
 ): Graph<N, E> {
+  const version = data.compact.v ?? 1;
+  if (version !== VERSION) throw new Schema(version, VERSION);
+
   const graph = options?.target ?? new Graph<N, E>(data.compact.g);
   if (options?.target) graph.clear();
 
@@ -142,6 +145,7 @@ export function unpackRemap<N, E>(
   const restoreEdge = (compactId: string): EdgeId =>
     keep ? (compactId as EdgeId) : (data.remap.edges[Number(compactId)] as EdgeId);
 
+  return graph.batch(() => {
   // 重建节点
   const nodeMap = new Map<NodeId, Node<unknown>>();
   for (const [compactId, weight, inputs, outputs] of data.compact.n) {
@@ -199,5 +203,6 @@ export function unpackRemap<N, E>(
     );
   }
 
-  return graph;
+    return graph;
+  });
 }

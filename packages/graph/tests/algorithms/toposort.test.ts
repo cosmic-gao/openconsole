@@ -1,10 +1,10 @@
 /**
- * 测试覆盖：toposort / topology / cycles / isCyclic / ranks 与 CycleError。
+ * 测试覆盖：toposort / topology / cycles / isCyclic / ranks 与 Cycle 错误。
  */
 import { describe, expect, it } from 'vitest';
 
 import {
-  CycleError,
+  Cycle,
   cycles,
   isCyclic,
   ranks,
@@ -46,13 +46,14 @@ describe('toposort', () => {
     expect(order.indexOf(id<NodeId>('c'))).toBeLessThan(order.indexOf(id<NodeId>('d')));
   });
 
-  it('环图默认抛出 CycleError', () => {
-    expect(() => toposort(cycle3())).toThrowError(CycleError);
+  it('环图默认抛出 Cycle', () => {
+    expect(() => toposort(cycle3())).toThrowError(Cycle);
     try {
       toposort(cycle3());
     } catch (e) {
-      expect(e).toBeInstanceOf(CycleError);
-      expect((e as CycleError).cycleNodes.sort()).toEqual(['x', 'y', 'z']);
+      expect(e).toBeInstanceOf(Cycle);
+      expect([...(e as Cycle).nodes].sort()).toEqual(['x', 'y', 'z']);
+      expect((e as Cycle).code).toBe('cycle');
     }
   });
 

@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import { Edge } from './edge';
 import { Endpoint } from './endpoint';
+import { Duplicate, Missing } from './errors';
 import { Registry } from './registry';
 import { validate } from './validate';
 import type { Vertex } from './vertex';
@@ -50,6 +51,12 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
   /** 自增计数器，用于 {@link connect} 无 ID 时生成默认边 ID。 */
   private _sequence = 0;
 
+  /** 事务嵌套深度（计数器而非布尔，让 helper 可以互相组合）。 @internal */
+  private _depth = 0;
+
+  /** 事务期间累积、退出时按入队序 emit 的回调队列。 @internal */
+  private readonly _pending: Array<() => void> = [];
+
   /**
    * @param id 图的唯一标识
    */
@@ -64,16 +71,14 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @template O 节点的输出 Sockets 形态
    * @param vertex 待加入的节点（强类型 {@link Vertex}，入图后以 {@link Node} 形态存储）
    * @returns 当前图实例（链式调用）
-   * @throws {Error} 当同 ID 节点已存在时
+   * @throws {Duplicate} 当同 ID 节点已存在时
    */
   public addNode<I extends Sockets, O extends Sockets>(vertex: Vertex<I, O, N>): this {
-    if (this.nodes.has(vertex.id)) {
-      throw this._error('addNode', `a node with id "${String(vertex.id)}" already exists.`);
-    }
+    if (this.nodes.has(vertex.id)) throw new Duplicate('node', vertex.id);
     const node = toNode(vertex);
     this.nodes.set(vertex.id, node);
     this._registry.add(vertex.id);
-    this.signal.emit('nodeAdded', { node });
+    this._fire(() => this.signal.emit('nodeAdded', { node }));
     return this;
   }
 
@@ -107,12 +112,12 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
       if (edge.sourceId !== nodeId) edge.source.port.detach(edge.id);
       if (edge.targetId !== nodeId) edge.target.port.detach(edge.id);
       this.edges.delete(edgeId);
-      this.signal.emit('edgeRemoved', { edge });
+      this._fire(() => this.signal.emit('edgeRemoved', { edge }));
     }
 
     this._registry.remove(nodeId);
     this.nodes.delete(nodeId);
-    this.signal.emit('nodeRemoved', { node });
+    this._fire(() => this.signal.emit('nodeRemoved', { node }));
     return node;
   }
 
@@ -161,34 +166,20 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    *
    * @param edge 待加入的边
    * @returns 当前图实例（链式调用）
-   * @throws {Error} 当出现以下任一情况：
-   *  - 同 ID 的边已存在
-   *  - 起点 / 终点节点不存在或与图中已注册实例不一致
-   *  - 起点 / 终点端口在对应节点上找不到
-   *  - 起点不是输出端口、或终点不是输入端口
-   *  - 两端 Socket 类型不兼容
+   * @throws {Duplicate} 同 ID 的边已存在
+   * @throws {Missing} 起点 / 终点节点或端口在图中找不到
+   * @throws {Misdirected} 起点不是 output、或终点不是 input
+   * @throws {SocketMismatch} 两端 Socket 类型不兼容
    */
   public addEdge(edge: Edge<E>): this {
-    if (this.edges.has(edge.id)) {
-      throw this._error('addEdge', `an edge with id "${String(edge.id)}" already exists.`);
-    }
-    if (!this.nodes.has(edge.sourceId)) {
-      throw this._error(
-        `addEdge "${String(edge.id)}"`,
-        `source node "${String(edge.sourceId)}" does not exist.`,
-      );
-    }
-    if (!this.nodes.has(edge.targetId)) {
-      throw this._error(
-        `addEdge "${String(edge.id)}"`,
-        `target node "${String(edge.targetId)}" does not exist.`,
-      );
-    }
-    validate(this.id, edge, this.nodes);
+    if (this.edges.has(edge.id)) throw new Duplicate('edge', edge.id);
+    if (!this.nodes.has(edge.sourceId)) throw new Missing('node', edge.sourceId);
+    if (!this.nodes.has(edge.targetId)) throw new Missing('node', edge.targetId);
+    validate(edge, this.nodes);
     this.edges.set(edge.id, edge);
     edge.source.port.attach(edge.id);
     edge.target.port.attach(edge.id);
-    this.signal.emit('edgeAdded', { edge });
+    this._fire(() => this.signal.emit('edgeAdded', { edge }));
     return this;
   }
 
@@ -199,7 +190,8 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
    * @param to `[目标节点 ID, 输入端口名]`
    * @param options 可选：自定义 `id` 与 `weight`
    * @returns 创建的 {@link Edge} 实例
-   * @throws {Error} 节点或端口不存在；或 {@link addEdge} 抛出的任何错误
+   * @throws {Missing} 节点或端口不存在
+   * @throws 其他：转发自 {@link addEdge}（{@link Duplicate} / {@link Misdirected} / {@link SocketMismatch}）
    */
   public connect(
     from: readonly [NodeId, string],
@@ -210,26 +202,24 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     const [targetNodeId, targetPortName] = to;
 
     const sourceNode = this.nodes.get(sourceNodeId);
-    if (!sourceNode) {
-      throw this._error('connect', `source node "${String(sourceNodeId)}" not found.`);
-    }
+    if (!sourceNode) throw new Missing('node', sourceNodeId, 'connect source');
     const targetNode = this.nodes.get(targetNodeId);
-    if (!targetNode) {
-      throw this._error('connect', `target node "${String(targetNodeId)}" not found.`);
-    }
+    if (!targetNode) throw new Missing('node', targetNodeId, 'connect target');
 
     const sourcePort = sourceNode.outputs[sourcePortName];
     if (!sourcePort) {
-      throw this._error(
-        'connect',
-        `output port "${sourcePortName}" not found on node "${String(sourceNodeId)}".`,
+      throw new Missing(
+        'port',
+        `${String(sourceNodeId)}:${sourcePortName}` as never,
+        'connect source output',
       );
     }
     const targetPort = targetNode.inputs[targetPortName];
     if (!targetPort) {
-      throw this._error(
-        'connect',
-        `input port "${targetPortName}" not found on node "${String(targetNodeId)}".`,
+      throw new Missing(
+        'port',
+        `${String(targetNodeId)}:${targetPortName}` as never,
+        'connect target input',
       );
     }
 
@@ -256,8 +246,58 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     edge.source.port.detach(edge.id);
     edge.target.port.detach(edge.id);
     this.edges.delete(edgeId);
-    this.signal.emit('edgeRemoved', { edge });
+    this._fire(() => this.signal.emit('edgeRemoved', { edge }));
     return edge;
+  }
+
+  // #endregion
+
+  // #region 事务（批量 / 静默事件）
+
+  /**
+   * 事务化批量 CRUD：内部产生的 `nodeAdded` / `edgeAdded` / ... 事件被推迟到事务结束才统一派发。
+   *
+   * @remarks
+   * 适用场景：
+   * - 大图加载 / 反序列化时跳过 N×事件分发的开销；
+   * - 让 {@link IncrementalTopo} 等订阅者只在事务末尾感知一次终态，避免中间态触发昂贵重排。
+   *
+   * 事务嵌套用计数器实现；只有最外层退出时才 drain 事件队列。
+   * 如果回调抛错，仍会 drain 已累积的事件再上抛 —— 保证图结构与事件流不分裂。
+   *
+   * @param work 同步回调（避免事务跨越异步边界导致事件流乱序）
+   * @returns 回调返回值原样转出
+   */
+  public batch<T>(work: () => T): T {
+    this._depth++;
+    let result: T;
+    try {
+      result = work();
+    } catch (err) {
+      this._depth--;
+      if (this._depth === 0) this._drain();
+      throw err;
+    }
+    this._depth--;
+    if (this._depth === 0) this._drain();
+    return result;
+  }
+
+  /** 事务期间挂起、否则立即派发。 @internal */
+  private _fire(emit: () => void): void {
+    if (this._depth > 0) this._pending.push(emit);
+    else emit();
+  }
+
+  /**
+   * 排空挂起队列；先夺取再遍历，避免 handler 内的 batch() 把新事件追加到当前 drain 上。
+   *
+   * @internal
+   */
+  private _drain(): void {
+    if (this._pending.length === 0) return;
+    const queue = this._pending.splice(0, this._pending.length);
+    for (const emit of queue) emit();
   }
 
   // #endregion
@@ -360,18 +400,6 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
       id = `e${this._sequence++}` as EdgeId;
     } while (this.edges.has(id));
     return id;
-  }
-
-  /**
-   * 构造带图 ID 前缀的 Error；统一错误消息格式 `[Graph "<id>"] <op>: <msg>`。
-   *
-   * @remarks 保留 throw 在调用方原行号 —— 仅 `new Error(...)` 在此函数内，不影响 stack trace
-   *   定位到具体的 throw 语句。
-   *
-   * @internal
-   */
-  private _error(op: string, msg: string): Error {
-    return new Error(`[Graph "${String(this.id)}"] ${op}: ${msg}`);
   }
 
   // #endregion

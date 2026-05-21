@@ -2,10 +2,10 @@
  * unpack：从紧凑格式恢复完整图。
  */
 
-import { Edge, Endpoint, Graph, Vertex, Socket, type Input, type Output } from '../classic';
+import { Edge, Endpoint, Graph, Schema, Vertex, Socket, type Input, type Output } from '../classic';
 import { lookupPort } from '../internal';
 import type { PortId, Node } from '../types';
-import type { Compact, CompactNode } from './compact';
+import { VERSION, type Compact, type CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
 // 兼容旧调用：转出 SocketLookup 让外部测试 / 调用方仍可从 './unpack' 直接 import。
@@ -27,46 +27,53 @@ export function unpack<N, E>(
   data: Compact,
   options?: { target?: Graph<N, E>; sockets?: SocketLookup },
 ): Graph<N, E> {
+  // 历史 dump 缺 v 字段时按 1 处理；未来 schema 演进必须给出兼容路径或显式 reject。
+  const version = data.v ?? 1;
+  if (version !== VERSION) throw new Schema(version, VERSION);
+
   const graph = options?.target ?? new Graph<N, E>(data.g);
   if (options?.target) graph.clear();
 
   const sockets = mergeLookup(options?.sockets);
 
-  const nodeMap = new Map<typeof data.n[number][0], Node<unknown>>();
-  for (const nodeData of data.n) {
-    const node = unpackNode(nodeData, sockets);
-    nodeMap.set(node.id, node);
-    graph.addNode(node as Node<N>);
-  }
+  // batch 包裹大幅减少 N×事件 emit 开销，并让 IncrementalTopo 等订阅者只感知一次终态。
+  return graph.batch(() => {
+    const nodeMap = new Map<typeof data.n[number][0], Node<unknown>>();
+    for (const nodeData of data.n) {
+      const node = unpackNode(nodeData, sockets);
+      nodeMap.set(node.id, node);
+      graph.addNode(node as Node<N>);
+    }
 
-  for (const edgeData of data.e) {
-    const [id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, weight] = edgeData;
+    for (const edgeData of data.e) {
+      const [id, sourceNodeId, sourcePortId, targetNodeId, targetPortId, weight] = edgeData;
 
-    const sourceNode = nodeMap.get(sourceNodeId);
-    const targetNode = nodeMap.get(targetNodeId);
-    if (!sourceNode || !targetNode) {
-      throw new Error(
-        `Edge "${String(id)}" references missing nodes: ${String(sourceNodeId)} -> ${String(targetNodeId)}`,
+      const sourceNode = nodeMap.get(sourceNodeId);
+      const targetNode = nodeMap.get(targetNodeId);
+      if (!sourceNode || !targetNode) {
+        throw new Error(
+          `Edge "${String(id)}" references missing nodes: ${String(sourceNodeId)} -> ${String(targetNodeId)}`,
+        );
+      }
+
+      const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
+      const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
+      if (!sourcePort || !targetPort) {
+        throw new Error(`Edge "${String(id)}" references missing ports`);
+      }
+
+      graph.addEdge(
+        new Edge<E>(
+          id,
+          new Endpoint(sourceNode, sourcePort),
+          new Endpoint(targetNode, targetPort),
+          weight as E,
+        ),
       );
     }
 
-    const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
-    const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
-    if (!sourcePort || !targetPort) {
-      throw new Error(`Edge "${String(id)}" references missing ports`);
-    }
-
-    graph.addEdge(
-      new Edge<E>(
-        id,
-        new Endpoint(sourceNode, sourcePort),
-        new Endpoint(targetNode, targetPort),
-        weight as E,
-      ),
-    );
-  }
-
-  return graph;
+    return graph;
+  });
 }
 
 /**

@@ -46,7 +46,7 @@ describe('Graph - 基础结构', () => {
       g.addEdge(new Edge(id<EdgeId>('e1'),
         new Endpoint(orphan, orphan.output('y')!),
         new Endpoint(B, B.input('x')!)));
-    }).toThrow(/source node "Orphan" does not exist/);
+    }).toThrow(/node "Orphan" not found/);
 
     // 2. 端点指向同 ID 但不同实例的节点
     const fakeA = portNode('A');
@@ -54,14 +54,14 @@ describe('Graph - 基础结构', () => {
       g.addEdge(new Edge(id<EdgeId>('e2'),
         new Endpoint(fakeA, fakeA.output('y')!),
         new Endpoint(B, B.input('x')!)));
-    }).toThrow(/source endpoint references a Vertex that is not the one registered/);
+    }).toThrow(/referenced by edge "e2" source/);
 
     // 3. source 是 input 端口：先在 _owns 阶段被拒（input 不属于 node.outputs）
     expect(() => {
       g.addEdge(new Edge(id<EdgeId>('e3'),
         new Endpoint(A, A.input('x')!) as unknown as Endpoint,
         new Endpoint(B, B.input('x')!)));
-    }).toThrow(/source port "A:input:x" not found on node "A"/);
+    }).toThrow(/port "A:input:x" not found.*not on node "A"/);
 
     // 4. Socket 类型不兼容
     const C = makeStrNode('C');
@@ -70,7 +70,7 @@ describe('Graph - 基础结构', () => {
       g.addEdge(new Edge(id<EdgeId>('e4'),
         new Endpoint(A, A.output('y')!),
         new Endpoint(C, C.input('s')!)));
-    }).toThrow(/socket type "number" \(source\) is incompatible with "string" \(target\)/);
+    }).toThrow(/socket "number" \(source\) is incompatible with "string" \(target\)/);
   });
 
   it('addEdge 重复 ID 抛错', () => {

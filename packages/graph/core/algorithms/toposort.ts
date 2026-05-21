@@ -1,39 +1,26 @@
 /**
- * 拓扑排序家族：{@link CycleError} 及 toposort / topology / cycles / isCyclic / ranks。
+ * 拓扑排序家族：toposort / topology / cycles / isCyclic / ranks。
  *
  * @remarks 排序主体委托给 {@link Topo} 状态化遍历器；本模块只负责 `onCycle` 等便捷封装。
+ *   遇环时默认抛 {@link Cycle}（错误类型化层，定义见 `classic/errors`）。
  */
 
+import { Cycle } from '../classic';
 import type { Cycles, IntoDegree, NodeId, Topology, Walkable } from '../types';
 import { Topo } from '../visitors';
-
-/** 拓扑排序检测到环时抛出的错误。 */
-export class CycleError extends Error {
-  /** 环上的节点 ID 列表，按 Kahn 算法残余顺序记录。 */
-  public readonly cycleNodes: NodeId[];
-
-  /**
-   * @param cycleNodes 环上的节点 ID 列表
-   */
-  public constructor(cycleNodes: NodeId[]) {
-    super(`Cycle detected involving nodes: ${cycleNodes.map(String).join(' -> ')}`);
-    this.name = 'CycleError';
-    this.cycleNodes = cycleNodes;
-  }
-}
 
 /**
  * Kahn 算法拓扑排序。
  *
  * @template G 满足 {@link Walkable} 约束的图类型
  * @param graph 图实例
- * @param onCycle 检测到环时的回调，默认抛出 {@link CycleError}
+ * @param onCycle 检测到环时的回调，默认抛出 {@link Cycle}
  * @returns 拓扑顺序的节点 ID 序列
  */
 export function toposort<G extends Walkable>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => {
-    throw new CycleError(cycle);
+    throw new Cycle(cycle);
   },
 ): NodeId[] {
   return topology(graph, onCycle).order;

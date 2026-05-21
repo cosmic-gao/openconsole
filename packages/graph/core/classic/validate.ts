@@ -10,18 +10,19 @@
 
 import type { Node, NodeId, Ports } from '../types';
 import type { Edge } from './edge';
+import { Misdirected, Missing, SocketMismatch } from './errors';
 import type { Port } from './port';
 
 /**
  * 校验边在加入图前是否合法。
  *
- * @param graphId 图 ID（错误消息上下文）
  * @param edge 待加入的边
  * @param nodes 图当前持有的节点 Map（按 ID 查找）
- * @throws {Error} 端点节点 / 端口未注册、方向错误或 Socket 不兼容时
+ * @throws {Missing} 端点节点 / 端口未注册
+ * @throws {Misdirected} source 不是 output、target 不是 input
+ * @throws {SocketMismatch} 两端 Socket 不兼容
  */
 export function validate<E>(
-  graphId: unknown,
   edge: Edge<E>,
   nodes: ReadonlyMap<NodeId, Node<unknown>>,
 ): void {
@@ -31,42 +32,28 @@ export function validate<E>(
   // 端点必须指向当前图实际持有的 Vertex 实例；否则端口列表会被记到一个"孤儿"节点上，
   // 导致 graph.outgoing(sourceId) 等邻接查询读不到这条边。
   if (nodes.get(edge.sourceId) !== edge.source.node) {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source endpoint references a Vertex that is not the one registered under id "${String(edge.sourceId)}" in this graph.`,
-    );
+    throw new Missing('node', edge.sourceId, `referenced by edge "${String(edge.id)}" source`);
   }
   if (nodes.get(edge.targetId) !== edge.target.node) {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": target endpoint references a Vertex that is not the one registered under id "${String(edge.targetId)}" in this graph.`,
-    );
+    throw new Missing('node', edge.targetId, `referenced by edge "${String(edge.id)}" target`);
   }
 
   if (!owns(edge.source.node.outputs, sourcePort)) {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source port "${String(sourcePort.id)}" not found on node "${String(edge.source.nodeId)}".`,
-    );
+    throw new Missing('port', sourcePort.id, `not on node "${String(edge.source.nodeId)}"`);
   }
   if (!owns(edge.target.node.inputs, targetPort)) {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": target port "${String(targetPort.id)}" not found on node "${String(edge.target.nodeId)}".`,
-    );
+    throw new Missing('port', targetPort.id, `not on node "${String(edge.target.nodeId)}"`);
   }
 
   if (sourcePort.direction !== 'output') {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": source endpoint port "${String(sourcePort.id)}" must be an output port (got direction="${sourcePort.direction}").`,
-    );
+    throw new Misdirected('source', 'output', sourcePort.direction, sourcePort.id);
   }
   if (targetPort.direction !== 'input') {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": target endpoint port "${String(targetPort.id)}" must be an input port (got direction="${targetPort.direction}").`,
-    );
+    throw new Misdirected('target', 'input', targetPort.direction, targetPort.id);
   }
 
   if (!sourcePort.socket.matches(targetPort.socket)) {
-    throw new Error(
-      `[Graph "${String(graphId)}"] addEdge "${String(edge.id)}": socket type "${sourcePort.socket.name}" (source) is incompatible with "${targetPort.socket.name}" (target).`,
-    );
+    throw new SocketMismatch(sourcePort.socket.name, targetPort.socket.name, edge.id);
   }
 }
 

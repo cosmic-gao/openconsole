@@ -4,6 +4,7 @@
 
 import { PairingHeap, type PairingNode } from '@opendesign/heap';
 
+import { Negative } from '../classic';
 import type { Catalog, EdgeId, EdgeView, IntoEdges, NodeId } from '../types';
 
 /** 堆中的待处理项：节点 + 距搜索端点的距离。 */
@@ -40,11 +41,7 @@ const open = (origin: NodeId): Side => {
 };
 
 const guard = (cost: number, edgeId: EdgeId): void => {
-  if (cost < 0) {
-    throw new Error(
-      `bidijkstra: negative edge cost ${cost} on edge "${String(edgeId)}"; use Bellman-Ford for negative weights.`,
-    );
-  }
+  if (cost < 0) throw new Negative(cost, edgeId);
 };
 
 /**
