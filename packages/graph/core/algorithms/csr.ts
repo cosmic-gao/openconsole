@@ -162,6 +162,7 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
     graph: G,
     weight?: (from: NodeId, to: NodeId) => number,
   ): Csr {
+    // ─── 节点编号：NodeId → 稠密 idx ────────────────────────
     const nodes: NodeId[] = [];
     const index = new Map<NodeId, number>();
     for (const id of graph.nodeIds) {
@@ -172,14 +173,16 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
     }
     const n = nodes.length;
 
-    // 两遍扫描：第一遍数出度入度，第二遍填 targets。
+    // ─── 第一遍扫描：数每个节点的出度和入度 ───────────────
+    // 暂存到 offsets[i+1] —— 之所以是 i+1 而不是 i，是为了后面前缀和直接得到区间起点。
+    // 经典 CSR 构造技巧："计数存末位 + 前缀和" 一气呵成。
     const outOffsets = new Int32Array(n + 1);
     const inOffsets = new Int32Array(n + 1);
     for (let i = 0; i < n; i++) {
       const id = nodes[i]!;
       let out = 0;
       for (const t of graph.downstream(id)) {
-        if (index.has(t)) out++;
+        if (index.has(t)) out++;          // 跳过孤儿
       }
       outOffsets[i + 1] = out;
       let inc = 0;
@@ -188,20 +191,30 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
       }
       inOffsets[i + 1] = inc;
     }
-    // 前缀和
+
+    // ─── 前缀和：把"每节点度数"变成"每节点在 targets 中的起点" ───
+    // 计算后 outOffsets[i] = 节点 i 的出邻在 outTargets 中的起始下标
+    //         outOffsets[i+1] = 节点 i+1 的起点 = 节点 i 的终点（exclusive）
+    //         outOffsets[n] = 总出边数 E
     for (let i = 1; i <= n; i++) {
       outOffsets[i] = outOffsets[i]! + outOffsets[i - 1]!;
       inOffsets[i] = inOffsets[i]! + inOffsets[i - 1]!;
     }
 
+    // ─── 分配 targets / weights typed-array ─────────────────
     const e = outOffsets[n]!;
     const outTargets = new Int32Array(e);
     const inTargets = new Int32Array(inOffsets[n]!);
     const weights = weight ? new Float64Array(e) : undefined;
 
+    // outCursor[i] / inCursor[i]：第二遍扫描时记录节点 i 已填到第几个位置（相对偏移）
     const outCursor = new Int32Array(n);
     const inCursor = new Int32Array(n);
 
+    // ─── 第二遍扫描：把邻居 idx 填入 targets ───────────────
+    // 写入位置 = 节点 i 的起点 (offsets[i]) + 已填数 (cursor[i])
+    // 每填一个，cursor[i]++
+    // 这种"游标推进"模式比预先排序更快：每条边只摸一次。
     for (let i = 0; i < n; i++) {
       const id = nodes[i]!;
       for (const t of graph.downstream(id)) {

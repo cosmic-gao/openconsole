@@ -218,45 +218,69 @@ export class IncrementalTopo<N = unknown, E = unknown> {
   /**
    * 边入图回调：Pearce-Kelly 局部重排；环 / 退化情形降级为 dirty。
    *
+   * @remarks
+   * 算法核心：加边 u → v 后违反拓扑（rank(v) < rank(u)）时，**只重排受影响区域**
+   * 而不是全图重算。
+   *
+   * 步骤：
+   * 1. 从 v 正向收集"rank ≤ ru"的 fwd 区域（v 子树里需要往后挪的节点）
+   * 2. 从 u 反向收集"rank ≥ rv"的 bwd 区域（u 祖先里需要往前挪的节点）
+   * 3. 取这两个区域占用的所有 rank 槽位，排序后**bwd 占小槽位、fwd 占大槽位**
+   *    → 这样 u 必排在 v 之前，新边的拓扑约束自动满足
+   * 4. 如果 fwd 探测到 u 自己 → 形成环，降级 dirty 让下次查询走全量
+   *
+   * @see Pearce-Kelly 2007（参考文献见文件顶部）
    * @internal
    */
   private _addEdge(sourceId: NodeId, targetId: NodeId): void {
+    // 自环 / 已知含环：直接降级，不必尝试局部重排
     if (sourceId === targetId || this._hasCycle) {
       this._dirty = true;
       return;
     }
     const ru = this._ranks.get(sourceId);
     const rv = this._ranks.get(targetId);
+    // 节点未注册（事件流错乱或竞态）：降级
     if (ru === undefined || rv === undefined) {
       this._dirty = true;
       return;
     }
+    // happy path：rank(u) < rank(v) 已经满足拓扑，O(1) 通过
     if (ru < rv) return;
 
-    const lb = rv;
-    const ub = ru;
+    // 违反拓扑：rv ≤ ru，需要局部重排
+    const lb = rv;                  // 区域下界
+    const ub = ru;                  // 区域上界
     const graph = this._graph;
     const ranks = this._ranks;
 
+    // 正向收集：从 v 出发，沿 downstream 走，rank 在 [rv, ru] 区间的节点
+    // 第 4 参数 sourceId 是 abort 信号：DFS 中若摸到 u 自己 → 环，返回 null
     const fwd = this._collect(targetId, (n) => graph.downstream(n), (r) => r <= ub, sourceId);
     if (fwd === null) {
       this._dirty = true;
       return;
     }
+    // 反向收集：从 u 出发，沿 upstream 走，同 [rv, ru] 区间
     const bwd = this._collect(sourceId, (n) => graph.upstream(n), (r) => r >= lb);
 
+    // 重排策略（关键）：
+    //   把 bwd ∪ fwd 占的所有 rank 槽位提取出来排序得到 slots
+    //   bwd 节点按原 rank 升序排，依次占 slots 的小一半
+    //   fwd 节点按原 rank 升序排，依次占 slots 的大一半
+    //   → 重排后 u（在 bwd 里） 的新 rank 一定小于 v（在 fwd 里）的新 rank
     const byRank = (a: NodeId, b: NodeId): number => ranks.get(a)! - ranks.get(b)!;
     bwd.sort(byRank);
     fwd.sort(byRank);
 
-    // bwd ∪ fwd 原本占用的槽位（无重叠：若相交即环，已在前向遍历拦截）。
+    // bwd ∪ fwd 原本占用的槽位（无重叠：若相交即环，已在前向遍历拦截）
     const slots: number[] = new Array(bwd.length + fwd.length);
     let i = 0;
     for (const n of bwd) slots[i++] = ranks.get(n)!;
     for (const n of fwd) slots[i++] = ranks.get(n)!;
     slots.sort((a, b) => a - b);
 
-    // bwd 占小槽位、fwd 占大槽位——u 必排到 v 之前，新边的拓扑约束自动满足。
+    // 重排：bwd 占小槽位、fwd 占大槽位
     i = 0;
     for (const n of bwd) ranks.set(n, slots[i++]!);
     for (const n of fwd) ranks.set(n, slots[i++]!);

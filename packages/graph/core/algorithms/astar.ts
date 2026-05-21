@@ -50,6 +50,11 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
 ): { distance: number; path: NodeId[] } | undefined {
   if (start === end) return { distance: 0, path: [start] };
 
+  // ─── A* 三件套 ─────────────────────────────────────────────
+  // gScore[v] = 从 start 到 v 的当前最短真实距离（"已知代价"）
+  // f         = g + h；堆按 f 排序，h 越准 A* 越聚焦于目标方向
+  // parent    = 路径回溯链；trace() 用它从 end 回到 start
+  // settled   = 已最终化的节点（consistent heuristic 下每节点只 settle 一次）
   const gScore = new Map<NodeId, number>();
   const parent = new Map<NodeId, NodeId>();
   const settled = new Set<NodeId>();
@@ -60,15 +65,19 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
   handles.set(start, open.push({ node: start, g: 0, f: heuristic(start) }));
 
   while (!open.empty()) {
+    // 取 f 最小的节点扩展（与 Dijkstra 的 dist 最小不同 —— A* 用启发引导方向）
     const entry = open.poll()!;
     const node = entry.node;
     handles.delete(node);
 
+    // 摸到 end：返回。consistent heuristic 下这是最优解
     if (node === end) return { distance: entry.g, path: trace(parent, start, end) };
 
+    // 处理"过期堆项"（同节点被 update 后旧条目可能仍在堆中，settle 时跳过）
     if (settled.has(node)) continue;
     settled.add(node);
 
+    // ─── relax 出边 ──────────────────────────────────────────
     for (const edge of graph.getOutgoing(node)) {
       const step = cost(edge);
       if (step < 0) throw new Negative(step, edge.id);
@@ -76,12 +85,15 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
 
       const tentative = entry.g + step;
       const prior = gScore.get(edge.target);
+      // 已有更短路径 → 跳过
       if (prior !== undefined && tentative >= prior) continue;
 
+      // 更新已知最短真实距离 + 回溯链 + 重算 f
       gScore.set(edge.target, tentative);
       parent.set(edge.target, node);
       const f = tentative + heuristic(edge.target);
 
+      // 与 Dijkstra 同款：堆里已有则 decrease-key，否则首次入堆
       const handle = handles.get(edge.target);
       if (handle !== undefined) {
         open.update(handle, { node: edge.target, g: tentative, f });

@@ -72,6 +72,18 @@ export abstract class Port<S extends Socket = Socket> {
   /**
    * 解除一条边与本端口的关联（O(1) swap-and-pop）。
    *
+   * @remarks
+   * **swap-and-pop 操作演示**（假设 edges = [e0, e1, e2, e3, e4]，删除 e2）：
+   *
+   * 1. 找 idx = 2（e2 的下标）
+   * 2. 末尾元素 e4 搬到 idx=2：edges = [e0, e1, e4, e3, e4]
+   * 3. 更新 e4 的 _index 为 2
+   * 4. pop 末尾：edges = [e0, e1, e4, e3]
+   * 5. 从 _index 删除 e2
+   *
+   * 代价：插入顺序被打乱（e4 跳到了 e2 的位置）。调用方不应依赖 edges 的顺序稳定性。
+   * 收益：O(1) 删除，避免 Array#splice 的 O(n) 元素搬移。
+   *
    * @param edge 要解除的边 ID
    * @returns 是否成功解除（边原本存在则返回 `true`）
    */
@@ -80,6 +92,7 @@ export abstract class Port<S extends Socket = Socket> {
     if (idx === undefined) return false;
     const lastIdx = this.edges.length - 1;
     if (idx !== lastIdx) {
+      // 把末尾元素搬到被删位置；末尾本身待会儿 pop 即可
       const last = this.edges[lastIdx]!;
       this.edges[idx] = last;
       this._index.set(last, idx);

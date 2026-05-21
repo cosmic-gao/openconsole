@@ -37,33 +37,47 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
   end: NodeId | undefined,
   edgeCost: (edge: EdgeView<E>) => number,
 ): Map<NodeId, number> {
+  // ─── 状态：三张表 + 一个堆 ──────────────────────────────────
+  // distances：节点 → 已知最短距离（可能在堆里还会被进一步松弛）
+  // handles  ：节点 → 堆中该节点的句柄（真 decrease-key 的关键）
+  // visited  ：已 settle 的节点（弹出堆后不会再松弛）
+  // heap     ：按 dist 升序的优先队列；PairingHeap 提供 O(1) 摊销 decrease-key
   const distances = new Map<NodeId, number>();
   const handles = new Map<NodeId, PairingNode<Entry>>();
   const visited = new Set<NodeId>();
   const heap = new PairingHeap<Entry>((a, b) => a.dist - b.dist);
 
+  // 起点 dist = 0，入堆
   distances.set(start, 0);
   handles.set(start, heap.push({ node: start, dist: 0 }));
 
   while (!heap.empty()) {
+    // ─── 取距离最小的未 settle 节点 ─────────────────────────
     const entry = heap.poll()!;
     const node = entry.node;
     handles.delete(node);
     visited.add(node);
+
+    // 单源单汇：摸到终点提前结束（其余节点距离仍部分有效，但可能未最终化）
     if (node === end) break;
 
+    // ─── relax 每条出边 ─────────────────────────────────────
     for (const edge of graph.getOutgoing(node)) {
-      if (visited.has(edge.target)) continue;
+      if (visited.has(edge.target)) continue;        // 已 settle 的不再松弛
       const cost = edgeCost(edge);
       if (cost < 0) throw new Negative(cost, edge.id);
       const candidate = entry.dist + cost;
+
       const handle = handles.get(edge.target);
       if (handle !== undefined) {
+        // 目标已在堆中：若新距离更短，做 decrease-key（O(1) 摊销）
+        // 而不是重复入堆 + 弹出时跳过过期项的 lazy 模式
         if (candidate < handle.value.dist) {
           heap.update(handle, { node: edge.target, dist: candidate });
           distances.set(edge.target, candidate);
         }
       } else {
+        // 目标首次访问：入堆并记录句柄
         distances.set(edge.target, candidate);
         handles.set(edge.target, heap.push({ node: edge.target, dist: candidate }));
       }
