@@ -7,8 +7,13 @@ import { PairingHeap, type PairingNode } from '@opendesign/heap';
 import { Negative } from '../classic';
 import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
 
-/** 堆中的待处理项：节点 + 距起点距离。 */
-interface Entry {
+/**
+ * 堆中的待处理项：到达某节点的"已知最短距离"快照。
+ *
+ * @remarks 命名取自图论的 reach（可达 + 距离）—— 一次 reach 表示
+ *   "节点 v 当前最好的已知到达代价是 dist"。比 `Entry` 更点题。
+ */
+interface Reach {
   readonly node: NodeId;
   readonly dist: number;
 }
@@ -29,7 +34,7 @@ interface Entry {
  * @param end 提前终止的目标节点；传 `undefined` 计算到所有可达节点的距离
  * @param edgeCost 边代价函数，必须返回非负数
  * @returns 节点 ID → 从 `start` 出发的最短距离；不可达节点不出现在 Map 中
- * @throws {Error} `edgeCost` 返回负数时
+ * @throws {Negative} `edgeCost` 返回负数时
  */
 export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
   graph: G,
@@ -43,9 +48,9 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
   // visited  ：已 settle 的节点（弹出堆后不会再松弛）
   // heap     ：按 dist 升序的优先队列；PairingHeap 提供 O(1) 摊销 decrease-key
   const distances = new Map<NodeId, number>();
-  const handles = new Map<NodeId, PairingNode<Entry>>();
+  const handles = new Map<NodeId, PairingNode<Reach>>();
   const visited = new Set<NodeId>();
-  const heap = new PairingHeap<Entry>((a, b) => a.dist - b.dist);
+  const heap = new PairingHeap<Reach>((a, b) => a.dist - b.dist);
 
   // 起点 dist = 0，入堆
   distances.set(start, 0);
@@ -53,8 +58,8 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
 
   while (!heap.empty()) {
     // ─── 取距离最小的未 settle 节点 ─────────────────────────
-    const entry = heap.poll()!;
-    const node = entry.node;
+    const reach = heap.poll()!;
+    const node = reach.node;
     handles.delete(node);
     visited.add(node);
 
@@ -66,7 +71,7 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
       if (visited.has(edge.target)) continue;        // 已 settle 的不再松弛
       const cost = edgeCost(edge);
       if (cost < 0) throw new Negative(cost, edge.id);
-      const candidate = entry.dist + cost;
+      const candidate = reach.dist + cost;
 
       const handle = handles.get(edge.target);
       if (handle !== undefined) {
