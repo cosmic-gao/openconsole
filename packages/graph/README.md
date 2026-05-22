@@ -1,4 +1,4 @@
-# @openclound/graph
+# @openconsole/graph
 
 类型化端口、Trait 解耦、零成本视图与紧凑序列化的有向图核心模型。
 
@@ -13,7 +13,7 @@
 - **完整算法集**：拓扑排序、强连通分量 (Tarjan / Kosaraju)、Dijkstra 最短路径、DFS / BFS、可达性、邻域、压缩图等
 - **增量拓扑**：`IncrementalTopo` 订阅图事件，happy path O(1)，违规时延后做一次性全量重算
 - **紧凑序列化与结构化 diff**：元组压缩格式 (~60-70% 字节缩减)、拓扑稳定 ID 重映射、可应用 / 可撤销的图差异
-- **变更事件**：基于 `@openclound/signal` 的强类型 `add` / `remove` 订阅
+- **变更事件**：基于 `@openconsole/signal` 的强类型 `add` / `remove` 订阅
 - **O(1) 节点寻址**：基于内部 `Registry` 的 `at` / `indexOf` / `bound`，删除走 swap-and-pop
 
 ## 在本仓库中使用
@@ -21,7 +21,7 @@
 ```json
 {
   "dependencies": {
-    "@openclound/graph": "workspace:*"
+    "@openconsole/graph": "workspace:*"
   }
 }
 ```
@@ -29,7 +29,7 @@
 ## 快速开始
 
 ```ts
-import { Graph, Socket, Vertex, type NodeId } from '@openclound/graph';
+import { Graph, Socket, Vertex, type NodeId } from '@openconsole/graph';
 
 // 1. 声明端口形态
 type AddIn = { lhs: Socket<'number'>; rhs: Socket<'number'> };
@@ -53,7 +53,7 @@ graph.addNode(b);
 graph.connect(['a', 'sum'], ['b', 'lhs']);
 
 // 3. 跑算法
-import { toposort, dijkstra } from '@openclound/graph';
+import { toposort, dijkstra } from '@openconsole/graph';
 
 const order = toposort(graph);                 // [NodeId, NodeId]
 const dist = dijkstra(graph, a.id, undefined, () => 1);
@@ -122,7 +122,7 @@ import {
   neighborhood,
   dijkstra,
   IncrementalTopo,
-} from '@openclound/graph';
+} from '@openconsole/graph';
 ```
 
 - **拓扑排序**：`toposort` / `topology` / `ranks`（Kahn 算法 + `Topo` 状态化遍历）
@@ -137,7 +137,7 @@ import {
 ### 增量拓扑
 
 ```ts
-import { IncrementalTopo } from '@openclound/graph';
+import { IncrementalTopo } from '@openconsole/graph';
 
 const topo = new IncrementalTopo(graph);
 
@@ -159,7 +159,7 @@ topo.dispose();             // 取消订阅
 适配器只做 trait 转发，不持有底层数据副本；适配后仍满足相同 trait，可层层嵌套。
 
 ```ts
-import { Reversed, NodeFilter, EdgeFilter } from '@openclound/graph';
+import { Reversed, NodeFilter, EdgeFilter } from '@openconsole/graph';
 
 // 反向图：祖先遍历 / 反向拓扑 / Kosaraju 第二遍
 const ancestors = dfs(new Reversed(graph), target);
@@ -174,7 +174,7 @@ const view = new Reversed(new NodeFilter(graph, isData));
 ## 访问者
 
 ```ts
-import { Dfs, Bfs, Topo, visit, Control } from '@openclound/graph';
+import { Dfs, Bfs, Topo, visit, Control } from '@openconsole/graph';
 
 // 1. 状态化遍历器：调用方控节奏
 const it = Dfs.start(graph, root);
@@ -194,7 +194,7 @@ visit(graph, root, {
 ## 序列化
 
 ```ts
-import { pack, unpack, packRemap, unpackRemap, diff, apply, invert } from '@openclound/graph';
+import { pack, unpack, packRemap, unpackRemap, diff, apply, invert } from '@openconsole/graph';
 
 // 紧凑序列化（约 60-70% 字节缩减）
 const compact = pack(graph);
@@ -222,7 +222,7 @@ graph.signal.on('edge:remove', ({ id }) => { /* ... */ });
 graph.signal.watch((type, payload) => { /* ... */ });
 ```
 
-底层走 [`@openclound/signal`](../signal/README.md)，支持 `AbortSignal` / `Symbol.dispose` / `rescue` 等能力。
+底层走 [`@openconsole/signal`](../signal/README.md)，支持 `AbortSignal` / `Symbol.dispose` / `rescue` 等能力。
 
 ## 模块边界
 
@@ -240,7 +240,7 @@ core/
 `index.ts` 把 `core/*` 全量重导出，使用方统一从包名引入：
 
 ```ts
-import { Graph, Socket, Vertex, toposort, dijkstra, Reversed } from '@openclound/graph';
+import { Graph, Socket, Vertex, toposort, dijkstra, Reversed } from '@openconsole/graph';
 ```
 
 ## 设计要点
@@ -253,10 +253,10 @@ import { Graph, Socket, Vertex, toposort, dijkstra, Reversed } from '@openclound
 ## 开发
 
 ```bash
-pnpm --filter @openclound/graph check       # tsc --noEmit + vitest run
-pnpm --filter @openclound/graph test
-pnpm --filter @openclound/graph test:watch
-pnpm --filter @openclound/graph typecheck
+pnpm --filter @openconsole/graph check       # tsc --noEmit + vitest run
+pnpm --filter @openconsole/graph test
+pnpm --filter @openconsole/graph test:watch
+pnpm --filter @openconsole/graph typecheck
 ```
 
 ## License

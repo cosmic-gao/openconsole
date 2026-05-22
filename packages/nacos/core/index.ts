@@ -1,7 +1,7 @@
 /**
- * @openclound/nacos — main entry.
+ * @openconsole/nacos — main entry.
  *
- *   import { create, logger } from '@openclound/nacos';
+ *   import { create, logger } from '@openconsole/nacos';
  *
  *   const nacos = create({
  *     registry: { server: '127.0.0.1:8848' },

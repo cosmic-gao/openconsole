@@ -1,7 +1,7 @@
 # 主题化
 
-`@openclound/atoms` 的主题系统是 `next-themes` + Tailwind v4 语义 token
-（从 `@openclound/shadcn` 继承）+ 三个 atoms provider 的组合。这份文件
+`@openconsole/atoms` 的主题系统是 `next-themes` + Tailwind v4 语义 token
+（从 `@openconsole/shadcn` 继承）+ 三个 atoms provider 的组合。这份文件
 讲清楚:
 
 - 亮 / 暗切换怎么连
@@ -15,7 +15,7 @@
 ## 亮 / 暗切换
 
 ```tsx
-import { ThemeProvider, ThemeSwitch } from "@openclound/atoms";
+import { ThemeProvider, ThemeSwitch } from "@openconsole/atoms";
 
 // 包根
 <ThemeProvider>{children}</ThemeProvider>
@@ -74,7 +74,7 @@ import { ThemeProvider, ThemeSwitch } from "@openclound/atoms";
 ```tsx
 "use client";
 import { useTheme } from "next-themes";
-import { Button } from "@openclound/shadcn";
+import { Button } from "@openconsole/shadcn";
 
 type TransitionDocument = Document & {
   startViewTransition?: (cb: () => void) => { finished: Promise<void> };
@@ -109,7 +109,7 @@ export function MyThemeToggle() {
 ## 字体切换
 
 ```tsx
-import { FontProvider, useFont } from "@openclound/atoms";
+import { FontProvider, useFont } from "@openconsole/atoms";
 
 // 包根
 <FontProvider options={["inter", "manrope", "system"]}>
@@ -178,8 +178,8 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 ## 布局变体切换
 
 ```tsx
-import { LayoutProvider, useLayout, Sidebar } from "@openclound/atoms";
-import { SidebarProvider } from "@openclound/shadcn";
+import { LayoutProvider, useLayout, Sidebar } from "@openconsole/atoms";
+import { SidebarProvider } from "@openconsole/shadcn";
 
 // 包根
 <LayoutProvider>
@@ -236,7 +236,7 @@ import {
   LayoutProvider,
   useLayout,
   type LayoutConfig,
-} from "@openclound/atoms";
+} from "@openconsole/atoms";
 
 const STORAGE_KEY = "myapp-layout-config";
 

@@ -55,7 +55,7 @@
 ## 提示框用 `Alert`
 
 ```tsx
-import { Alert, AlertTitle, AlertDescription } from "@openclound/shadcn";
+import { Alert, AlertTitle, AlertDescription } from "@openconsole/shadcn";
 
 <Alert>
   <AlertTitle>Warning</AlertTitle>
@@ -71,7 +71,7 @@ import { Alert, AlertTitle, AlertDescription } from "@openclound/shadcn";
 import {
   Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent,
   Button,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 <Empty>
   <EmptyHeader>
@@ -104,7 +104,7 @@ toast("File deleted.", {
 在 app 根上挂一次本包的 `<Toaster />`:
 
 ```tsx
-import { Toaster } from "@openclound/shadcn";
+import { Toaster } from "@openconsole/shadcn";
 
 // app/layout.tsx
 <body>
@@ -181,7 +181,7 @@ import { Toaster } from "@openclound/shadcn";
 用 `Spinner` + `data-icon` + `disabled` 拼:
 
 ```tsx
-import { Button, Spinner } from "@openclound/shadcn";
+import { Button, Spinner } from "@openconsole/shadcn";
 
 <Button disabled>
   <Spinner data-icon="inline-start" />

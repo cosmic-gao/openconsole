@@ -1,14 +1,14 @@
 ---
-name: openclound-shadcn
+name: openconsole-shadcn
 description: >
-  `@openclound/shadcn` 的使用指南。完整的 shadcn UI 原语集合（Button、
+  `@openconsole/shadcn` 的使用指南。完整的 shadcn UI 原语集合（Button、
   Dialog、Form、Sidebar、Table、Card、Tabs 等），`cn` / `useIsMobile` /
   `Icon` / `Direction` 工具，Tailwind v4 语义化 token。
   适用场景包括: 搭建页面与表单、选择正确的组件原语、修复样式问题、
   组合复杂交互（设置页、数据表格、仪表盘、命令面板、抽屉、确认对话框
   等）、应用主题与品牌色。
 type: ui
-library: "@openclound/shadcn"
+library: "@openconsole/shadcn"
 runtime:
   react: "^19"
   tailwind: "^4"
@@ -19,10 +19,10 @@ peers:
   "zod": "*"
 ---
 
-# `@openclound/shadcn` —— UI 原语组件
+# `@openconsole/shadcn` —— UI 原语组件
 
 一个 npm 包，把整套 shadcn/ui 原语 + 一小撮工具（`cn`、`useIsMobile`、
-`Icon`、`Direction`）通过单一入口 `@openclound/shadcn` 平铺导出。
+`Icon`、`Direction`）通过单一入口 `@openconsole/shadcn` 平铺导出。
 
 本包是**只读消费**：所有可用的组件就是 `index.ts` 导出的全部内容。
 没有 CLI、没有源码改动、不需要额外安装。
@@ -43,7 +43,7 @@ peers:
 
 | 字段 | 值 |
 |---|---|
-| 导入路径 | `@openclound/shadcn`（唯一入口） |
+| 导入路径 | `@openconsole/shadcn`（唯一入口） |
 | 工具集 | `cn`、`useIsMobile`、`Icon`、`Direction`、`Kbd`、`KbdGroup`、`Toaster` |
 | 样式 | Tailwind v4 + 语义 token（`--background`、`--primary`、`--muted`…） |
 | 图标库 | `lucide-react`（也通过 `Icon` 二次导出，用于按名字动态渲染） |
@@ -321,7 +321,7 @@ peers:
 "use client";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { Button } from "@openclound/shadcn";
+import { Button } from "@openconsole/shadcn";
 
 export function ThemeToggle() {
   // 用 resolvedTheme，处于 System 模式时也能正确翻转。
@@ -406,7 +406,7 @@ Incorrect/Correct 代码对照的细则文件。
 - **`truncate` 是简写**，不要 `overflow-hidden text-ellipsis whitespace-nowrap`。
 - **别手写 `dark:` 颜色覆盖**。用语义 token。
 - **状态色别用裸值**。用 `Badge` variant 或 `text-destructive`。
-- **条件 className 用 `cn()`**（从 `@openclound/shadcn` 导入）。
+- **条件 className 用 `cn()`**（从 `@openconsole/shadcn` 导入）。
 - **overlay 别加 z-index**（`Dialog`、`Popover`、`Tooltip` 等自管堆叠）。
 
 ### 表单 → [rules/forms.md](./rules/forms.md)
@@ -507,7 +507,7 @@ Incorrect/Correct 代码对照的细则文件。
 
 ## 导入
 
-所有东西从 `@openclound/shadcn` 平铺导出，**入口只有这一个**。
+所有东西从 `@openconsole/shadcn` 平铺导出，**入口只有这一个**。
 
 ```ts
 import {
@@ -543,7 +543,7 @@ import {
   Calendar,
   // 工具
   cn, useIsMobile, Icon, Direction, Kbd, KbdGroup,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 import { toast } from "sonner";   // toast() 在 sonner 里，不在本包
 ```
@@ -568,11 +568,11 @@ import { toast } from "sonner";   // toast() 在 sonner 里，不在本包
 
 ## 常见坑
 
-- **本包没有的组件不要伪造**: `import { Calendar2 } from "@openclound/shadcn"`
+- **本包没有的组件不要伪造**: `import { Calendar2 } from "@openconsole/shadcn"`
   这种碰运气的 import 永远不会成功。先翻 [导入](#导入) 或
   [应用场景速查](#应用场景速查) 确认。
-- **入口只有 `@openclound/shadcn` 根**: 不存在 `@openclound/shadcn/dialog`、
-  `@openclound/shadcn/lib/utils` 这种 subpath import。
+- **入口只有 `@openconsole/shadcn` 根**: 不存在 `@openconsole/shadcn/dialog`、
+  `@openconsole/shadcn/lib/utils` 这种 subpath import。
 - **wrapper 用了 `useState` / `useEffect` / `onClick` 却忘了 `"use client"`**:
   每个交互原语本身已经标了，但你自己包出来的 wrapper 要自己加。
 - **给 `DialogContent` 加 `z-50`**: 浮层组件自己分层。手写 z-index 会

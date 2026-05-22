@@ -2,7 +2,7 @@
  * 图变更事件载体与可订阅 trait。
  */
 
-import type { Signal } from '@openclound/signal';
+import type { Signal } from '@openconsole/signal';
 
 // 仅类型 import：types ↔ classic 经 barrel 形成的循环只在 `import type` 下被
 // TS 擦除消解；切忌把下面的 `import type` 升级为值 import，否则会触发真正的

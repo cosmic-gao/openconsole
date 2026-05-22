@@ -8,7 +8,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 import { useLayout } from "../../providers/layout-provider";
 

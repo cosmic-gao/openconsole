@@ -1,5 +1,5 @@
 /**
- * `@openclound/graph` 的公共入口。
+ * `@openconsole/graph` 的公共入口。
  *
  * @remarks
  * - 类型定义与算法 trait：见 {@link ./types}

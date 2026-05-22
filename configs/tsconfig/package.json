@@ -1,5 +1,5 @@
 {
-  "name": "@openclound/tsconfig",
+  "name": "@openconsole/tsconfig",
   "version": "1.0.0",
   "type": "module",
   "exports": {
@@ -26,7 +26,7 @@
     "typescript",
     "tsconfig",
     "config",
-    "openclound"
+    "openconsole"
   ],
   "license": "MIT",
   "peerDependencies": {

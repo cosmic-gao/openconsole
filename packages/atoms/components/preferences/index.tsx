@@ -20,7 +20,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 import { useLayout } from "../../providers/layout-provider";
 

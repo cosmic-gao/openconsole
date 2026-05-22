@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { Button, Input, Label } from "@openclound/shadcn";
+import { Button, Input, Label } from "@openconsole/shadcn";
 
 const HEX6 = /^#[0-9a-f]{6}$/i;
 const HEX3 = /^#[0-9a-f]{3}$/i;

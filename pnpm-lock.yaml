@@ -8,7 +8,7 @@ importers:
 
   .:
     devDependencies:
-      '@openclound/tsconfig':
+      '@openconsole/tsconfig':
         specifier: workspace:*
         version: link:configs/tsconfig
       typescript:
@@ -44,7 +44,7 @@ importers:
 
   packages/atoms:
     dependencies:
-      '@openclound/shadcn':
+      '@openconsole/shadcn':
         specifier: workspace:*
         version: link:../shadcn
       '@tanstack/react-table':
@@ -84,10 +84,10 @@ importers:
 
   packages/graph:
     dependencies:
-      '@openclound/heap':
+      '@openconsole/heap':
         specifier: workspace:*
         version: link:../heap
-      '@openclound/signal':
+      '@openconsole/signal':
         specifier: workspace:*
         version: link:../signal
 
@@ -102,7 +102,7 @@ importers:
         specifier: ^15 || ^16
         version: 16.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
     devDependencies:
-      '@openclound/tsconfig':
+      '@openconsole/tsconfig':
         specifier: workspace:*
         version: link:../../configs/tsconfig
       '@types/node':

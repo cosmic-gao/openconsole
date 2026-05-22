@@ -1,4 +1,4 @@
-# @openclound/nacos
+# @openconsole/nacos
 
 A small, opinionated Nacos client for Next.js 16+ apps. Bundles service
 registry, discovery, load balancing, configuration center, and a fetch-style
@@ -23,7 +23,7 @@ HTTP client behind a single `create()` factory.
 ## Install
 
 ```bash
-pnpm add @openclound/nacos nacos
+pnpm add @openconsole/nacos nacos
 ```
 
 ## Quick start (Next.js 16+)
@@ -32,8 +32,8 @@ pnpm add @openclound/nacos nacos
 // instrumentation.ts
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  const { init } = await import('@openclound/nacos/next');
-  const { logger } = await import('@openclound/nacos');
+  const { init } = await import('@openconsole/nacos/next');
+  const { logger } = await import('@openconsole/nacos');
 
   await init(() => ({
     registry: {
@@ -66,7 +66,7 @@ Consume anywhere:
 
 ```ts
 // app/dashboard/page.tsx
-import { client } from '@openclound/nacos/next';
+import { client } from '@openconsole/nacos/next';
 
 export default async function Page() {
   const users = client().service('user-service');
@@ -134,7 +134,7 @@ returns `null`.
 ## Plugins
 
 ```ts
-import type { Plugin } from '@openclound/nacos';
+import type { Plugin } from '@openconsole/nacos';
 
 export const auth = (token: () => string): Plugin => ({
   name: 'auth',

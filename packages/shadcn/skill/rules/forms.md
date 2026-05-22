@@ -19,7 +19,7 @@
 ```tsx
 import {
   FieldGroup, Field, FieldLabel, Input,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 <FieldGroup>
   <Field>
@@ -67,7 +67,7 @@ import {
 **Correct:**
 
 ```tsx
-import { InputGroup, InputGroupInput } from "@openclound/shadcn";
+import { InputGroup, InputGroupInput } from "@openconsole/shadcn";
 
 <InputGroup>
   <InputGroupInput placeholder="Search..." />
@@ -97,7 +97,7 @@ import { InputGroup, InputGroupInput } from "@openclound/shadcn";
 ```tsx
 import {
   InputGroup, InputGroupInput, InputGroupAddon, Button,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 <InputGroup>
   <InputGroupInput placeholder="Search..." />
@@ -136,7 +136,7 @@ const [selected, setSelected] = useState("daily")
 **Correct:**
 
 ```tsx
-import { ToggleGroup, ToggleGroupItem } from "@openclound/shadcn";
+import { ToggleGroup, ToggleGroupItem } from "@openconsole/shadcn";
 
 <ToggleGroup type="single" defaultValue="daily" spacing={2}>
   <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
@@ -226,7 +226,7 @@ import {
   Form, FormField, FormItem, FormLabel, FormControl,
   FormDescription, FormMessage,
   Input, Button,
-} from "@openclound/shadcn";
+} from "@openconsole/shadcn";
 
 const schema = z.object({
   email: z.string().email(),

@@ -1,7 +1,7 @@
 ---
-name: openclound-atoms
+name: openconsole-atoms
 description: >
-  `@openclound/atoms` 的使用指南。基于 `@openclound/shadcn` 原语搭建的
+  `@openconsole/atoms` 的使用指南。基于 `@openconsole/shadcn` 原语搭建的
   高阶组件 + Context provider —— ThemeSwitch（带 view-transition 圆形
   展开）、Preferences（设置抽屉）、Sidebar（带 brand / menu / account 三段
   式）、Combobox、DatePicker、DataTable、ColorPicker，以及 ThemeProvider /
@@ -10,12 +10,12 @@ description: >
   设置抽屉、品牌侧边栏、数据表格、可搜索下拉、日期选择、颜色选择、
   亮暗主题切换。
 type: ui
-library: "@openclound/atoms"
+library: "@openconsole/atoms"
 runtime:
   react: "^19"
   tailwind: "^4"
 peers:
-  "@openclound/shadcn": "*"
+  "@openconsole/shadcn": "*"
   "lucide-react": "*"
   "next": "*"
   "next-themes": "*"
@@ -23,9 +23,9 @@ peers:
   "date-fns": "*"
 ---
 
-# `@openclound/atoms` —— 高阶 UI 组件 + Provider
+# `@openconsole/atoms` —— 高阶 UI 组件 + Provider
 
-一个 npm 包，把 `@openclound/shadcn` 的原语装配成业务直接可用的高阶
+一个 npm 包，把 `@openconsole/shadcn` 的原语装配成业务直接可用的高阶
 组件（设置抽屉、品牌侧边栏、数据表格、主题切换…），加上一组 Context
 provider 管理跨页面状态（主题、字体、布局变体）。
 
@@ -37,7 +37,7 @@ provider 管理跨页面状态（主题、字体、布局变体）。
 1. 怎么从用户口语化需求识别到正确的 atom 组件
 2. 应用根上 provider 的装配顺序与必要性
 3. 每个组件的用法 + 完整代码示例
-4. 跟 `@openclound/shadcn` 如何配合（什么时候用 atoms 封装，什么时候直接用 shadcn 原语）
+4. 跟 `@openconsole/shadcn` 如何配合（什么时候用 atoms 封装，什么时候直接用 shadcn 原语）
 5. 主题 / 字体 / 布局 三套状态的扩展边界
 
 ---
@@ -46,7 +46,7 @@ provider 管理跨页面状态（主题、字体、布局变体）。
 
 满足下列任一情况就用:
 
-- 在 import 了 `@openclound/atoms` 的文件里写或修代码
+- 在 import 了 `@openconsole/atoms` 的文件里写或修代码
 - 搭建新应用的主框架（需要装配 `ThemeProvider` + `FontProvider` + `LayoutProvider`）
 - 用户描述"加个设置抽屉"、"侧边栏带 logo"、"主题切换按钮"、"可搜索下拉"、
   "日期选择"、"数据列表 / 表格"等本包覆盖的场景
@@ -58,8 +58,8 @@ provider 管理跨页面状态（主题、字体、布局变体）。
 
 | 字段 | 值 |
 |---|---|
-| 导入路径 | `@openclound/atoms`（唯一入口） |
-| 依赖底层 | `@openclound/shadcn` 原语 |
+| 导入路径 | `@openconsole/atoms`（唯一入口） |
+| 依赖底层 | `@openconsole/shadcn` 原语 |
 | 样式 | 继承 shadcn 的 Tailwind v4 + 语义 token |
 | 图标 | 通过 shadcn 的 `Icon` 包装，按字符串名渲染 lucide-react 图标 |
 | 主题底层 | `next-themes`（`ThemeProvider` 是其包装） |
@@ -109,8 +109,8 @@ import {
   ThemeProvider,
   FontProvider,
   LayoutProvider,
-} from "@openclound/atoms";
-import { SidebarProvider } from "@openclound/shadcn";
+} from "@openconsole/atoms";
+import { SidebarProvider } from "@openconsole/shadcn";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -153,7 +153,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 正确翻转。
 
 ```tsx
-import { ThemeSwitch } from "@openclound/atoms";
+import { ThemeSwitch } from "@openconsole/atoms";
 
 <ThemeSwitch />
 ```
@@ -170,8 +170,8 @@ import { ThemeSwitch } from "@openclound/atoms";
 - **字体**: 切 `useFont()` 当前字体。
 
 ```tsx
-import { Preferences } from "@openclound/atoms";
-import { Button } from "@openclound/shadcn";
+import { Preferences } from "@openconsole/atoms";
+import { Button } from "@openconsole/shadcn";
 import { Settings } from "lucide-react";
 
 function PreferencesButton() {
@@ -195,8 +195,8 @@ function PreferencesButton() {
 读 `variant` / `collapsible` / `side`。
 
 ```tsx
-import { Sidebar } from "@openclound/atoms";
-import { SidebarInset } from "@openclound/shadcn";
+import { Sidebar } from "@openconsole/atoms";
+import { SidebarInset } from "@openconsole/shadcn";
 
 const data = {
   brand: {
@@ -245,8 +245,8 @@ const data = {
 `@tanstack/react-table` 的薄封装 —— 排序、筛选、分页内建。
 
 ```tsx
-import { DataTable } from "@openclound/atoms";
-import { Badge } from "@openclound/shadcn";
+import { DataTable } from "@openconsole/atoms";
+import { Badge } from "@openconsole/shadcn";
 import type { ColumnDef } from "@tanstack/react-table";
 
 type Project = { id: string; name: string; status: "active" | "archived" };
@@ -275,7 +275,7 @@ const columns: ColumnDef<Project>[] = [
 可搜索的单选下拉。
 
 ```tsx
-import { Combobox } from "@openclound/atoms";
+import { Combobox } from "@openconsole/atoms";
 
 const [value, setValue] = React.useState<string>();
 
@@ -301,7 +301,7 @@ const [value, setValue] = React.useState<string>();
 带日历的日期输入。
 
 ```tsx
-import { DatePicker } from "@openclound/atoms";
+import { DatePicker } from "@openconsole/atoms";
 
 const [date, setDate] = React.useState<Date>();
 
@@ -320,7 +320,7 @@ const [date, setDate] = React.useState<Date>();
 绑一个 CSS 变量的颜色输入 —— 用于设置面板里调 token。
 
 ```tsx
-import { ColorPicker } from "@openclound/atoms";
+import { ColorPicker } from "@openconsole/atoms";
 
 <ColorPicker
   label="主色"
@@ -342,8 +342,8 @@ import { ColorPicker } from "@openclound/atoms";
 ### `useFont()` —— 字体切换
 
 ```tsx
-import { useFont } from "@openclound/atoms";
-import { ToggleGroup, ToggleGroupItem } from "@openclound/shadcn";
+import { useFont } from "@openconsole/atoms";
+import { ToggleGroup, ToggleGroupItem } from "@openconsole/shadcn";
 
 function FontToggle() {
   const { font, setFont, options } = useFont();
@@ -368,7 +368,7 @@ function FontToggle() {
 ### `useLayout()` —— 布局变体
 
 ```tsx
-import { useLayout } from "@openclound/atoms";
+import { useLayout } from "@openconsole/atoms";
 
 const { config, updateConfig } = useLayout();
 // config = { variant, collapsible, side }
@@ -425,8 +425,8 @@ updateConfig({ variant: "floating" });
   者时给其中一个起别名:
 
   ```tsx
-  import { Sidebar } from "@openclound/atoms";              // 业务用 atoms 的
-  import { SidebarProvider, SidebarInset } from "@openclound/shadcn"; // 子原语没冲突
+  import { Sidebar } from "@openconsole/atoms";              // 业务用 atoms 的
+  import { SidebarProvider, SidebarInset } from "@openconsole/shadcn"; // 子原语没冲突
   ```
 
 - **图标用字符串名而非 JSX**: `Sidebar` 的 `brand.logo` /

@@ -1,4 +1,4 @@
-# @openclound/tunnel
+# @openconsole/tunnel
 
 跨框架路由中间件 - 极致轻量、高性能、框架无关。
 
@@ -13,13 +13,13 @@
 ## 安装
 
 ```bash
-npm install @openclound/tunnel
+npm install @openconsole/tunnel
 ```
 
 ## 快速开始
 
 ```typescript
-import { Tunnel, json, html, text, notFound, redirect, Hono } from '@openclound/tunnel';
+import { Tunnel, json, html, text, notFound, redirect, Hono } from '@openconsole/tunnel';
 
 const adapter = new Hono();
 const tunnel = new Tunnel(adapter);
@@ -122,7 +122,7 @@ interface Adapter<T, P> {
 ### Hono 适配器
 
 ```typescript
-import { Tunnel, Hono } from '@openclound/tunnel';
+import { Tunnel, Hono } from '@openconsole/tunnel';
 
 // 方式1：传入自己的 Hono 实例
 const app = new Hono();
@@ -137,7 +137,7 @@ const tunnel = new Tunnel(adapter);
 ### MIME_TYPES
 
 ```typescript
-import { MIME_TYPES, type ContentType } from '@openclound/tunnel';
+import { MIME_TYPES, type ContentType } from '@openconsole/tunnel';
 
 MIME_TYPES.json;  // 'application/json'
 MIME_TYPES.html;  // 'text/html'

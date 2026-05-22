@@ -1,6 +1,6 @@
 # Provider 装配
 
-`@openclound/atoms` 暴露三个 Context provider，加上一个 shadcn 原生
+`@openconsole/atoms` 暴露三个 Context provider，加上一个 shadcn 原生
 provider，构成应用根布局的标准装配。这份文件讲清楚:
 
 - 每个 provider 是干什么的
@@ -14,10 +14,10 @@ provider，构成应用根布局的标准装配。这份文件讲清楚:
 
 | Provider | 来自 | 管理什么 | 持久化 |
 |---|---|---|---|
-| `ThemeProvider` | `@openclound/atoms` | 亮 / 暗 / 系统主题（给 `<html>` 加 `dark` class） | localStorage（next-themes 自带） |
-| `FontProvider` | `@openclound/atoms` | 当前字体（给 `<html>` 加 `font-${name}` class） | localStorage（默认 `openclound-font`，可关） |
-| `LayoutProvider` | `@openclound/atoms` | Sidebar 变体: `variant` / `collapsible` / `side` | **不持久化**（业务自接） |
-| `SidebarProvider` | `@openclound/shadcn` | Sidebar 展开 / 折叠状态、移动端切换 | cookie（shadcn 自带） |
+| `ThemeProvider` | `@openconsole/atoms` | 亮 / 暗 / 系统主题（给 `<html>` 加 `dark` class） | localStorage（next-themes 自带） |
+| `FontProvider` | `@openconsole/atoms` | 当前字体（给 `<html>` 加 `font-${name}` class） | localStorage（默认 `openconsole-font`，可关） |
+| `LayoutProvider` | `@openconsole/atoms` | Sidebar 变体: `variant` / `collapsible` / `side` | **不持久化**（业务自接） |
+| `SidebarProvider` | `@openconsole/shadcn` | Sidebar 展开 / 折叠状态、移动端切换 | cookie（shadcn 自带） |
 
 ---
 
@@ -29,8 +29,8 @@ import {
   ThemeProvider,
   FontProvider,
   LayoutProvider,
-} from "@openclound/atoms";
-import { SidebarProvider } from "@openclound/shadcn";
+} from "@openconsole/atoms";
+import { SidebarProvider } from "@openconsole/shadcn";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -200,7 +200,7 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 
 ```tsx
 "use client";
-import { LayoutProvider, type LayoutConfig } from "@openclound/atoms";
+import { LayoutProvider, type LayoutConfig } from "@openconsole/atoms";
 
 export function PersistentLayoutProvider({ children }: { children: React.ReactNode }) {
   const stored = typeof window !== "undefined"

@@ -2,7 +2,7 @@
  * Model：图的数据模型层 —— 储存 + CRUD + 基础 trait + 事件订阅（组合 {@link Signal}）。
  */
 
-import { Signal } from '@openclound/signal';
+import { Signal } from '@openconsole/signal';
 
 import type {
   EdgeId,

@@ -1,9 +1,9 @@
 {
-  "name": "openclound",
+  "name": "openconsole",
   "version": "1.0.0",
   "private": true,
   "devDependencies": {
-    "@openclound/tsconfig": "workspace:*",
+    "@openconsole/tsconfig": "workspace:*",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4"
   }

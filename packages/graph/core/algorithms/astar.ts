@@ -2,7 +2,7 @@
  * astar：A* 启发式单源单汇最短路径（consistent heuristic 时给出最优解）。
  */
 
-import { PairingHeap, type PairingNode } from '@openclound/heap';
+import { PairingHeap, type PairingNode } from '@openconsole/heap';
 
 import { Negative } from '../classic';
 import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
