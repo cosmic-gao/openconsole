@@ -39,6 +39,24 @@ peers:
 
 ---
 
+## 接入
+
+在 app 的全局 CSS（一般是 `app/globals.css`）里 @import 本包的 styles.css:
+
+```css
+@import "tailwindcss";
+@import "@openconsole/shadcn/styles.css";
+```
+
+styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
+`@custom-variant dark`、`tw-animate-css` 和 base 层 reset —— 一行
+`@import` 就齐了, 不需要在消费方重复定义 token 或手写 `@source`。
+
+需要覆盖 token 在 `@import` 之后重新声明同名变量即可。详见
+[customization.md —— 接入](./customization.md#接入)。
+
+---
+
 ## 项目上下文
 
 | 字段 | 值 |
@@ -557,9 +575,12 @@ import { toast } from "sonner";   // toast() 在 sonner 里，不在本包
 
 详见 [customization.md](./customization.md)。短版本:
 
+- 接入: 在 app 全局 CSS 里 `@import "@openconsole/shadcn/styles.css"`
+  —— 默认 token、`@theme inline` 映射、`@source` 注册等全部自带。
 - 主题色由 CSS 变量驱动 —— 改 `:root` / `.dark` 里的变量就改了所有组件。
 - 颜色用 OKLCH（`oklch(L C H)`）。
-- 加自定义色: 在 app 的全局 CSS 加 `:root` 变量 + 在 `@theme inline`
+- 覆盖默认 token: 在 `@import` 之后重新声明同名变量。
+- 加自定义色: 同样在全局 CSS 里加 `:root` 变量 + 在 `@theme inline`
   里映射（Tailwind v4）。
 - 亮 / 暗切换用 `next-themes` 的 `ThemeProvider` 包根 + `useTheme()`
   钩子写自己的切换按钮。

@@ -54,6 +54,27 @@ provider 管理跨页面状态（主题、字体、布局变体）。
 
 ---
 
+## 接入
+
+在 app 的全局 CSS 里把 atoms 的 styles.css **跟在 shadcn 的后面** @import:
+
+```css
+@import "tailwindcss";
+@import "@openconsole/shadcn/styles.css";
+@import "@openconsole/atoms/styles.css";
+```
+
+atoms 的 styles.css 自带:
+
+- `@source` 指令注册自己的源码
+- 跟 `FontProvider` 配套的 `:root.font-inter / .font-manrope / .font-system`
+  字体规则
+
+token 继承自 shadcn —— atoms 不重复声明。所以**两个 @import 都要有**, 且
+shadcn 在前。
+
+---
+
 ## 项目上下文
 
 | 字段 | 值 |
@@ -388,8 +409,11 @@ updateConfig({ variant: "floating" });
 
 详见 [theming.md](./theming.md)。短版本:
 
-- 颜色 / 圆角 / 字体的 CSS 变量定义在 app 的全局 CSS（语义 token 由
-  shadcn 锁定）。
+- 接入: app 全局 CSS 里 `@import "@openconsole/shadcn/styles.css"` +
+  `@import "@openconsole/atoms/styles.css"`。token 由 shadcn 提供, 字体
+  规则由 atoms 提供。
+- 语义 token（颜色、圆角）由 shadcn 锁定 —— 要改 token 在 @import 之后
+  重新声明 `:root` / `.dark` 变量即可。
 - 切主题预设: 用 `Preferences` 组件或粘 CSS 进它的 Importer tab。
 - 自定义切换动画: `ThemeSwitch` 已内置 view-transition 圆形展开。要
   自己写带动画的切换按钮，模仿 `ThemeSwitch` 的实现（用

@@ -4,10 +4,11 @@
 
 ## 目录
 
+- 接入（一次 @import 搞定）
 - 工作原理（CSS 变量 → Tailwind 工具类 → 组件）
 - 颜色变量与 OKLCH 格式
 - 暗色模式配置
-- 切主题（编辑全局 CSS 或粘 CSS）
+- 切主题（覆盖默认 token 或粘 CSS）
 - 新增自定义色（Tailwind v4）
 - 圆角 `--radius`
 - view-transition 变量（圆形展开切主题）
@@ -15,9 +16,34 @@
 
 ---
 
+## 接入
+
+在 app 的全局 CSS（一般是 `app/globals.css`）里 @import 本包的 styles.css:
+
+```css
+@import "tailwindcss";
+@import "@openconsole/shadcn/styles.css";
+@import "@openconsole/atoms/styles.css";  /* 用到 atoms 时 */
+```
+
+`@openconsole/shadcn/styles.css` 自带:
+
+- `@source` 指令注册自己的源码（Tailwind 自动扫到所有组件用到的工具类）
+- 完整的 `:root` / `.dark` 主题 token 默认值
+- `@theme inline` 映射（让 token 变成 `bg-primary` / `text-muted-foreground` 等工具类）
+- `@custom-variant dark`
+- `tw-animate-css` 动画工具
+- base 层 reset
+
+**消费方不需要重复定义 token、不需要手写 `@source`**。要覆盖 token 在
+`@import` 之后重新声明同名变量即可（见下面 [切主题](#切主题)）。
+
+---
+
 ## 工作原理
 
-1. CSS 变量定义在 `:root`（亮）和 `.dark`（暗）。
+1. CSS 变量定义在 `:root`（亮）和 `.dark`（暗）—— 默认值在
+   `@openconsole/shadcn/styles.css` 里。
 2. Tailwind v4 把它们映射成工具类: `bg-primary`、`text-muted-foreground` 等。
 3. 组件用这些工具类 —— **改一个变量，所有引用它的组件全跟着变**。
 
@@ -93,23 +119,35 @@ export function ThemeToggle() {
 
 ## 切主题
 
-### 直接编辑全局 CSS
+### 覆盖默认 token
 
-如果要永久换主题色，找到 app 的全局 CSS 文件（一般是
-`app/globals.css`）直接改 `:root` / `.dark` 块。修改后所有组件自动
-跟着变。
+在 app 的全局 CSS 里 `@import "@openconsole/shadcn/styles.css"` **之后**
+重新声明同名变量即可。只列要改的, 没列的保持 shadcn 默认值:
+
+```css
+@import "tailwindcss";
+@import "@openconsole/shadcn/styles.css";
+
+:root {
+  --primary: oklch(0.6 0.18 250);    /* 覆盖默认黑色为蓝 */
+  --radius: 0.5rem;                   /* 覆盖默认圆角 */
+}
+.dark {
+  --primary: oklch(0.7 0.18 250);
+}
+```
 
 ### 粘 CSS 主题
 
 从 <https://ui.shadcn.com/themes> 或 <https://tweakcn.com> 复制出来
-的 `:root { … } .dark { … }` 直接粘到全局 CSS 文件覆盖现有的同名
-变量即可。
+的 `:root { … } .dark { … }`, 同样粘在 `@import` 之后即可。CSS 后定义
+的规则覆盖前面的, 所以默认 token 会被整套替换。
 
 ---
 
 ## 新增自定义色
 
-不要新建 CSS 文件 —— 加到 app 的全局 CSS 文件里。
+加到 app 的全局 CSS 里（同样在 `@import` 之后, 不需要新建 CSS 文件）。
 
 ```css
 /* 1. 在全局 CSS 文件里定义。 */

@@ -160,16 +160,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 </FontProvider>
 ```
 
-字体生效靠在 `<html>` 上加 `font-${value}` class —— **你需要在全局 CSS
-里定义对应规则**:
+字体生效靠在 `<html>` 上加 `font-${value}` class。**默认的三种字体
+规则（`inter` / `manrope` / `system`）已由 `@openconsole/atoms/styles.css`
+内置**, 等价于:
 
 ```css
-html.font-inter { font-family: var(--font-inter), sans-serif; }
-html.font-manrope { font-family: var(--font-manrope), sans-serif; }
-html.font-system { font-family: ui-sans-serif, system-ui, sans-serif; }
+:root.font-inter body { font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif; }
+:root.font-manrope body { font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif; }
+:root.font-system body { font-family: ui-sans-serif, system-ui, sans-serif, ...emoji; }
 ```
 
-具体 `--font-inter` 等变量来自 `next/font/google` 或类似:
+消费方只需配好对应的 CSS 变量 (`--font-inter`, `--font-manrope`),
+通常来自 `next/font/google`:
 
 ```ts
 // app/fonts.ts
@@ -181,6 +183,10 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 // app/layout.tsx
 <body className={`${inter.variable} ${manrope.variable}`}>
 ```
+
+要扩展更多字体（例如 `jetbrains-mono`）则需要在 app 全局 CSS 里自己加
+对应的 `:root.font-jetbrains-mono body { ... }` 规则, 并通过
+`<FontProvider options={[..., "jetbrains-mono"]}>` 把它加进可选列表。
 
 ### `LayoutProvider`
 

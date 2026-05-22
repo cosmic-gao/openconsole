@@ -3,8 +3,14 @@
   "version": "0.0.0",
   "private": false,
   "type": "module",
-  "sideEffects": ["**/*.css"],
-  "main": "index.ts",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./styles.css": "./styles.css"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit"
@@ -19,7 +25,8 @@
     "next-themes": "*",
     "react": "^19.0.0",
     "react-day-picker": "*",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

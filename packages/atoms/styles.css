@@ -1,0 +1,22 @@
+/* Register this package's source files as Tailwind content sources. */
+@source "./**/*.{ts,tsx}";
+
+/*
+ * Font-family rules paired with FontProvider. FontProvider toggles
+ * `font-${value}` class on <html>. The actual font variables
+ * (--font-inter, --font-manrope, ...) are provided by the consumer
+ * via next/font or equivalent.
+ */
+@layer base {
+  :root.font-inter body {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root.font-manrope body {
+    font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root.font-system body {
+    font-family:
+      ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  }
+}

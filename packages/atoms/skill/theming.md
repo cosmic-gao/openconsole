@@ -4,11 +4,30 @@
 （从 `@openconsole/shadcn` 继承）+ 三个 atoms provider 的组合。这份文件
 讲清楚:
 
+- 接入（@import shadcn + atoms 的 styles.css）
 - 亮 / 暗切换怎么连
 - View Transitions API 圆形展开动画
 - 字体切换
 - 布局变体切换
 - 怎么扩展主题预设（局限）
+
+---
+
+## 接入
+
+app 的全局 CSS:
+
+```css
+@import "tailwindcss";
+@import "@openconsole/shadcn/styles.css";
+@import "@openconsole/atoms/styles.css";
+```
+
+- `shadcn/styles.css` 提供主题 token、`@theme inline` 映射、base 层 reset
+- `atoms/styles.css` 提供配套 `FontProvider` 的字体规则
+  （`:root.font-inter body { font-family: var(--font-inter), ... }` 等）
+
+两个都要 @import, shadcn 在前。
 
 ---
 
@@ -128,15 +147,17 @@ function MyFontPicker() {
 ```
 
 `FontProvider` 给 `<html>` 加 `font-${value}` class（默认 prefix `font-`）。
-**你需要在全局 CSS 里定义对应规则**:
+**默认三种字体（`inter` / `manrope` / `system`）的 font-family 规则已由
+`@openconsole/atoms/styles.css` 内置**, 等价于:
 
 ```css
-html.font-inter { font-family: var(--font-inter), sans-serif; }
-html.font-manrope { font-family: var(--font-manrope), sans-serif; }
-html.font-system { font-family: ui-sans-serif, system-ui, sans-serif; }
+:root.font-inter body { font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif; }
+:root.font-manrope body { font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif; }
+:root.font-system body { font-family: ui-sans-serif, system-ui, sans-serif, ...emoji; }
 ```
 
-变量来自 `next/font/google` 或类似:
+只需保证 `--font-inter` / `--font-manrope` 等变量被消费方 app 注入
+（一般来自 `next/font/google`）:
 
 ```ts
 // app/fonts.ts
