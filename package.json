@@ -23,12 +23,22 @@
     "release:version": "nx release version",
     "release:changelog": "nx release changelog",
     "release:publish": "nx release publish",
-    "reset": "nx reset"
+    "reset": "nx reset",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@nx/js": "22.7.2",
     "@openconsole/tsconfig": "workspace:*",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "nx": "22.7.2",
+    "prettier": "^3.4.2",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*": "nx format:write --uncommitted"
   }
 }

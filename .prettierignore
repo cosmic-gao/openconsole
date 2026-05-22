@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+coverage
+.nx
+pnpm-lock.yaml
+*.tsbuildinfo
+.next
+.output
+.nuxt
+
+# Skill markdown is hand-formatted — keep prose untouched
+packages/*/skill
+packages/*/skill/**

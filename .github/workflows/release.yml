@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run (preview only, no publish)"
+        type: boolean
+        default: false
+      first-release:
+        description: "First release of any new packages (no prior tags)"
+        type: boolean
+        default: false
+
+# Only one release at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release public packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # push commits, tags, GitHub release
+      id-token: write # for npm provenance (optional)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # PAT or default token — default token can push to protected branches
+          # when "Allow specified actors to bypass required pull requests" is on.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Final pre-release check
+        run: pnpm nx run-many -t typecheck test --parallel=4
+
+      - name: Release (dry-run)
+        if: ${{ inputs.dry-run }}
+        env:
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          pnpm release \
+            --dry-run \
+            ${{ inputs.first-release && '--first-release' || '' }}
+
+      - name: Release
+        if: ${{ !inputs.dry-run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          pnpm release \
+            --yes \
+            ${{ inputs.first-release && '--first-release' || '' }}

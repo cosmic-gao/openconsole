@@ -9,10 +9,7 @@
       "{workspaceRoot}/pnpm-workspace.yaml",
       "{workspaceRoot}/configs/tsconfig/**/*"
     ],
-    "default": [
-      "{projectRoot}/**/*",
-      "sharedGlobals"
-    ],
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
     "production": [
       "default",
       "!{projectRoot}/**/*.{spec,test}.{ts,tsx}",
@@ -53,10 +50,7 @@
     },
     "lint": {
       "cache": true,
-      "inputs": [
-        "default",
-        "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"
-      ]
+      "inputs": ["default", "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"]
     }
   },
   "release": {
