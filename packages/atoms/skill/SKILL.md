@@ -100,7 +100,7 @@ shadcn 在前。
 | "应用主框架 / 后台外壳" | 包根 `<ThemeProvider> + <FontProvider> + <LayoutProvider>` + `<Sidebar>` | 装配顺序见 [Provider 装配](#provider-装配关键) |
 | "主题切换按钮 / 亮暗切换" | `ThemeSwitch` | 零配置组件，自动用 view-transition 圆形展开 |
 | "设置抽屉 / 偏好 / 主题面板 / 切字体切布局" | `Preferences` | `<Preferences open={x} onOpenChange={setX} />` |
-| "侧边栏 / 导航 / 后台侧栏 / 带 logo 的侧栏" | `Sidebar` | 传 `brand` + `menu` + `account` 三个数据 |
+| "侧边栏 / 导航 / 后台侧栏 / 带 logo 的侧栏" | `Sidebar` | 传 `brand` + `menu` + `account` 三个数据;`account.menu` 可选, 给账号卡片加 Profile/Logout 下拉 |
 | "用户列表 / 数据表格 / 列表" | `DataTable` | 传 `columns` + `data`，可选 `pageSize` / `pagination` |
 | "可搜索下拉 / 自动补全 / 选项搜索" | `Combobox` | 传 `options: { value, label }[]` + `value` / `onValueChange` |
 | "日期选择器 / 日期输入" | `DatePicker` | 传 `value: Date` + `onValueChange: (Date) => void` |
@@ -215,6 +215,9 @@ function PreferencesButton() {
 带品牌区 / 菜单区 / 账号区三段式的侧边栏，从 `LayoutProvider` 自动
 读 `variant` / `collapsible` / `side`。
 
+视觉风格紧贴 shadcn 默认: 品牌 logo 用 `bg-sidebar-primary` 单色块, active
+菜单项依赖原语自带的 `bg-sidebar-accent` 高亮 —— 改主题 token 整套自动跟。
+
 ```tsx
 import { Sidebar } from "@openconsole/atoms";
 import { SidebarInset } from "@openconsole/shadcn";
@@ -246,6 +249,20 @@ const data = {
     name: "Jane Doe",
     email: "jane@acme.com",
     avatar: "/avatar.png",
+    // 可选: 给 account 卡片加下拉菜单 (Profile / Billing / Sign out)。
+    // 没传 menu 时, account 卡片是静态展示。
+    menu: [
+      { label: "个人资料", icon: "User", href: "/profile" },
+      { label: "账单", icon: "CreditCard", href: "/billing" },
+      { label: "通知", icon: "Bell", href: "/notifications" },
+      {
+        label: "退出登录",
+        icon: "LogOut",
+        onSelect: () => signOut(),
+        separator: true,    // 上面画一条分隔线
+        destructive: true,  // 红色危险态
+      },
+    ],
   },
 };
 
@@ -254,10 +271,23 @@ const data = {
 <SidebarInset>{children}</SidebarInset>
 ```
 
+**`AccountMenuItem` 字段**:
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `label` | `string` | 必填,菜单项文本 |
+| `icon` | `string` | 可选,lucide 图标名 |
+| `href` | `LinkProps["href"]` | 跳转链接(渲染成 `<Link>`) |
+| `onSelect` | `() => void` | 点击回调(`href` 二选一) |
+| `separator` | `boolean` | 在该项**之前**插入分隔线 |
+| `destructive` | `boolean` | 红色文字,适合"退出 / 删除" |
+
 **注意**:
 - 数据驱动 —— 不要在 JSX 里手拼菜单项。
 - 图标用字符串名（`"LayoutDashboard"`），不要 import 图标组件。
 - 菜单**只渲染一层嵌套**（parent + children），更深的会被忽略。
+- `account.menu` 留空时是静态卡片;有 items 时变成 dropdown trigger,
+  右侧带 `ChevronsUpDown` 提示,desktop 从右侧弹,移动端从底部弹。
 - 同时 import shadcn 的 `Sidebar` 时记得起别名（见
   [常见坑](#常见坑)）。
 

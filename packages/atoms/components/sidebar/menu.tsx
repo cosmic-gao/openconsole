@@ -31,9 +31,6 @@ import {
 } from "@openconsole/shadcn";
 import type { MenuGroup, MenuItem } from "./types";
 
-const ACTIVE_TEXT = "text-primary";
-const ACTIVE_PILL = cn("bg-primary/10", ACTIVE_TEXT);
-
 type Parent = MenuItem & { children: MenuItem[] };
 
 function isParent(item: MenuItem): item is Parent {
@@ -54,29 +51,16 @@ function NavBadge({
 }) {
   return (
     <Badge
+      variant="secondary"
       className={cn(
-        "ml-auto rounded-full border-0 px-2 py-0.5 text-[10px] font-medium",
-        color === "green"
-          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          : "bg-primary/10 text-primary",
+        "ml-auto h-5 px-1.5 text-[10px] font-medium",
+        color === "green" &&
+          "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+        color === "violet" && "bg-primary/15 text-primary",
       )}
     >
       {children}
     </Badge>
-  );
-}
-
-function ItemIcon({ name, active }: { name?: string; active: boolean }) {
-  return (
-    <Icon
-      name={name}
-      className={cn(
-        "transition-colors",
-        active
-          ? ACTIVE_TEXT
-          : "text-muted-foreground group-hover/link:text-foreground",
-      )}
-    />
   );
 }
 
@@ -96,13 +80,9 @@ function MenuSection({ group }: { group: MenuGroup }) {
   const collapsed = state === "collapsed";
 
   return (
-    <SidebarGroup>
-      {group.label && (
-        <SidebarGroupLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-          {group.label}
-        </SidebarGroupLabel>
-      )}
-      <SidebarMenu className="gap-1">
+    <SidebarGroup className="py-0">
+      {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+      <SidebarMenu>
         {group.items.map((item) => {
           const key = `${item.label}-${item.href ?? "group"}`;
           if (!isParent(item)) {
@@ -125,21 +105,10 @@ function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={active}
-        tooltip={item.label}
-        className={cn(
-          "group/link relative transition-all duration-200",
-          active && ACTIVE_PILL,
-        )}
-      >
+      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
         <Link href={item.href ?? "#"} onClick={() => setOpenMobile(false)}>
-          {active && (
-            <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-linear-to-b from-primary to-primary/60" />
-          )}
-          <ItemIcon name={item.icon} active={active} />
-          <span className="font-medium">{item.label}</span>
+          {item.icon && <Icon name={item.icon} />}
+          <span>{item.label}</span>
           {item.badge && (
             <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
           )}
@@ -152,7 +121,8 @@ function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
 function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
   const { setOpenMobile } = useSidebar();
   const active = isActive(pathname, item);
-  // Auto-expand when pathname makes this branch active (not just on mount).
+  // Controlled `open` so navigating between routes can re-expand the matching
+  // branch (defaultOpen only fires once on mount).
   const [open, setOpen] = React.useState(active);
   React.useEffect(() => {
     if (active) setOpen(true);
@@ -167,40 +137,27 @@ function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton
-            tooltip={item.label}
-            className={cn(
-              "group/link transition-all duration-200",
-              active && ACTIVE_TEXT,
-            )}
-          >
-            <ItemIcon name={item.icon} active={active} />
-            <span className="font-medium">{item.label}</span>
+          <SidebarMenuButton tooltip={item.label} isActive={active}>
+            {item.icon && <Icon name={item.icon} />}
+            <span>{item.label}</span>
             {item.badge && (
               <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
             )}
-            <ChevronRight className="ml-auto size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub className="border-l-2 border-primary/20 ml-3.5">
+          <SidebarMenuSub>
             {item.children.map((child) => {
               const childActive = pathname === child.href;
               return (
                 <SidebarMenuSubItem key={child.label}>
-                  <SidebarMenuSubButton
-                    asChild
-                    isActive={childActive}
-                    className={cn(
-                      "transition-all duration-200",
-                      childActive && ACTIVE_PILL,
-                    )}
-                  >
+                  <SidebarMenuSubButton asChild isActive={childActive}>
                     <Link
                       href={child.href ?? "#"}
                       onClick={() => setOpenMobile(false)}
                     >
-                      <Icon name={child.icon} className="size-4" />
+                      {child.icon && <Icon name={child.icon} />}
                       <span>{child.label}</span>
                       {child.badge && (
                         <NavBadge color={child.badgeColor}>
@@ -226,48 +183,41 @@ function Flyout({ item, pathname }: { item: Parent; pathname: string }) {
     <SidebarMenuItem>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton
-            tooltip={item.label}
-            className={cn("transition-all duration-200", active && ACTIVE_PILL)}
-          >
-            <ItemIcon name={item.icon} active={active} />
-            <span className="font-medium">{item.label}</span>
+          <SidebarMenuButton tooltip={item.label} isActive={active}>
+            {item.icon && <Icon name={item.icon} />}
+            <span>{item.label}</span>
             {item.badge && (
               <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
             )}
-            <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+            <ChevronRight className="ml-auto" />
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           side="right"
           align="start"
           sideOffset={4}
-          className="min-w-52 rounded-xl border-border/50 bg-background/95 backdrop-blur-xl shadow-xl"
+          className="min-w-52 rounded-lg"
         >
-          <DropdownMenuLabel className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <DropdownMenuLabel className="flex items-center gap-2">
             {item.label}
             {item.badge && (
               <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
             )}
           </DropdownMenuLabel>
-          <DropdownMenuSeparator className="bg-border/50" />
+          <DropdownMenuSeparator />
           {item.children.map((child) => {
             const childActive = pathname === child.href;
             return (
-              <DropdownMenuItem
-                key={`${child.label}-${child.href}`}
-                asChild
-                className="rounded-lg"
-              >
+              <DropdownMenuItem key={`${child.label}-${child.href}`} asChild>
                 <Link
                   href={child.href ?? "#"}
                   className={cn(
-                    "flex items-center gap-2 px-2 py-2",
-                    childActive && ACTIVE_PILL,
+                    "flex items-center gap-2",
+                    childActive && "bg-accent text-accent-foreground",
                   )}
                 >
-                  <Icon name={child.icon} className="size-4" />
-                  <span className="max-w-52 text-wrap">{child.label}</span>
+                  {child.icon && <Icon name={child.icon} />}
+                  <span>{child.label}</span>
                   {child.badge && (
                     <NavBadge color={child.badgeColor}>{child.badge}</NavBadge>
                   )}

@@ -15,13 +15,15 @@ import { useLayout } from "../../providers/layout-provider";
 import { Account } from "./account";
 import { Brand } from "./brand";
 import { Menu } from "./menu";
-import type {
-  Brand as BrandData,
+import type { Brand as BrandData, MenuGroup, User } from "./types";
+
+export type {
+  AccountMenuItem,
+  Brand,
   MenuGroup,
+  MenuItem,
   User,
 } from "./types";
-
-export type { Brand, MenuGroup, MenuItem, User } from "./types";
 
 /**
  * Sidebar props. `brand`/`menu`/`account` shape the rendered chrome; the rest
@@ -49,11 +51,11 @@ export function Sidebar({ brand, menu, account, ...props }: SidebarProps) {
       {...props}
     >
       {brand && (
-        <SidebarHeader>
+        <SidebarHeader className="group-data-[collapsible=icon]:pt-4">
           <Brand brand={brand} />
         </SidebarHeader>
       )}
-      <SidebarContent>
+      <SidebarContent className="overflow-x-hidden">
         <Menu groups={menu} />
       </SidebarContent>
       {account && (
