@@ -1,7 +1,7 @@
 {
   "name": "@opendesign/atoms",
   "version": "0.0.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "sideEffects": ["**/*.css"],
   "main": "index.ts",
