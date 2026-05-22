@@ -1,3 +1,81 @@
 {
-  "$schema": "./node_modules/nx/schemas/nx-schema.json"
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "main",
+  "parallel": 4,
+  "namedInputs": {
+    "sharedGlobals": [
+      { "runtime": "node --version" },
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/pnpm-workspace.yaml",
+      "{workspaceRoot}/configs/tsconfig/**/*"
+    ],
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.{spec,test}.{ts,tsx}",
+      "!{projectRoot}/tests/**/*",
+      "!{projectRoot}/vitest.config.{ts,js,mjs}",
+      "!{projectRoot}/tsconfig.tsbuildinfo"
+    ]
+  },
+  "targetDefaults": {
+    "typecheck": {
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "outputs": ["{projectRoot}/tsconfig.tsbuildinfo"],
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "outputs": ["{workspaceRoot}/coverage/{projectName}"],
+      "dependsOn": ["^typecheck"]
+    },
+    "test:coverage": {
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "outputs": ["{workspaceRoot}/coverage/{projectName}"],
+      "dependsOn": ["^typecheck"]
+    },
+    "check": {
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "dependsOn": ["^typecheck"]
+    },
+    "build": {
+      "cache": true,
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/dist"],
+      "dependsOn": ["^build"]
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"
+      ]
+    }
+  },
+  "release": {
+    "projects": [
+      "@openconsole/atoms",
+      "@openconsole/shadcn",
+      "@openconsole/nacos"
+    ],
+    "projectsRelationship": "independent",
+    "releaseTagPattern": "{projectName}@{version}",
+    "version": {
+      "conventionalCommits": true
+    },
+    "changelog": {
+      "workspaceChangelog": false,
+      "projectChangelogs": true
+    }
+  },
+  "tui": {
+    "enabled": true
+  }
 }
