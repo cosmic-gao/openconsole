@@ -1,0 +1,49 @@
+{
+  "name": "@opendesign/nacos",
+  "version": "0.1.0",
+  "description": "Service registry, discovery, config center and HTTP client for Nacos — designed for Next.js 16+",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./next": {
+      "types": "./src/next.ts",
+      "default": "./src/next.ts"
+    }
+  },
+  "files": ["src", "skills", "README.md"],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "nacos",
+    "service-discovery",
+    "service-registry",
+    "config-center",
+    "load-balancer",
+    "next.js",
+    "rsc"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "peerDependencies": {
+    "nacos": "^2",
+    "next": "^15 || ^16"
+  },
+  "peerDependenciesMeta": {
+    "next": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.0"
+  }
+}
