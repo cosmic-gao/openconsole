@@ -1,21 +1,21 @@
-# 主题化
+# Theming
 
-`@openconsole/atoms` 的主题系统是 `next-themes` + Tailwind v4 语义 token
-（从 `@openconsole/shadcn` 继承）+ 三个 atoms provider 的组合。这份文件
-讲清楚:
+`@openconsole/atoms`' theming system is built on `next-themes` + Tailwind v4
+semantic tokens (inherited from `@openconsole/shadcn`) + the three atoms
+providers. This document covers:
 
-- 接入（@import shadcn + atoms 的 styles.css）
-- 亮 / 暗切换怎么连
-- View Transitions API 圆形展开动画
-- 字体切换
-- 布局变体切换
-- 怎么扩展主题预设（局限）
+- Setup (`@import` shadcn + atoms stylesheets).
+- Wiring light / dark mode.
+- View-transition circular reveal animation.
+- Font switching.
+- Layout variant switching.
+- Theme preset extension (and its limits).
 
 ---
 
-## 接入
+## Setup
 
-app 的全局 CSS:
+App-level global CSS:
 
 ```css
 @import "tailwindcss";
@@ -23,38 +23,40 @@ app 的全局 CSS:
 @import "@openconsole/atoms/styles.css";
 ```
 
-- `shadcn/styles.css` 提供主题 token、`@theme inline` 映射、base 层 reset
-- `atoms/styles.css` 提供配套 `FontProvider` 的字体规则
-  （`:root.font-inter body { font-family: var(--font-inter), ... }` 等）
+- `shadcn/styles.css` ships theme tokens, the `@theme inline` mapping,
+  and the base-layer reset.
+- `atoms/styles.css` ships the font rules paired with `FontProvider`
+  (`:root.font-inter body { font-family: var(--font-inter), ... }`, etc.).
 
-两个都要 @import, shadcn 在前。
+Both `@import`s are required; shadcn must come first.
 
 ---
 
-## 亮 / 暗切换
+## Light / dark switching
 
 ```tsx
 import { ThemeProvider, ThemeSwitch } from "@openconsole/atoms";
 
-// 包根
+// At the root
 <ThemeProvider>{children}</ThemeProvider>
 
-// 任何位置
+// Anywhere
 <ThemeSwitch />
 ```
 
-`ThemeProvider` 是 `next-themes` 的 `ThemeProvider` 的薄包装，默认:
+`ThemeProvider` is a thin wrapper around `next-themes` `ThemeProvider` with
+these defaults:
 
 ```tsx
 <NextThemesProvider
-  attribute="class"            // 给 <html> 加 "dark" class
-  defaultTheme="system"         // 跟随系统
+  attribute="class"            // adds "dark" class to <html>
+  defaultTheme="system"         // follows OS
   enableSystem
-  disableTransitionOnChange     // 避免颜色 transition 闪烁
+  disableTransitionOnChange     // avoids transition flicker during switch
 />
 ```
 
-要改默认行为传同名 prop:
+Override by passing the same prop:
 
 ```tsx
 <ThemeProvider defaultTheme="light">{children}</ThemeProvider>
@@ -62,14 +64,15 @@ import { ThemeProvider, ThemeSwitch } from "@openconsole/atoms";
 
 ---
 
-## View Transitions 圆形展开
+## View-transition circular reveal
 
-`ThemeSwitch` 点击时把鼠标坐标转成 `--vt-origin-x` / `--vt-origin-y`
-两个 CSS 百分比，调用 `document.startViewTransition` 切主题。配合下面
-的全局 CSS 就有从点击点圆形展开的动画:
+When clicked, `ThemeSwitch` writes the cursor position to two CSS
+percentage variables (`--vt-origin-x` / `--vt-origin-y`) and calls
+`document.startViewTransition` to swap the theme. Combined with the global
+CSS below, the new theme reveals as a circle expanding from the click point:
 
 ```css
-/* 在 app 的全局 CSS 加这段 */
+/* Add this to your app's global CSS */
 @supports (view-transition-name: root) {
   ::view-transition-new(root) {
     clip-path: circle(0% at var(--vt-origin-x, 50%) var(--vt-origin-y, 50%));
@@ -83,12 +86,14 @@ import { ThemeProvider, ThemeSwitch } from "@openconsole/atoms";
 }
 ```
 
-不支持 View Transitions 的浏览器（Firefox < 132 等）会降级为瞬切。
+Browsers without View Transitions support (Firefox < 132, etc.) fall back
+to an instant switch.
 
-### 自己写带动画的切换按钮
+### Writing your own animated toggle
 
-`useViewTransition` 是 atoms 包**内部**的 hook（没在 barrel 导出）。
-要自己写带 view-transition 的切换按钮，复制 ThemeSwitch 的思路:
+`useViewTransition` is an **internal** hook (not exported from the
+package barrel). To build a custom toggle with the same effect, mirror
+`ThemeSwitch`'s pattern:
 
 ```tsx
 "use client";
@@ -115,27 +120,27 @@ export function MyThemeToggle() {
     }
   };
 
-  return <Button onClick={onClick}>切换主题</Button>;
+  return <Button onClick={onClick}>Toggle theme</Button>;
 }
 ```
 
-> 用 `resolvedTheme` 而不是 `theme` —— 当用户处于 System 模式时
-> `theme === "system"`，naive 的 `theme === "dark" ? ...` 第一次点
-> 会无动作。
+> Use `resolvedTheme` rather than `theme` — when the user is on System
+> mode, `theme === "system"`, so a naive `theme === "dark" ? ...` flip
+> won't work on the first click.
 
 ---
 
-## 字体切换
+## Font switching
 
 ```tsx
 import { FontProvider, useFont } from "@openconsole/atoms";
 
-// 包根
+// At the root
 <FontProvider options={["inter", "manrope", "system"]}>
   {children}
 </FontProvider>
 
-// 任何位置
+// Anywhere
 function MyFontPicker() {
   const { font, setFont, options } = useFont();
   return (
@@ -146,9 +151,10 @@ function MyFontPicker() {
 }
 ```
 
-`FontProvider` 给 `<html>` 加 `font-${value}` class（默认 prefix `font-`）。
-**默认三种字体（`inter` / `manrope` / `system`）的 font-family 规则已由
-`@openconsole/atoms/styles.css` 内置**, 等价于:
+`FontProvider` applies the active font by adding `font-${value}` to
+`<html>` (prefix `font-` by default). The default three options
+(`inter` / `manrope` / `system`) come with font-family rules shipped in
+`@openconsole/atoms/styles.css`:
 
 ```css
 :root.font-inter body { font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif; }
@@ -156,8 +162,8 @@ function MyFontPicker() {
 :root.font-system body { font-family: ui-sans-serif, system-ui, sans-serif, ...emoji; }
 ```
 
-只需保证 `--font-inter` / `--font-manrope` 等变量被消费方 app 注入
-（一般来自 `next/font/google`）:
+Make sure the CSS variables (`--font-inter`, `--font-manrope`) are
+injected by the consuming app — usually via `next/font/google`:
 
 ```ts
 // app/fonts.ts
@@ -172,37 +178,37 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 <body className={`${inter.variable} ${manrope.variable}`}>
 ```
 
-### 关闭持久化
+### Disable persistence
 
 ```tsx
 <FontProvider storage={null}>{children}</FontProvider>
 ```
 
-### 自定义 class prefix
+### Custom class prefix
 
 ```tsx
-<FontProvider classPrefix="theme-font-">  {/* class 变成 theme-font-inter */}
+<FontProvider classPrefix="theme-font-">  {/* class becomes theme-font-inter */}
   {children}
 </FontProvider>
 ```
 
-### 关闭 class 应用（自己接）
+### Disable class application (apply yourself)
 
 ```tsx
 <FontProvider classPrefix="">{children}</FontProvider>
 ```
 
-然后用 `useFont()` 的 `font` 值自己应用到任意元素。
+Then use `useFont()`'s `font` value and apply it to any element manually.
 
 ---
 
-## 布局变体切换
+## Layout variant switching
 
 ```tsx
 import { LayoutProvider, useLayout, Sidebar } from "@openconsole/atoms";
 import { SidebarProvider } from "@openconsole/shadcn";
 
-// 包根
+// At the root
 <LayoutProvider>
   <SidebarProvider>
     <Sidebar {...data} />
@@ -210,7 +216,7 @@ import { SidebarProvider } from "@openconsole/shadcn";
   </SidebarProvider>
 </LayoutProvider>
 
-// 设置面板里
+// Inside a settings panel
 function LayoutSettings() {
   const { config, updateConfig } = useLayout();
   return (
@@ -243,12 +249,13 @@ function LayoutSettings() {
 }
 ```
 
-`Sidebar` 自动读 `config` 的三个值传给 shadcn 的 `Sidebar` 原语 ——
-你不需要自己接线，只在做"用户能调"的设置面板时才用 `useLayout()`。
+`Sidebar` reads all three values from `config` and forwards them to
+shadcn's `Sidebar` primitive — you never wire them up directly. Reach
+for `useLayout()` only when building a user-controlled settings panel.
 
-### 持久化
+### Persistence
 
-`LayoutProvider` **不持久化**。要持久化包一层 wrapper:
+`LayoutProvider` **doesn't persist**. To persist, wrap it:
 
 ```tsx
 "use client";
@@ -287,25 +294,28 @@ function LayoutPersister() {
 
 ---
 
-## 主题预设的扩展（局限）
+## Theme preset extension (limits)
 
-`Preferences` 抽屉的主题 tab 内置 **shadcn 与 tweakcn** 两套预设。
-这些预设的数据源在 atoms 包内部（`components/preferences/presets/`），
-**消费方不能直接编辑**。
+The `Preferences` drawer ships with two built-in preset families:
+**shadcn** and **tweakcn**. Their data lives inside the atoms package
+(`components/preferences/presets/`) and **cannot** be edited by the
+consumer.
 
-要扩展时:
+To extend:
 
-1. **临时换主题** —— 让用户在 `Preferences` 的 **Importer** tab 里粘
-   一段 `:root { … } .dark { … }` CSS。`Preferences` 会解析并即时应用。
-2. **永久换主题** —— 在 app 的全局 CSS 里直接改 `:root` / `.dark` 的
-   语义 token 变量（`--primary`、`--background` 等）。
+1. **Temporary theme change** — let the user paste a CSS block
+   (`:root { … } .dark { … }`) into the `Preferences` **Importer** tab.
+   It's parsed and applied live.
+2. **Permanent theme change** — override `:root` / `.dark` semantic tokens
+   (`--primary`, `--background`, …) in your app's global CSS.
 
-如果你的项目需要内置更多预设（比如品牌色预设），目前的合规方式是:
+If you need built-in presets (e.g. brand-specific palettes), the
+recommended workaround is:
 
-- 在应用层自己维护一个预设列表
-- 给用户做一个简单的 `<select>` UI（不走 `Preferences` 抽屉）
-- 选中后用 `document.documentElement.style.setProperty` 一组一组写
-  CSS 变量
+- Maintain your own preset list at the app level.
+- Build a simple `<select>` UI (don't go through the `Preferences` drawer).
+- On select, apply each CSS variable via
+  `document.documentElement.style.setProperty`:
 
 ```tsx
 const presets = {
@@ -331,14 +341,15 @@ function applyPreset(name: keyof typeof presets) {
 
 ---
 
-## 三个 provider 的状态边界
+## State boundaries across the three providers
 
-| 状态 | 控制变量 | 应用到 |
+| State | Controlled by | Applies to |
 |---|---|---|
-| 亮 / 暗 | `<html class="dark">` | 所有引用 `dark:` variant 或语义 token 的元素 |
-| 字体 | `<html class="font-inter">` | 全局 `font-family`（要全局 CSS 配合） |
-| Sidebar 变体 | atoms `useLayout()` config | `Sidebar` 组件（shadcn `Sidebar` 原语的 `variant` / `collapsible` / `side` props） |
-| Sidebar 展开 / 折叠 | shadcn `useSidebar()` open | `Sidebar` 组件自身 |
+| Light / dark | `<html class="dark">` | Anything referencing the `dark:` variant or semantic tokens |
+| Font | `<html class="font-inter">` | Global `font-family` (requires the matching CSS rule) |
+| Sidebar variant | atoms `useLayout()` config | `Sidebar` component (shadcn `Sidebar` primitive's `variant` / `collapsible` / `side` props) |
+| Sidebar open / collapse | shadcn `useSidebar()` open state | `Sidebar` component itself |
 
-主题色 / 圆角 / spacing 等**结构性 token** 不在任何 provider 里，
-它们就是全局 CSS 变量，所有组件自然读到。
+Structural tokens (theme colors, radius, spacing) aren't owned by any
+provider — they're plain global CSS variables that all components read
+naturally.

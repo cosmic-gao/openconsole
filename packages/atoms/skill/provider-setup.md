@@ -1,27 +1,28 @@
-# Provider 装配
+# Provider Assembly
 
-`@openconsole/atoms` 暴露三个 Context provider，加上一个 shadcn 原生
-provider，构成应用根布局的标准装配。这份文件讲清楚:
+`@openconsole/atoms` exposes three Context providers. Combined with one
+shadcn primitive provider, they form the standard root-layout setup. This
+document spells out:
 
-- 每个 provider 是干什么的
-- 必要的装配顺序与原因
-- 默认值与可调 prop
-- 持久化策略与扩展点
+- What each provider owns.
+- The required assembly order and why.
+- Default values and tunable props.
+- Persistence strategies and extension points.
 
 ---
 
-## 四个 provider 的角色
+## The four providers
 
-| Provider | 来自 | 管理什么 | 持久化 |
+| Provider | From | Owns | Persistence |
 |---|---|---|---|
-| `ThemeProvider` | `@openconsole/atoms` | 亮 / 暗 / 系统主题（给 `<html>` 加 `dark` class） | localStorage（next-themes 自带） |
-| `FontProvider` | `@openconsole/atoms` | 当前字体（给 `<html>` 加 `font-${name}` class） | localStorage（默认 `openconsole-font`，可关） |
-| `LayoutProvider` | `@openconsole/atoms` | Sidebar 变体: `variant` / `collapsible` / `side` | **不持久化**（业务自接） |
-| `SidebarProvider` | `@openconsole/shadcn` | Sidebar 展开 / 折叠状态、移动端切换 | cookie（shadcn 自带） |
+| `ThemeProvider` | `@openconsole/atoms` | Light / dark / system theme (adds `dark` class to `<html>`) | localStorage (via next-themes) |
+| `FontProvider` | `@openconsole/atoms` | Active font (adds `font-${name}` class to `<html>`) | localStorage (key `openconsole-font` by default, opt-out available) |
+| `LayoutProvider` | `@openconsole/atoms` | Sidebar variant: `variant` / `collapsible` / `side` | **Not persisted** (consumer wires their own) |
+| `SidebarProvider` | `@openconsole/shadcn` | Sidebar open / collapse state, mobile open state | cookie (shadcn handles it) |
 
 ---
 
-## 标准装配
+## Standard setup
 
 ```tsx
 // app/layout.tsx
@@ -34,7 +35,7 @@ import { SidebarProvider } from "@openconsole/shadcn";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider>
           <FontProvider>
@@ -53,45 +54,47 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ### `suppressHydrationWarning`
 
-`<html>` 上必须加 `suppressHydrationWarning` —— `next-themes` 在客户端
-首屏前会同步设置 `dark` class，跟服务端渲染时的 class 必然不一致，
-不抑制就报 hydration warning。
+`<html>` must have `suppressHydrationWarning` — `next-themes` synchronously
+sets the `dark` class on the client before first paint, which guarantees a
+mismatch with the server-rendered class. Without the suppression, React
+emits a hydration warning.
 
 ---
 
-## 为什么是这个顺序
+## Why this order
 
-由内而外依赖关系是: `SidebarProvider` → `LayoutProvider` →
-`FontProvider` → `ThemeProvider`。
+The inside-out dependency chain is `SidebarProvider` → `LayoutProvider` →
+`FontProvider` → `ThemeProvider`.
 
-- **`ThemeProvider` 在最外**: 它给 `<html>` 加 `dark` class，外层的
-  CSS 解析依赖这个 class。如果套在别的 provider 里面，next-themes 的
-  脚本可能在子 provider mount 之前才执行。
-- **`FontProvider` 紧贴 `ThemeProvider`**: 也给 `<html>` 加 class
-  （`font-inter` 等），逻辑上跟 ThemeProvider 同层级，但因为
-  ThemeProvider 还做 SSR / matchMedia 等更底层的事，放到 ThemeProvider
-  内部比较自然。
-- **`LayoutProvider` 在 FontProvider 内**: 它只是普通 React state，
-  没 DOM 副作用，位置相对自由。
-- **`SidebarProvider`（shadcn 的）在最内**: 它读 `LayoutProvider` 的
-  config 来决定 sidebar 的初始状态。如果你的 Sidebar 不在所有 route
-  下都显示，也可以把 `SidebarProvider` 下移到只包含 sidebar 的 layout 里。
+- **`ThemeProvider` outermost**: it sets the `dark` class on `<html>`, and
+  outer CSS resolution depends on that class. Nesting it deeper makes
+  next-themes' inline script potentially fire after child providers mount.
+- **`FontProvider` directly inside `ThemeProvider`**: it also sets a class
+  on `<html>` (`font-inter`, etc.). Logically peer to `ThemeProvider`, but
+  because `ThemeProvider` also handles SSR and `matchMedia`, putting
+  `FontProvider` inside it is more natural.
+- **`LayoutProvider` inside `FontProvider`**: it's pure React state with no
+  DOM side effects, so placement is flexible.
+- **`SidebarProvider` (from shadcn) innermost**: it reads `LayoutProvider`'s
+  config to seed the sidebar's initial state. If your sidebar isn't shown
+  on every route, you can push `SidebarProvider` down to a narrower layout
+  that only covers sidebar-bearing routes.
 
 ---
 
-## 单独可拆性
+## Picking a subset
 
-不是所有应用都需要全套。常见组合:
+Not every app needs the full stack. Common compositions:
 
-### 只要主题切换
+### Only theme switching
 
 ```tsx
 <ThemeProvider>{children}</ThemeProvider>
 ```
 
-业务只用 `ThemeSwitch` 或 next-themes 的 `useTheme`。
+Business code only uses `ThemeSwitch` or next-themes' `useTheme`.
 
-### 主题 + 字体切换
+### Theme + font switching
 
 ```tsx
 <ThemeProvider>
@@ -99,9 +102,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 </ThemeProvider>
 ```
 
-业务可用 `useFont()` 自己做字体切换 UI。
+Business code can use `useFont()` for a custom font picker UI.
 
-### 主题 + 布局（不用字体切换）
+### Theme + layout (no font switching)
 
 ```tsx
 <ThemeProvider>
@@ -113,15 +116,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 </ThemeProvider>
 ```
 
-### 用 `Preferences` 抽屉
+### Using the `Preferences` drawer
 
-必须**三个 atoms provider 全装上**:
+Requires **all three atoms providers**:
 
 ```tsx
 <ThemeProvider>
   <FontProvider>
     <LayoutProvider>
-      {/* Preferences 内部读这三个 */}
+      {/* Preferences reads all three internally */}
       {children}
     </LayoutProvider>
   </FontProvider>
@@ -130,22 +133,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ---
 
-## 各 provider 的可调 prop
+## Tunable props
 
 ### `ThemeProvider`
 
 ```tsx
 <ThemeProvider
-  attribute="class"           // 默认 "class"
-  defaultTheme="system"        // 默认 "system"
-  enableSystem                 // 默认 true
-  disableTransitionOnChange    // 默认 true（避免颜色切换时的 transition 闪烁）
+  attribute="class"           // default "class"
+  defaultTheme="system"        // default "system"
+  enableSystem                 // default true
+  disableTransitionOnChange    // default true (avoids transition flicker)
 >
   {children}
 </ThemeProvider>
 ```
 
-接受任何 `next-themes` 的 `ThemeProvider` prop —— 它就是个薄包装。
+Accepts any `next-themes` `ThemeProvider` prop — it's a thin wrapper.
 
 ### `FontProvider`
 
@@ -153,16 +156,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 <FontProvider
   options={["inter", "manrope", "jetbrains-mono", "system"]}
   defaultFont="inter"
-  storage="myapp-font"         // null 关闭持久化
-  classPrefix="font-"          // "" 关闭 class 应用
+  storage="myapp-font"         // pass `null` to disable persistence
+  classPrefix="font-"          // pass `""` to skip class application
 >
   {children}
 </FontProvider>
 ```
 
-字体生效靠在 `<html>` 上加 `font-${value}` class。**默认的三种字体
-规则（`inter` / `manrope` / `system`）已由 `@openconsole/atoms/styles.css`
-内置**, 等价于:
+The active font is applied by adding `font-${value}` to `<html>`. The
+default three fonts (`inter` / `manrope` / `system`) come with rules
+shipped in `@openconsole/atoms/styles.css`, equivalent to:
 
 ```css
 :root.font-inter body { font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif; }
@@ -170,8 +173,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 :root.font-system body { font-family: ui-sans-serif, system-ui, sans-serif, ...emoji; }
 ```
 
-消费方只需配好对应的 CSS 变量 (`--font-inter`, `--font-manrope`),
-通常来自 `next/font/google`:
+You only need to inject the CSS variables (`--font-inter`,
+`--font-manrope`) — typically via `next/font/google`:
 
 ```ts
 // app/fonts.ts
@@ -184,9 +187,9 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 <body className={`${inter.variable} ${manrope.variable}`}>
 ```
 
-要扩展更多字体（例如 `jetbrains-mono`）则需要在 app 全局 CSS 里自己加
-对应的 `:root.font-jetbrains-mono body { ... }` 规则, 并通过
-`<FontProvider options={[..., "jetbrains-mono"]}>` 把它加进可选列表。
+To extend the list (e.g. `jetbrains-mono`), add the matching
+`:root.font-jetbrains-mono body { ... }` rule to your app's global CSS
+**and** pass `<FontProvider options={[..., "jetbrains-mono"]}>`.
 
 ### `LayoutProvider`
 
@@ -202,20 +205,24 @@ export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" 
 </LayoutProvider>
 ```
 
-不持久化。要持久化自己包一层:
+Does not persist. To persist, wrap it:
 
 ```tsx
 "use client";
-import { LayoutProvider, type LayoutConfig } from "@openconsole/atoms";
+import * as React from "react";
+import { LayoutProvider, useLayout, type LayoutConfig } from "@openconsole/atoms";
+
+const STORAGE_KEY = "myapp-layout-config";
 
 export function PersistentLayoutProvider({ children }: { children: React.ReactNode }) {
-  const stored = typeof window !== "undefined"
-    ? localStorage.getItem("layout-config")
-    : null;
-  const defaultConfig = stored ? (JSON.parse(stored) as LayoutConfig) : undefined;
+  const [stored] = React.useState<Partial<LayoutConfig> | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<LayoutConfig>) : undefined;
+  });
 
   return (
-    <LayoutProvider defaultConfig={defaultConfig}>
+    <LayoutProvider defaultConfig={stored}>
       <LayoutPersister />
       {children}
     </LayoutProvider>
@@ -225,7 +232,7 @@ export function PersistentLayoutProvider({ children }: { children: React.ReactNo
 function LayoutPersister() {
   const { config } = useLayout();
   React.useEffect(() => {
-    localStorage.setItem("layout-config", JSON.stringify(config));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   }, [config]);
   return null;
 }
@@ -233,32 +240,33 @@ function LayoutPersister() {
 
 ---
 
-## hook 契约
+## Hook contract
 
-每个 hook 必须在对应的 provider 内调用，否则抛错。
+Each hook must be called inside its provider — otherwise it throws.
 
-| Hook | 必须在 | 返回 |
+| Hook | Required wrapper | Returns |
 |---|---|---|
-| `useTheme()`（来自 next-themes） | `ThemeProvider` | `{ theme, resolvedTheme, setTheme, themes }` |
+| `useTheme()` (from next-themes) | `ThemeProvider` | `{ theme, resolvedTheme, setTheme, themes }` |
 | `useFont()` | `FontProvider` | `{ font, setFont, options }` |
 | `useLayout()` | `LayoutProvider` | `{ config, updateConfig }` |
-| `useSidebar()`（来自 shadcn） | `SidebarProvider` | `{ open, setOpen, openMobile, ... }` |
+| `useSidebar()` (from shadcn) | `SidebarProvider` | `{ open, setOpen, openMobile, ... }` |
 
-抛错信息长这样:
+Throw messages look like:
+
 - `useLayout must be used within a LayoutProvider`
 - `useFont must be used within a FontProvider`
 
-看到这种报错 → 检查包根 provider 装配。
+Seeing one of these → audit root provider assembly.
 
 ---
 
-## SSR 注意事项
+## SSR notes
 
-- **`ThemeProvider`**: `next-themes` 在客户端 hydration 前会同步设
-  class，所以 SSR 输出**不带** `dark` class，hydration 后才补。配合
-  `suppressHydrationWarning` 用。
-- **`FontProvider`**: 跟 ThemeProvider 类似 —— 客户端 `useEffect`
-  里读 localStorage 后才设 class。首屏可能有字体闪烁。要避免闪烁可以
-  把 `defaultFont` 设成跟 SSR 输出一致的字体。
-- **`LayoutProvider`**: 纯客户端 state，SSR 输出固定的 `defaultConfig`
-  快照。
+- **`ThemeProvider`**: `next-themes` injects the `dark` class on the client
+  before hydration, so the SSR output does **not** include it. Pair with
+  `suppressHydrationWarning`.
+- **`FontProvider`**: similar — `useEffect` reads localStorage after mount,
+  so the first paint may show the default font before flipping. To avoid
+  flicker, set `defaultFont` to whatever the SSR HTML expects.
+- **`LayoutProvider`**: pure client state; SSR emits a fixed
+  `defaultConfig` snapshot.

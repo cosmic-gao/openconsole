@@ -2,6 +2,10 @@
 
 import * as React from "react";
 
+/**
+ * Sidebar layout configuration — mirrors the shape consumed by shadcn's
+ * `Sidebar` primitive.
+ */
 export interface LayoutConfig {
   variant: "sidebar" | "floating" | "inset";
   collapsible: "offcanvas" | "icon" | "none";
@@ -21,6 +25,16 @@ const DEFAULT_CONFIG: LayoutConfig = {
 
 const LayoutContext = React.createContext<LayoutContextValue | null>(null);
 
+/**
+ * Holds the sidebar variant config (`variant` / `collapsible` / `side`)
+ * read by atoms' `<Sidebar>` component.
+ *
+ * Does not persist — wrap with your own storage layer if you need
+ * persistence across reloads.
+ *
+ * @param defaultConfig - Partial override merged into the defaults
+ *   (`{ variant: "inset", collapsible: "icon", side: "left" }`).
+ */
 export function LayoutProvider({
   children,
   defaultConfig,
@@ -47,6 +61,13 @@ export function LayoutProvider({
   );
 }
 
+/**
+ * Read the current layout config and update it. Throws when called
+ * outside of a `<LayoutProvider>`.
+ *
+ * @returns `{ config, updateConfig }` — current snapshot plus a partial
+ *   merger.
+ */
 export function useLayout() {
   const context = React.useContext(LayoutContext);
   if (!context) {

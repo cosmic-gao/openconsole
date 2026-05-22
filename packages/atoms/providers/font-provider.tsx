@@ -40,6 +40,15 @@ export interface FontProviderProps {
 
 export const FontContext = React.createContext<FontContextValue | null>(null);
 
+/**
+ * Provides the currently-active font to descendants, applying it to
+ * `<html>` as a `font-${value}` class and (optionally) persisting it to
+ * localStorage.
+ *
+ * Mount at the app root. Pair with the matching `:root.font-${value}`
+ * CSS rules — the three defaults (`inter`, `manrope`, `system`) ship
+ * with `@openconsole/atoms/styles.css`.
+ */
 export function FontProvider({
   children,
   options = DEFAULT_OPTIONS,
@@ -90,6 +99,13 @@ export function FontProvider({
   );
 }
 
+/**
+ * Read the active font and update it. Throws when called outside of a
+ * `<FontProvider>`.
+ *
+ * @returns `{ font, setFont, options }` — current font, setter, and the
+ *   list of available options (whatever was passed to the provider).
+ */
 export function useFont(): FontContextValue {
   const context = React.useContext(FontContext);
   if (!context) {

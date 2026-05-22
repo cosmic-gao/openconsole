@@ -4,6 +4,7 @@
   "private": true,
   "devDependencies": {
     "@openconsole/tsconfig": "workspace:*",
+    "nx": "22.7.2",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4"
   }

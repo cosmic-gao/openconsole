@@ -1,8 +1,9 @@
 packages:
-  - 'apps/**'
-  - 'packages/**'
-  - 'configs/**'
+  - "apps/**"
+  - "configs/**"
+  - "packages/**"
 allowBuilds:
   esbuild: true
   msw: true
+  nx: true
   sharp: true

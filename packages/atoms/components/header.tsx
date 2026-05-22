@@ -11,16 +11,24 @@ import {
   cn,
 } from "@openconsole/shadcn";
 
+import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
 import { ThemeSwitch } from "./theme-switch";
 
 export interface HeaderProps extends React.ComponentProps<"header"> {
   /**
-   * Left-side slot rendered after the `SidebarTrigger`. Typical content:
-   * a shadcn `<Breadcrumb>` or a page title. When provided, a vertical
-   * separator is auto-inserted between the trigger and this slot.
+   * Left-side slot rendered after the `SidebarTrigger`. Defaults to
+   * `<Breadcrumbs />` (auto-derived from `usePathname()`). Pass a custom
+   * `ReactNode` (e.g. a page title) to override, or `false` to hide it
+   * entirely. A vertical separator is auto-inserted between the trigger
+   * and this slot when content is rendered.
    */
-  breadcrumbs?: ReactNode;
+  breadcrumbs?: ReactNode | false;
+  /**
+   * Props forwarded to the default `<Breadcrumbs />`. Ignored when
+   * `breadcrumbs` is overridden with a custom node.
+   */
+  breadcrumbsProps?: BreadcrumbsProps;
   /**
    * Right-side slot rendered **before** the built-in theme / preferences
    * actions. Typical content: notifications, search box, primary CTAs.
@@ -50,12 +58,18 @@ export interface HeaderProps extends React.ComponentProps<"header"> {
  */
 export function Header({
   breadcrumbs,
+  breadcrumbsProps,
   actions,
   hideDefaultActions = false,
   className,
   ...props
 }: HeaderProps) {
   const [preferencesOpen, setPreferencesOpen] = React.useState(false);
+
+  const breadcrumbsContent =
+    breadcrumbs === false
+      ? null
+      : (breadcrumbs ?? <Breadcrumbs {...breadcrumbsProps} />);
 
   return (
     <header
@@ -67,10 +81,10 @@ export function Header({
     >
       <div className="flex items-center gap-2 px-4">
         <SidebarTrigger className="-ml-1" />
-        {breadcrumbs && (
+        {breadcrumbsContent && (
           <>
             <Separator orientation="vertical" className="mr-2 h-4" />
-            {breadcrumbs}
+            {breadcrumbsContent}
           </>
         )}
       </div>
@@ -83,10 +97,10 @@ export function Header({
               variant="ghost"
               size="icon"
               onClick={() => setPreferencesOpen(true)}
-              aria-label="打开偏好设置"
+              aria-label="Open preferences"
             >
               <Settings />
-              <span className="sr-only">打开偏好设置</span>
+              <span className="sr-only">Open preferences</span>
             </Button>
             <Preferences
               open={preferencesOpen}

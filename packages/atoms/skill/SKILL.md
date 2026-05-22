@@ -1,14 +1,14 @@
 ---
 name: openconsole-atoms
 description: >
-  `@openconsole/atoms` 的使用指南。基于 `@openconsole/shadcn` 原语搭建的
-  高阶组件 + Context provider —— ThemeSwitch（带 view-transition 圆形
-  展开）、Preferences（设置抽屉）、Sidebar（带 brand / menu / account 三段
-  式）、Combobox、DatePicker、DataTable、ColorPicker，以及 ThemeProvider /
-  FontProvider / LayoutProvider。
-  适用场景包括: 应用主框架搭建（主题 / 字体 / 布局 provider 装配）、
-  设置抽屉、品牌侧边栏、数据表格、可搜索下拉、日期选择、颜色选择、
-  亮暗主题切换。
+  Guide for using `@openconsole/atoms`. Higher-order components and Context
+  providers built on top of `@openconsole/shadcn` primitives — ThemeSwitch
+  (view-transition circular reveal), Preferences (settings drawer), Sidebar
+  (brand / menu / account three-section layout), Header (sticky dashboard
+  header), Breadcrumbs (auto-derived from pathname), ColorPicker, plus
+  ThemeProvider / FontProvider / LayoutProvider. Use when scaffolding an
+  app shell (theme/font/layout providers), building a settings drawer, a
+  branded sidebar, a sticky header with breadcrumbs, or toggling the theme.
 type: ui
 library: "@openconsole/atoms"
 runtime:
@@ -19,44 +19,47 @@ peers:
   "lucide-react": "*"
   "next": "*"
   "next-themes": "*"
-  "@tanstack/react-table": "*"
-  "date-fns": "*"
 ---
 
-# `@openconsole/atoms` —— 高阶 UI 组件 + Provider
+# `@openconsole/atoms` — Higher-Order UI Components + Providers
 
-一个 npm 包，把 `@openconsole/shadcn` 的原语装配成业务直接可用的高阶
-组件（设置抽屉、品牌侧边栏、数据表格、主题切换…），加上一组 Context
-provider 管理跨页面状态（主题、字体、布局变体）。
+An npm package that composes `@openconsole/shadcn` primitives into
+business-ready higher-order components (settings drawer, branded sidebar,
+sticky header, breadcrumbs, theme toggle…) and a set of Context providers
+that manage cross-page state (theme, font, layout variant).
 
-本包是**只读消费**: 所有可用导出就是 `index.ts` 列出的内容。没有 CLI、
-不能改源码。
+This package is **read-only consumption**: every available export is what
+`index.ts` lists. There is no CLI and source files cannot be modified.
 
-本文档覆盖:
+This document covers:
 
-1. 怎么从用户口语化需求识别到正确的 atom 组件
-2. 应用根上 provider 的装配顺序与必要性
-3. 每个组件的用法 + 完整代码示例
-4. 跟 `@openconsole/shadcn` 如何配合（什么时候用 atoms 封装，什么时候直接用 shadcn 原语）
-5. 主题 / 字体 / 布局 三套状态的扩展边界
-
----
-
-## 什么时候用这个文档
-
-满足下列任一情况就用:
-
-- 在 import 了 `@openconsole/atoms` 的文件里写或修代码
-- 搭建新应用的主框架（需要装配 `ThemeProvider` + `FontProvider` + `LayoutProvider`）
-- 用户描述"加个设置抽屉"、"侧边栏带 logo"、"主题切换按钮"、"可搜索下拉"、
-  "日期选择"、"数据列表 / 表格"等本包覆盖的场景
-- 不确定何时用 atoms 的高阶组件 vs 直接用 shadcn 原语
+1. Mapping a user request to the right atom.
+2. Provider assembly order at the app root and why it matters.
+3. Each component's API plus a complete code example.
+4. How atoms compose with `@openconsole/shadcn` (when to use the atom vs.
+   when to drop down to the primitive).
+5. The edges of what the three providers (theme / font / layout) can do.
 
 ---
 
-## 接入
+## When to use this document
 
-在 app 的全局 CSS 里把 atoms 的 styles.css **跟在 shadcn 的后面** @import:
+Use it when any of the following is true:
+
+- You're editing or writing code in a file that imports `@openconsole/atoms`.
+- You're scaffolding a new app shell that needs `ThemeProvider` +
+  `FontProvider` + `LayoutProvider`.
+- The user describes a "settings drawer", "branded sidebar", "theme toggle
+  button", "sticky header", "page breadcrumbs", or anything else this
+  package covers.
+- You're unsure whether to reach for the atom or directly use a shadcn
+  primitive.
+
+---
+
+## Installation
+
+In your app's global CSS, `@import` atoms' stylesheet **after** shadcn's:
 
 ```css
 @import "tailwindcss";
@@ -64,68 +67,69 @@ provider 管理跨页面状态（主题、字体、布局变体）。
 @import "@openconsole/atoms/styles.css";
 ```
 
-atoms 的 styles.css 自带:
+`atoms/styles.css` ships:
 
-- `@source` 指令注册自己的源码
-- 跟 `FontProvider` 配套的 `:root.font-inter / .font-manrope / .font-system`
-  字体规则
+- `@source` directives that register its own source files with Tailwind.
+- Font rules paired with `FontProvider` (`:root.font-inter`, `.font-manrope`,
+  `.font-system`).
 
-token 继承自 shadcn —— atoms 不重复声明。所以**两个 @import 都要有**, 且
-shadcn 在前。
+Tokens are inherited from shadcn — atoms doesn't redeclare them. So **both
+`@import`s are required**, and shadcn must come first.
 
 ---
 
-## 项目上下文
+## Project context
 
-| 字段 | 值 |
+| Field | Value |
 |---|---|
-| 导入路径 | `@openconsole/atoms`（唯一入口） |
-| 依赖底层 | `@openconsole/shadcn` 原语 |
-| 样式 | 继承 shadcn 的 Tailwind v4 + 语义 token |
-| 图标 | 通过 shadcn 的 `Icon` 包装，按字符串名渲染 lucide-react 图标 |
-| 主题底层 | `next-themes`（`ThemeProvider` 是其包装） |
-| 表格底层 | `@tanstack/react-table`（`DataTable` 是其包装） |
-| 日期底层 | `react-day-picker` + `date-fns`（`DatePicker` 是其包装） |
-| 持久化 | `ThemeProvider` 走 localStorage（next-themes 自带）；`FontProvider` 走 localStorage（可关）；`LayoutProvider` **不持久化** |
+| Import path | `@openconsole/atoms` (single entry point) |
+| Underlying library | `@openconsole/shadcn` primitives |
+| Styling | Tailwind v4 + semantic tokens inherited from shadcn |
+| Icons | Rendered via shadcn's `Icon` wrapper, which resolves lucide-react icons by string name |
+| Theme runtime | `next-themes` (`ThemeProvider` is a thin wrapper) |
+| Persistence | `ThemeProvider` uses localStorage (via next-themes); `FontProvider` uses localStorage (optional); `LayoutProvider` does **not** persist |
 
 ---
 
-## 应用场景速查
+## Use-case lookup
 
-用户口语化描述需求时，按下表识别意图。下表只列出**本包覆盖**的场景 ——
-若需求落在 shadcn 原语上（按钮、对话框、Card 等），直接用 shadcn。
+When a user describes what they want in plain language, map their wording
+to the right atom using the table below. The table only lists scenarios
+**this package covers** — if the request lands on a shadcn primitive (Button,
+Dialog, Card, etc.), reach for shadcn directly.
 
-| 用户描述（关键词） | 选这个 | 关键 props / 组合 |
+| User phrasing (keywords) | Pick this | Key props / combos |
 |---|---|---|
-| "应用主框架 / 后台外壳" | 包根 `<ThemeProvider> + <FontProvider> + <LayoutProvider>` + `<Sidebar>` | 装配顺序见 [Provider 装配](#provider-装配关键) |
-| "主题切换按钮 / 亮暗切换" | `ThemeSwitch` | 零配置组件，自动用 view-transition 圆形展开 |
-| "设置抽屉 / 偏好 / 主题面板 / 切字体切布局" | `Preferences` | `<Preferences open={x} onOpenChange={setX} />` |
-| "侧边栏 / 导航 / 后台侧栏 / 带 logo 的侧栏" | `Sidebar` | 传 `brand` + `menu` + `account` 三个数据;`account.menu` 可选, 给账号卡片加 Profile/Logout 下拉 |
-| "用户列表 / 数据表格 / 列表" | `DataTable` | 传 `columns` + `data`，可选 `pageSize` / `pagination` |
-| "可搜索下拉 / 自动补全 / 选项搜索" | `Combobox` | 传 `options: { value, label }[]` + `value` / `onValueChange` |
-| "日期选择器 / 日期输入" | `DatePicker` | 传 `value: Date` + `onValueChange: (Date) => void` |
-| "颜色输入 / 调色板字段" | `ColorPicker` | 绑一个 `cssVar`，回调时 setProperty |
-| "字体切换（业务自己做按钮）" | `useFont()` hook + 自己写 toggle | `FontProvider` 必须在外层 |
-| "布局变体切换（变 floating / inset、左右、折叠模式）" | `useLayout()` hook | `LayoutProvider` 必须在外层；`config.variant` / `collapsible` / `side` |
+| "App shell / admin chrome" | App root `<ThemeProvider> + <FontProvider> + <LayoutProvider>` + `<Sidebar>` + `<Header>` | See [Provider assembly](#provider-assembly-critical) |
+| "Theme toggle button / light-dark switcher" | `ThemeSwitch` | Zero-config — auto circular reveal via view-transition |
+| "Settings drawer / preferences / theme panel / change font or layout" | `Preferences` | `<Preferences open={x} onOpenChange={setX} />` |
+| "Sidebar / navigation / admin sidebar / sidebar with logo" | `Sidebar` | Pass `brand` + `menu` + `account`; `account.menu` adds a Profile/Logout dropdown |
+| "Sticky header / dashboard header / top bar with breadcrumbs" | `Header` | `<Header />` auto-renders `<Breadcrumbs />`; pass `actions` for right-side controls |
+| "Breadcrumb navigation / auto crumbs from URL" | `Breadcrumbs` (or `useBreadcrumbs` for headless) | `<Breadcrumbs />` for default UI; `useBreadcrumbs({ labels })` for custom rendering |
+| "Color input / palette field" | `ColorPicker` | Bind to a `cssVar`, write the value back via `document.documentElement.style.setProperty` in the callback |
+| "Font switching (business writes its own button)" | `useFont()` hook + your own toggle | `FontProvider` must wrap the call site |
+| "Layout variant switching (floating / inset, left/right, collapsible mode)" | `useLayout()` hook | `LayoutProvider` must wrap the call site; manipulates `config.variant` / `collapsible` / `side` |
 
-### 几个常见判定边界
+### Common boundary calls
 
-- "我要 Sidebar" → 用 atoms 的 `Sidebar`（一站搞定 brand/menu/account），
-  不是手动拼 shadcn 的 `<Sidebar>` 根 + 子原语。
-- "我要主题切换按钮" → 用 atoms 的 `ThemeSwitch`，不用自己写 `useTheme`。
-- "我要主题 + 字体 + 布局 三合一面板" → 用 atoms 的 `Preferences`。
-- "我要选个日期 / 选个选项" → atoms 的 `DatePicker` / `Combobox` 比手动
-  拼 `Popover` + `Calendar` / `Popover` + `Command` 干净。
-- "我要数据表格但没排序筛选需求" → 直接用 shadcn 的 `Table` 就够了，
-  不用 `DataTable`。
-- "我要多选下拉 / 日期区间" → atoms 不覆盖，用 shadcn 原语自己拼。
+- "I need a Sidebar" → use atoms' `Sidebar` (one stop for brand/menu/account)
+  rather than hand-assembling shadcn's `<Sidebar>` root + sub-primitives.
+- "I need a theme toggle button" → use atoms' `ThemeSwitch`; don't write
+  your own `useTheme` flip.
+- "I need a theme + font + layout settings panel" → use atoms' `Preferences`.
+- "I want a sticky header with breadcrumbs" → use atoms' `Header` + the
+  built-in `<Breadcrumbs />` default. Override via `breadcrumbs={…}` when
+  you need a custom title or page action.
+- "I want auto breadcrumbs but with custom labels for some routes" →
+  `<Header breadcrumbsProps={{ labels: { "/orders/123": "Order #123" } }} />`
+  or `<Breadcrumbs labels={…} />` if rendering outside a Header.
 
 ---
 
-## Provider 装配（关键）
+## Provider assembly (critical)
 
 ```tsx
-// app/layout.tsx 或类似根布局
+// app/layout.tsx (or your root layout)
 import {
   ThemeProvider,
   FontProvider,
@@ -135,7 +139,7 @@ import { SidebarProvider } from "@openconsole/shadcn";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider>
           <FontProvider>
@@ -152,26 +156,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-**装配顺序**: `ThemeProvider` → `FontProvider` → `LayoutProvider` →
-`SidebarProvider`（shadcn 的）→ children。
+**Assembly order**: `ThemeProvider` → `FontProvider` → `LayoutProvider` →
+`SidebarProvider` (from shadcn) → children.
 
-- `ThemeProvider` 在最外，给 `<html>` 加 `dark` class。
-- `FontProvider` 给 `<html>` 加 `font-${value}` class。
-- `LayoutProvider` 持有 sidebar 变体状态（`variant` / `collapsible` / `side`）。
-- `SidebarProvider`（**shadcn 的**，不是 atoms 的）是用 atoms `Sidebar`
-  组件的必要前置。
+- `ThemeProvider` is outermost — it sets the `dark` class on `<html>`.
+- `FontProvider` adds `font-${value}` to `<html>`.
+- `LayoutProvider` holds the sidebar variant state (`variant` /
+  `collapsible` / `side`).
+- `SidebarProvider` (**shadcn's**, not atoms') is required by atoms'
+  `Sidebar` component.
 
-详见 [provider-setup.md](./provider-setup.md)。
+See [provider-setup.md](./provider-setup.md) for the full breakdown.
 
 ---
 
-## 组件速查
+## Component reference
 
 ### `ThemeSwitch`
 
-零 prop，一键切换亮 / 暗。自动用 View Transitions API 做圆形展开动画，
-不支持的浏览器降级为瞬切。读 `resolvedTheme`，处于 System 模式时也能
-正确翻转。
+Zero-prop, one-click light/dark toggle. Uses the View Transitions API to
+animate a circular reveal from the click point; falls back to an instant
+switch in unsupported browsers. Reads `resolvedTheme` so it flips correctly
+even while in System mode.
 
 ```tsx
 import { ThemeSwitch } from "@openconsole/atoms";
@@ -179,16 +185,115 @@ import { ThemeSwitch } from "@openconsole/atoms";
 <ThemeSwitch />
 ```
 
-放在 nav / sidebar / header 的角落。
+Drop it in a nav, sidebar, or header corner.
+
+### `Header`
+
+Sticky dashboard header designed to pair with `<Sidebar>` / `<SidebarInset>`.
+
+```tsx
+import { Header } from "@openconsole/atoms";
+
+// Defaults: auto breadcrumbs + ThemeSwitch + Preferences trigger.
+<Header />
+
+// With custom right-side actions (renders before the default action group).
+<Header
+  actions={
+    <>
+      <SearchButton />
+      <NotificationsBell />
+    </>
+  }
+/>
+
+// Override breadcrumbs with a page title.
+<Header breadcrumbs={<h1 className="font-semibold">Orders</h1>} />
+
+// Hide breadcrumbs entirely.
+<Header breadcrumbs={false} />
+
+// Customize default Breadcrumbs without overriding it.
+<Header breadcrumbsProps={{ labels: { "/orders/123": "Order #123" } }} />
+
+// Hide the built-in ThemeSwitch + Preferences group.
+<Header hideDefaultActions actions={<MyOwnActions />} />
+```
+
+Layout: two segments (`left` / `right`) with `justify-between`, a soft
+`bg-background/60 backdrop-blur-md` backdrop, and a compact `md:h-14`
+desktop height. Built-in right-side actions are `<ThemeSwitch />` plus a
+Settings button that opens the `Preferences` drawer.
+
+**Notes**:
+- `<SidebarTrigger />` is always on the left edge — works even when no
+  sidebar variant is mounted (the trigger is a no-op without
+  `SidebarProvider`).
+- The `breadcrumbs` slot accepts `ReactNode | false`. `undefined`
+  (default) renders `<Breadcrumbs />`; `false` hides; anything else
+  replaces.
+- `actions` renders **before** the default group, so app-level controls
+  sit closer to the page content and theme controls sit at the far edge.
+
+### `Breadcrumbs`
+
+Auto-derived breadcrumb navigation. Reads `usePathname()` and renders one
+crumb per segment. The last crumb is the current page (rendered as
+`BreadcrumbPage`, non-clickable); intermediate crumbs are `<Link>`s. Empty
+pathnames render `null` (no chrome).
+
+```tsx
+import { Breadcrumbs } from "@openconsole/atoms";
+
+// Default — derived from the current pathname.
+<Breadcrumbs />
+
+// Per-path title overrides.
+<Breadcrumbs labels={{ "/orders/123": "Order #123", "/orders": "All orders" }} />
+
+// Manually-provided crumbs (e.g. wizards, modal flows).
+<Breadcrumbs
+  items={[
+    { title: "Settings", link: "/settings" },
+    { title: "Billing", link: "/settings/billing" },
+  ]}
+/>
+
+// Custom separator.
+<Breadcrumbs separator={<span>/</span>} />
+
+// Keep intermediate crumbs visible on mobile (default: hidden < md).
+<Breadcrumbs showAllOnMobile />
+```
+
+For headless rendering (your own UI), call `useBreadcrumbs()` directly.
+
+### `useBreadcrumbs`
+
+Headless hook that returns the crumb chain for the current pathname.
+
+```tsx
+import { useBreadcrumbs, type Crumb } from "@openconsole/atoms";
+
+const crumbs: Crumb[] = useBreadcrumbs({
+  labels: { "/orders/123": "Order #123" },
+  transform: (segment) => segment.toUpperCase(),
+});
+// → [{ title: "ORDERS", link: "/orders" }, { title: "Order #123", link: "/orders/123" }]
+```
+
+`Crumb` is `{ title: string; link: string }`. The hook is `"use client"`
+because it reads `usePathname()`.
 
 ### `Preferences`
 
-完整的设置抽屉，从右侧拉出。内置 tab:
-- **主题**: shadcn 与 tweakcn 两套预设可选，每个 token 单独调（用内置
-  `ColorPicker`），支持粘 CSS 导入。
-- **布局**: 调 `LayoutConfig`（variant / collapsible / side），实时影响
-  `Sidebar`。
-- **字体**: 切 `useFont()` 当前字体。
+Full settings drawer that slides in from the right. Built-in tabs:
+
+- **Theme**: pick from shadcn and tweakcn presets, tweak individual tokens
+  (via the built-in `ColorPicker`), or paste a CSS theme via the Importer
+  dialog.
+- **Layout**: configure `LayoutConfig` (variant / collapsible / side)
+  with live preview — instantly reflected in `<Sidebar>`.
 
 ```tsx
 import { Preferences } from "@openconsole/atoms";
@@ -208,15 +313,19 @@ function PreferencesButton() {
 }
 ```
 
-**前置**: 包根上必须有 `ThemeProvider` + `FontProvider` + `LayoutProvider`。
+**Prerequisites**: the app root must have `ThemeProvider` + `FontProvider`
++ `LayoutProvider` mounted. `<Header />` opens this drawer by default —
+you only need to render it directly when not using `Header`.
 
 ### `Sidebar`
 
-带品牌区 / 菜单区 / 账号区三段式的侧边栏，从 `LayoutProvider` 自动
-读 `variant` / `collapsible` / `side`。
+Three-section sidebar (brand / menu / account) that automatically reads
+`variant` / `collapsible` / `side` from `LayoutProvider`.
 
-视觉风格紧贴 shadcn 默认: 品牌 logo 用 `bg-sidebar-primary` 单色块, active
-菜单项依赖原语自带的 `bg-sidebar-accent` 高亮 —— 改主题 token 整套自动跟。
+Visual styling stays close to shadcn defaults: the brand logo sits in a
+solid `bg-sidebar-primary` square; the active menu item highlights with
+the primitive's built-in `bg-sidebar-accent` — change the theme tokens
+and the whole sidebar follows.
 
 ```tsx
 import { Sidebar } from "@openconsole/atoms";
@@ -225,21 +334,21 @@ import { SidebarInset } from "@openconsole/shadcn";
 const data = {
   brand: {
     name: "Acme",
-    logo: "Command",                       // lucide 图标名
+    logo: "Command",                       // lucide icon name
     description: "Workspace · Free",
   },
   menu: [
     {
       label: "Main",
       items: [
-        { label: "仪表盘", icon: "LayoutDashboard", href: "/" },
-        { label: "项目", icon: "FolderOpen", href: "/projects", badge: "12" },
+        { label: "Dashboard", icon: "LayoutDashboard", href: "/" },
+        { label: "Projects", icon: "FolderOpen", href: "/projects", badge: "12" },
         {
-          label: "团队",
+          label: "Team",
           icon: "Users",
           children: [
-            { label: "成员", icon: "User", href: "/team/members" },
-            { label: "权限", icon: "Shield", href: "/team/permissions" },
+            { label: "Members", icon: "User", href: "/team/members" },
+            { label: "Permissions", icon: "Shield", href: "/team/permissions" },
           ],
         },
       ],
@@ -249,132 +358,61 @@ const data = {
     name: "Jane Doe",
     email: "jane@acme.com",
     avatar: "/avatar.png",
-    // 可选: 给 account 卡片加下拉菜单 (Profile / Billing / Sign out)。
-    // 没传 menu 时, account 卡片是静态展示。
+    // Optional dropdown menu (Profile / Billing / Sign out).
+    // Without `menu`, the account block is a static card.
     menu: [
-      { label: "个人资料", icon: "User", href: "/profile" },
-      { label: "账单", icon: "CreditCard", href: "/billing" },
-      { label: "通知", icon: "Bell", href: "/notifications" },
+      { label: "Profile", icon: "User", href: "/profile" },
+      { label: "Billing", icon: "CreditCard", href: "/billing" },
+      { label: "Notifications", icon: "Bell", href: "/notifications" },
       {
-        label: "退出登录",
+        label: "Sign out",
         icon: "LogOut",
         onSelect: () => signOut(),
-        separator: true,    // 上面画一条分隔线
-        destructive: true,  // 红色危险态
+        separator: true,    // Draws a separator immediately above this item.
+        destructive: true,  // Red text for destructive actions.
       },
     ],
   },
 };
 
-// 在 SidebarProvider 内部使用
+// Render inside SidebarProvider.
 <Sidebar {...data} />
 <SidebarInset>{children}</SidebarInset>
 ```
 
-**`AccountMenuItem` 字段**:
+**`AccountMenuItem` fields**:
 
-| 字段 | 类型 | 说明 |
+| Field | Type | Notes |
 |---|---|---|
-| `label` | `string` | 必填,菜单项文本 |
-| `icon` | `string` | 可选,lucide 图标名 |
-| `href` | `LinkProps["href"]` | 跳转链接(渲染成 `<Link>`) |
-| `onSelect` | `() => void` | 点击回调(`href` 二选一) |
-| `separator` | `boolean` | 在该项**之前**插入分隔线 |
-| `destructive` | `boolean` | 红色文字,适合"退出 / 删除" |
+| `label` | `string` | Required, menu item text. |
+| `icon` | `string` | Optional, lucide icon name. |
+| `href` | `LinkProps["href"]` | Renders as a `<Link>`. |
+| `onSelect` | `() => void` | Click handler (mutually exclusive with `href`). |
+| `separator` | `boolean` | Insert a separator immediately **before** this item. |
+| `destructive` | `boolean` | Red text — fits "Sign out" / "Delete". |
 
-**注意**:
-- 数据驱动 —— 不要在 JSX 里手拼菜单项。
-- 图标用字符串名（`"LayoutDashboard"`），不要 import 图标组件。
-- 菜单**只渲染一层嵌套**（parent + children），更深的会被忽略。
-- `account.menu` 留空时是静态卡片;有 items 时变成 dropdown trigger,
-  右侧带 `ChevronsUpDown` 提示,desktop 从右侧弹,移动端从底部弹。
-- 同时 import shadcn 的 `Sidebar` 时记得起别名（见
-  [常见坑](#常见坑)）。
-
-### `DataTable`
-
-`@tanstack/react-table` 的薄封装 —— 排序、筛选、分页内建。
-
-```tsx
-import { DataTable } from "@openconsole/atoms";
-import { Badge } from "@openconsole/shadcn";
-import type { ColumnDef } from "@tanstack/react-table";
-
-type Project = { id: string; name: string; status: "active" | "archived" };
-
-const columns: ColumnDef<Project>[] = [
-  { accessorKey: "id", header: "ID" },
-  { accessorKey: "name", header: "Name" },
-  {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => (
-      <Badge variant={row.original.status === "active" ? "default" : "secondary"}>
-        {row.original.status}
-      </Badge>
-    ),
-  },
-];
-
-<DataTable columns={columns} data={projects} pageSize={20} />
-```
-
-详见 [data-table.md](./data-table.md)。
-
-### `Combobox`
-
-可搜索的单选下拉。
-
-```tsx
-import { Combobox } from "@openconsole/atoms";
-
-const [value, setValue] = React.useState<string>();
-
-<Combobox
-  options={[
-    { value: "next", label: "Next.js" },
-    { value: "vite", label: "Vite" },
-    { value: "remix", label: "Remix" },
-  ]}
-  value={value}
-  onValueChange={setValue}
-  placeholder="选择框架"
-  searchPlaceholder="搜索..."
-  emptyText="没有匹配项"
-/>
-```
-
-**只支持单选**。需要多选用 shadcn 原语自己拼 `Command` + `Popover` +
-`Checkbox`。
-
-### `DatePicker`
-
-带日历的日期输入。
-
-```tsx
-import { DatePicker } from "@openconsole/atoms";
-
-const [date, setDate] = React.useState<Date>();
-
-<DatePicker
-  value={date}
-  onValueChange={setDate}
-  placeholder="选择日期"
-  formatStr="yyyy-MM-dd"     // date-fns 格式
-/>
-```
-
-**只支持单日**。要日期区间用 shadcn 的 `Calendar mode="range"` 自己拼。
+**Notes**:
+- Data-driven — don't hand-assemble menu items in JSX.
+- Icons are passed as string names (`"LayoutDashboard"`), not imported
+  components.
+- Only one level of nesting is rendered (parent + children); deeper
+  nesting is ignored.
+- `account.menu` empty/omitted ⇒ static card; populated ⇒ dropdown
+  trigger with a `ChevronsUpDown` affordance (desktop opens to the right;
+  mobile opens from the bottom).
+- When importing shadcn's `Sidebar` in the same file, alias one of them
+  (see [Common pitfalls](#common-pitfalls)).
 
 ### `ColorPicker`
 
-绑一个 CSS 变量的颜色输入 —— 用于设置面板里调 token。
+Color input bound to a CSS variable — used inside the Preferences drawer
+to tweak individual brand tokens, but exported for app-level reuse.
 
 ```tsx
 import { ColorPicker } from "@openconsole/atoms";
 
 <ColorPicker
-  label="主色"
+  label="Primary"
   cssVar="--primary"
   value="oklch(0.6 0.15 250)"
   onChange={(cssVar, value) => {
@@ -383,14 +421,16 @@ import { ColorPicker } from "@openconsole/atoms";
 />
 ```
 
-接受 hex / oklch / hsl / rgb / named color。色块（swatch）用 canvas 把
-任意 CSS 颜色转成 `#RRGGBB` 供 `<input type="color">` 用。
+Accepts hex / oklch / hsl / rgb / named colors. The round swatch opens
+the native `<input type="color">` — any non-hex value is normalized via
+a hidden canvas before being shown there. The user's original string is
+preserved in `value`.
 
 ---
 
 ## Provider hooks
 
-### `useFont()` —— 字体切换
+### `useFont()` — font switching
 
 ```tsx
 import { useFont } from "@openconsole/atoms";
@@ -412,11 +452,11 @@ function FontToggle() {
 }
 ```
 
-`FontProvider` 默认提供 `["inter", "manrope", "system"]` 三个选项，通过
-给 `<html>` 加 `font-${value}` class 应用。要换字体列表传
-`<FontProvider options={...}>`。
+`FontProvider` defaults to `["inter", "manrope", "system"]` and applies
+the active option by setting `font-${value}` on `<html>`. Pass
+`<FontProvider options={...}>` to customize the list.
 
-### `useLayout()` —— 布局变体
+### `useLayout()` — layout variant
 
 ```tsx
 import { useLayout } from "@openconsole/atoms";
@@ -430,73 +470,80 @@ const { config, updateConfig } = useLayout();
 updateConfig({ variant: "floating" });
 ```
 
-`Sidebar` 自动读这个 config —— 业务通常不用直接读，只在做设置面板时
-才用到。
+`Sidebar` automatically reads this config, so business code usually
+doesn't need to call this hook directly — you only reach for it when
+building your own settings panel.
 
 ---
 
-## 主题化
+## Theming
 
-详见 [theming.md](./theming.md)。短版本:
+See [theming.md](./theming.md) for the full picture. Short version:
 
-- 接入: app 全局 CSS 里 `@import "@openconsole/shadcn/styles.css"` +
-  `@import "@openconsole/atoms/styles.css"`。token 由 shadcn 提供, 字体
-  规则由 atoms 提供。
-- 语义 token（颜色、圆角）由 shadcn 锁定 —— 要改 token 在 @import 之后
-  重新声明 `:root` / `.dark` 变量即可。
-- 切主题预设: 用 `Preferences` 组件或粘 CSS 进它的 Importer tab。
-- 自定义切换动画: `ThemeSwitch` 已内置 view-transition 圆形展开。要
-  自己写带动画的切换按钮，模仿 `ThemeSwitch` 的实现（用
-  `document.startViewTransition` + 设置 `--vt-origin-x/y` CSS 变量）。
+- Setup: `@import "@openconsole/shadcn/styles.css"` +
+  `@import "@openconsole/atoms/styles.css"` in your app's global CSS.
+  shadcn provides the tokens; atoms provides the font rules.
+- Semantic tokens (colors, radius) are owned by shadcn — to override a
+  token, redeclare its `:root` / `.dark` variable after the `@import`s.
+- Theme presets: use the `Preferences` component (Theme tab) or paste a
+  CSS theme into its Importer tab.
+- Custom switch animations: `ThemeSwitch` already integrates view-transition
+  circular reveal. To write your own animated toggle, mirror its
+  implementation (`document.startViewTransition` + setting
+  `--vt-origin-x/y` CSS variables).
 
 ---
 
-## 与 shadcn 的边界
+## Boundary with shadcn
 
-| 任务 | 用 atoms | 用 shadcn |
+| Task | atoms | shadcn |
 |---|---|---|
-| 主题切换按钮 | ✓ `ThemeSwitch` | （不要自己拼） |
-| 设置抽屉 | ✓ `Preferences` | （不要自己拼几个 tab + sheet） |
-| 品牌侧边栏 | ✓ `Sidebar` | （不要手动拼 `Sidebar` 根 + sub-primitives） |
-| 数据表格 with 排序/筛选/分页 | ✓ `DataTable` | （不要自己接 tanstack-table） |
-| 可搜索单选 | ✓ `Combobox` | （`Popover` + `Command` 是底层，atoms 已包好） |
-| 单日 picker | ✓ `DatePicker` | （`Popover` + `Calendar` 是底层） |
-| 调色板字段 | ✓ `ColorPicker` | — |
-| 主题 / 字体 / 布局 三个 provider | ✓ atoms 的 provider | shadcn 的 `SidebarProvider` 仍要装配 |
-| 任何按钮、Card、Dialog、Tabs、Form、Alert 等基础原语 | — | ✓ |
-| 多选下拉、日期区间、命令面板等 atoms 没覆盖的复合 | — | ✓ 拼原语 |
+| Theme toggle button | ✓ `ThemeSwitch` | (don't hand-assemble) |
+| Settings drawer | ✓ `Preferences` | (don't hand-assemble tabs + sheet) |
+| Branded sidebar | ✓ `Sidebar` | (don't hand-assemble `Sidebar` root + sub-primitives) |
+| Sticky dashboard header | ✓ `Header` | (don't hand-assemble) |
+| Path-derived breadcrumbs | ✓ `Breadcrumbs` / `useBreadcrumbs` | Use `Breadcrumb` primitives directly for non-path-based crumbs |
+| Color-bound input field | ✓ `ColorPicker` | — |
+| Theme / font / layout providers | ✓ atoms providers | shadcn's `SidebarProvider` still required |
+| Buttons, Cards, Dialogs, Tabs, Forms, Alerts, Tables, etc. | — | ✓ |
+| Multi-select dropdowns, date ranges, command palettes, anything atoms doesn't cover | — | ✓ Compose primitives |
 
 ---
 
-## 常见坑
+## Common pitfalls
 
-- **没装配 provider**: `useLayout()` / `useFont()` 不在 `LayoutProvider` /
-  `FontProvider` 里调用会抛错。`Preferences` 组件依赖**三个 atoms
-  provider** 都在外层。
-- **忘了 `SidebarProvider`（shadcn 的）**: atoms 的 `Sidebar` 内部**不
-  包含** `SidebarProvider` —— 那是 shadcn 原语，根布局里要自己加。
-- **`Sidebar` 名字冲突**: shadcn 也导出 `Sidebar` 原语。同时 import 两
-  者时给其中一个起别名:
+- **Missing provider**: `useLayout()` / `useFont()` throw outside their
+  respective providers. `Preferences` requires **all three atoms providers**
+  in the tree above.
+- **Forgot shadcn's `SidebarProvider`**: atoms' `Sidebar` **does not**
+  include `SidebarProvider`. That primitive must be mounted at the app
+  root (or above the route subtree that renders the sidebar).
+- **`Sidebar` name clash**: shadcn also exports a `Sidebar` primitive.
+  When importing both in the same file, alias one:
 
   ```tsx
-  import { Sidebar } from "@openconsole/atoms";              // 业务用 atoms 的
-  import { SidebarProvider, SidebarInset } from "@openconsole/shadcn"; // 子原语没冲突
+  import { Sidebar } from "@openconsole/atoms";              // business uses atoms'
+  import { SidebarProvider, SidebarInset } from "@openconsole/shadcn"; // sub-primitives don't clash
   ```
 
-- **图标用字符串名而非 JSX**: `Sidebar` 的 `brand.logo` /
-  `menu.items[].icon` 传字符串（`"LayoutDashboard"`），不是图标组件。
-- **`MenuItem.children` 只渲染一层**: 不要传 3 层及以上的嵌套。
-- **`DatePicker` / `Combobox` 不支持多选 / 区间**: 这两个组件刻意单选。
-  需要扩展功能时回到 shadcn 原语自己拼。
-- **`LayoutProvider` 不持久化**: 用户刷新页面后侧栏变体会重置。要持久化
-  自己包一个 `LayoutProvider` wrapper 读写 cookie / localStorage。
-- **`ThemeProvider` 已经包好 `next-themes`**: 不要再嵌套 next-themes
-  的 ThemeProvider。直接用 atoms 的版本。
+- **Icons passed as strings, not JSX**: `Sidebar`'s `brand.logo` and
+  `menu.items[].icon` take string names (`"LayoutDashboard"`), not
+  imported icon components.
+- **`MenuItem.children` only one level deep**: never pass three or more
+  levels of nesting.
+- **`LayoutProvider` doesn't persist**: refreshing resets the sidebar
+  variant. Wrap it yourself if you want cookie / localStorage persistence
+  (see [theming.md](./theming.md#layout-variant-switching)).
+- **`ThemeProvider` already wraps next-themes**: don't nest a separate
+  `next-themes` `ThemeProvider`. Use atoms' version.
+- **Don't render `Header` and a custom top bar at the same time**: pick
+  one. To extend `Header`, use the `actions` slot rather than wrapping it.
 
 ---
 
-## 详细参考
+## Detailed references
 
-- [provider-setup.md](./provider-setup.md) —— provider 装配顺序、必要性、跟 `SidebarProvider` 的关系、持久化扩展。
-- [data-table.md](./data-table.md) —— tanstack-table 的常见 column 定义、自定义 cell、跟 `Badge` / `Button` 等的协作。
-- [theming.md](./theming.md) —— `next-themes` 集成、view-transition 自定义、字体扩展、布局持久化。
+- [provider-setup.md](./provider-setup.md) — provider order, why each layer
+  matters, relationship with `SidebarProvider`, persistence patterns.
+- [theming.md](./theming.md) — `next-themes` integration, view-transition
+  customization, font extension, layout persistence.

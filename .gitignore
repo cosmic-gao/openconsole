@@ -25,3 +25,7 @@ coverage
 
 .nuxt
 .output
+
+
+.nx/cache
+.nx/workspace-data

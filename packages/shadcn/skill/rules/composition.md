@@ -1,24 +1,24 @@
-# 组件组合
+# Component composition
 
-## 目录
+## Contents
 
-- Item 一定在自己的 Group 里
-- 提示框用 `Alert`
-- 空状态用 `Empty`
-- Toast 用 sonner
-- 在不同 overlay 之间选
-- `Dialog` / `Sheet` / `Drawer` 一定要有 Title
-- `Card` 用完整组合
-- `Button` 没有 `isPending` / `isLoading` prop
-- `TabsTrigger` 必须在 `TabsList` 里
-- `Avatar` 必须带 `AvatarFallback`
-- 用组件，别堆裸标签
+- Items always live inside their Group
+- Use `Alert` for alerts
+- Use `Empty` for empty states
+- Use sonner for toasts
+- Picking between overlays
+- `Dialog` / `Sheet` / `Drawer` must have a Title
+- `Card` uses the full composition
+- `Button` has no `isPending` / `isLoading` prop
+- `TabsTrigger` must be inside `TabsList`
+- `Avatar` must have `AvatarFallback`
+- Use components, not raw tags
 
 ---
 
-## Item 一定在自己的 Group 里
+## Items always live inside their Group
 
-**永远不要**把 Item 直接渲染在 content 容器里。
+**Never** render Items directly inside a content container.
 
 **Incorrect:**
 
@@ -40,19 +40,19 @@
 </SelectContent>
 ```
 
-适用于所有基于 group 的组件:
+Applies to every group-based component:
 
 | Item | Group |
 |---|---|
-| `SelectItem`、`SelectLabel` | `SelectGroup` |
-| `DropdownMenuItem`、`DropdownMenuLabel`、`DropdownMenuSub` | `DropdownMenuGroup` |
+| `SelectItem`, `SelectLabel` | `SelectGroup` |
+| `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSub` | `DropdownMenuGroup` |
 | `MenubarItem` | `MenubarGroup` |
 | `ContextMenuItem` | `ContextMenuGroup` |
 | `CommandItem` | `CommandGroup` |
 
 ---
 
-## 提示框用 `Alert`
+## Use `Alert` for alerts
 
 ```tsx
 import { Alert, AlertTitle, AlertDescription } from "@openconsole/shadcn";
@@ -65,7 +65,7 @@ import { Alert, AlertTitle, AlertDescription } from "@openconsole/shadcn";
 
 ---
 
-## 空状态用 `Empty`
+## Use `Empty` for empty states
 
 ```tsx
 import {
@@ -87,9 +87,9 @@ import {
 
 ---
 
-## Toast 用 sonner
+## Use sonner for toasts
 
-`toast()` 从 sonner 直接导入，不在本包里:
+Import `toast()` directly from sonner — it's not in this package:
 
 ```tsx
 import { toast } from "sonner";
@@ -101,7 +101,7 @@ toast("File deleted.", {
 });
 ```
 
-在 app 根上挂一次本包的 `<Toaster />`:
+Mount this package's `<Toaster />` once at the app root:
 
 ```tsx
 import { Toaster } from "@openconsole/shadcn";
@@ -113,28 +113,29 @@ import { Toaster } from "@openconsole/shadcn";
 </body>
 ```
 
-`Toaster` 默认带 success / info / warning / error / loading 五种状态图标
-和适配主题的颜色 —— 不用再传 `theme` 或 `icons`。
+`Toaster` comes with the five status icons (success / info / warning / error
+/ loading) and theme-aware colors by default — no need to pass `theme` or
+`icons`.
 
 ---
 
-## 在不同 overlay 之间选
+## Picking between overlays
 
-| 场景 | 用什么 |
+| Use case | Use what |
 |---|---|
-| 需要输入的聚焦任务 | `Dialog` |
-| 破坏性操作的二次确认 | `AlertDialog` |
-| 带详情或筛选的侧拉面板 | `Sheet` |
-| 移动端优先的底部面板 | `Drawer` |
-| 悬浮时的快速信息 | `HoverCard` |
-| 点击触发的小块上下文内容 | `Popover` |
+| Focused task that needs input | `Dialog` |
+| Confirmation for a destructive action | `AlertDialog` |
+| Side panel with details or filters | `Sheet` |
+| Mobile-first bottom panel | `Drawer` |
+| Quick info on hover | `HoverCard` |
+| Click-triggered small contextual content | `Popover` |
 
 ---
 
-## `Dialog` / `Sheet` / `Drawer` 一定要有 Title
+## `Dialog` / `Sheet` / `Drawer` must have a Title
 
-`DialogTitle`、`SheetTitle`、`DrawerTitle` 对屏幕阅读器是必需的。
-视觉上不想显示就 `className="sr-only"`。
+`DialogTitle`, `SheetTitle`, `DrawerTitle` are required for screen readers.
+To hide visually, use `className="sr-only"`.
 
 ```tsx
 <DialogContent>
@@ -146,7 +147,7 @@ import { Toaster } from "@openconsole/shadcn";
 </DialogContent>
 ```
 
-不需要可见 header 的也要带:
+Even when you don't want a visible header:
 
 ```tsx
 <DialogContent>
@@ -157,9 +158,9 @@ import { Toaster } from "@openconsole/shadcn";
 
 ---
 
-## `Card` 用完整组合
+## `Card` uses the full composition
 
-**永远不要**把所有东西塞到 `CardContent` 里:
+**Never** stuff everything into `CardContent`:
 
 ```tsx
 <Card>
@@ -176,9 +177,9 @@ import { Toaster } from "@openconsole/shadcn";
 
 ---
 
-## `Button` 没有 `isPending` / `isLoading` prop
+## `Button` has no `isPending` / `isLoading` prop
 
-用 `Spinner` + `data-icon` + `disabled` 拼:
+Compose with `Spinner` + `data-icon` + `disabled`:
 
 ```tsx
 import { Button, Spinner } from "@openconsole/shadcn";
@@ -189,7 +190,7 @@ import { Button, Spinner } from "@openconsole/shadcn";
 </Button>
 ```
 
-带 mutation hook 时:
+With a mutation hook:
 
 ```tsx
 <Button disabled={mutation.isPending}>
@@ -200,9 +201,10 @@ import { Button, Spinner } from "@openconsole/shadcn";
 
 ---
 
-## `TabsTrigger` 必须在 `TabsList` 里
+## `TabsTrigger` must be inside `TabsList`
 
-**永远不要**把 `TabsTrigger` 直接渲染在 `Tabs` 里 —— 一定包在 `TabsList`:
+**Never** render `TabsTrigger` directly inside `Tabs` — always wrap it in
+`TabsList`:
 
 ```tsx
 <Tabs defaultValue="account">
@@ -216,9 +218,9 @@ import { Button, Spinner } from "@openconsole/shadcn";
 
 ---
 
-## `Avatar` 必须带 `AvatarFallback`
+## `Avatar` must have `AvatarFallback`
 
-图片加载失败的兜底，必须有:
+A fallback when the image fails to load — it's required:
 
 ```tsx
 <Avatar>
@@ -229,12 +231,12 @@ import { Button, Spinner } from "@openconsole/shadcn";
 
 ---
 
-## 用组件，别堆裸标签
+## Use components, not raw tags
 
-| 不要 | 改用 |
+| Don't | Use |
 |---|---|
-| `<hr>` 或 `<div className="border-t">` | `<Separator />` |
-| `<div className="animate-pulse">` 加样式 | `<Skeleton className="h-4 w-3/4" />` |
+| `<hr>` or `<div className="border-t">` | `<Separator />` |
+| Styled `<div className="animate-pulse">` | `<Skeleton className="h-4 w-3/4" />` |
 | `<span className="rounded-full bg-green-100 …">` | `<Badge variant="secondary">` |
-| 自己写 CSS 转圈 | `<Spinner />` |
-| 自己加 `<kbd>` 样式 | `<Kbd>` |
+| Hand-rolled CSS spinner | `<Spinner />` |
+| Hand-styled `<kbd>` | `<Kbd>` |

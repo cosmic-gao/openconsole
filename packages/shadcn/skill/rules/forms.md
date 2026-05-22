@@ -1,20 +1,20 @@
-# 表单 & 输入
+# Forms & inputs
 
-## 目录
+## Contents
 
-- 表单用 `FieldGroup` + `Field`
-- `InputGroup` 要求 `InputGroupInput` / `InputGroupTextarea`
-- 输入框里的按钮用 `InputGroup` + `InputGroupAddon`
-- 2–7 个选项用 `ToggleGroup`
-- `FieldSet` + `FieldLegend` 给相关字段分组
-- 校验和禁用状态
-- react-hook-form 整合
+- Forms use `FieldGroup` + `Field`
+- `InputGroup` requires `InputGroupInput` / `InputGroupTextarea`
+- Buttons inside inputs: `InputGroup` + `InputGroupAddon`
+- 2–7 options: `ToggleGroup`
+- `FieldSet` + `FieldLegend` to group related fields
+- Validation and disabled states
+- react-hook-form integration
 
 ---
 
-## 表单用 `FieldGroup` + `Field`
+## Forms use `FieldGroup` + `Field`
 
-总是用 `FieldGroup` + `Field` —— **从不**用 `<div className="space-y-*">`:
+Always use `FieldGroup` + `Field` — **never** `<div className="space-y-*">`:
 
 ```tsx
 import {
@@ -33,28 +33,28 @@ import {
 </FieldGroup>
 ```
 
-设置页用 `Field orientation="horizontal"`。视觉上隐藏 label 用
-`FieldLabel className="sr-only"`。
+For settings pages, use `Field orientation="horizontal"`. To hide a label
+visually, use `FieldLabel className="sr-only"`.
 
-**怎么选表单控件:**
+**How to pick a form control:**
 
-| 场景 | 用什么 |
+| Use case | Use what |
 |---|---|
-| 简单文本输入 | `Input` |
-| 预定义选项下拉 | `Select` |
-| 可搜索下拉 | `Popover` + `Command`（`CommandInput` + `CommandList` + `CommandGroup` + `CommandItem`） |
-| 原生 HTML select（无 JS） | `NativeSelect` |
-| 布尔切换 | `Switch`（设置）或 `Checkbox`（表单） |
-| 几个选项里单选 | `RadioGroup` |
-| 2–5 个选项切换 | `ToggleGroup` + `ToggleGroupItem` |
-| OTP / 验证码 | `InputOTP` |
-| 多行文本 | `Textarea` |
+| Plain text input | `Input` |
+| Dropdown with predefined options | `Select` |
+| Searchable dropdown | `Popover` + `Command` (`CommandInput` + `CommandList` + `CommandGroup` + `CommandItem`) |
+| Native HTML select (no JS) | `NativeSelect` |
+| Boolean toggle | `Switch` (settings) or `Checkbox` (forms) |
+| Single choice among a few options | `RadioGroup` |
+| Switch between 2–5 options | `ToggleGroup` + `ToggleGroupItem` |
+| OTP / verification code | `InputOTP` |
+| Multi-line text | `Textarea` |
 
 ---
 
-## `InputGroup` 要求 `InputGroupInput` / `InputGroupTextarea`
+## `InputGroup` requires `InputGroupInput` / `InputGroupTextarea`
 
-**永远不要**在 `InputGroup` 里塞裸 `Input` 或 `Textarea`。
+**Never** put a raw `Input` or `Textarea` inside `InputGroup`.
 
 **Incorrect:**
 
@@ -76,10 +76,10 @@ import { InputGroup, InputGroupInput } from "@openconsole/shadcn";
 
 ---
 
-## 输入框里的按钮用 `InputGroup` + `InputGroupAddon`
+## Buttons inside inputs: `InputGroup` + `InputGroupAddon`
 
-**永远不要**用 `position: relative` + `position: absolute` 把按钮
-塞到 `Input` 上。
+**Never** use `position: relative` + `position: absolute` to overlay a button
+onto an `Input`.
 
 **Incorrect:**
 
@@ -111,9 +111,9 @@ import {
 
 ---
 
-## 2–7 个选项用 `ToggleGroup`
+## 2–7 options: `ToggleGroup`
 
-不要循环 `Button` 然后自己管 active 状态。
+Don't loop over `Button`s and manage active state by hand.
 
 **Incorrect:**
 
@@ -145,12 +145,13 @@ import { ToggleGroup, ToggleGroupItem } from "@openconsole/shadcn";
 </ToggleGroup>
 ```
 
-> 本包用 **radix** 风格，所以是 `type="single"` / `type="multiple"`，
-> `defaultValue` 是字符串。如果你从 ui.shadcn.com 复制了 base 风格的
-> `<ToggleGroup multiple defaultValue={["daily"]}>`，需要改写 ——
-> 见 [base-vs-radix.md —— ToggleGroup](./base-vs-radix.md#togglegroup)。
+> This package uses the **radix** style, so it's `type="single"` /
+> `type="multiple"` and `defaultValue` is a string. If you copied base-style
+> `<ToggleGroup multiple defaultValue={["daily"]}>` from ui.shadcn.com, you
+> need to rewrite — see
+> [base-vs-radix.md — ToggleGroup](./base-vs-radix.md#togglegroup).
 
-带 label 的 toggle group:
+Toggle group with a label:
 
 ```tsx
 <Field orientation="horizontal">
@@ -165,10 +166,10 @@ import { ToggleGroup, ToggleGroupItem } from "@openconsole/shadcn";
 
 ---
 
-## `FieldSet` + `FieldLegend` 给相关字段分组
+## `FieldSet` + `FieldLegend` to group related fields
 
-相关的 checkbox / radio / switch 用 `FieldSet` + `FieldLegend` —— 不是
-`div` 加标题:
+For related checkbox / radio / switch groups, use `FieldSet` + `FieldLegend`
+— not a `div` with a heading:
 
 ```tsx
 <FieldSet>
@@ -185,35 +186,36 @@ import { ToggleGroup, ToggleGroupItem } from "@openconsole/shadcn";
 
 ---
 
-## 校验和禁用状态
+## Validation and disabled states
 
-两套属性都要标。`data-invalid` / `data-disabled` 控制 `Field` 周围
-（label、description）的样式；`aria-invalid` / `disabled` 控制 control
-本身的样式。
+Mark both sides. `data-invalid` / `data-disabled` styles the `Field`
+surroundings (label, description); `aria-invalid` / `disabled` styles the
+control itself.
 
 ```tsx
-// 无效
+// Invalid
 <Field data-invalid>
   <FieldLabel htmlFor="email">Email</FieldLabel>
   <Input id="email" aria-invalid />
   <FieldDescription>Invalid email address.</FieldDescription>
 </Field>
 
-// 禁用
+// Disabled
 <Field data-disabled>
   <FieldLabel htmlFor="email">Email</FieldLabel>
   <Input id="email" disabled />
 </Field>
 ```
 
-适用于所有 control: `Input`、`Textarea`、`Select`、`Checkbox`、
-`RadioGroupItem`、`Switch`、`Slider`、`NativeSelect`、`InputOTP`。
+Applies to all controls: `Input`, `Textarea`, `Select`, `Checkbox`,
+`RadioGroupItem`, `Switch`, `Slider`, `NativeSelect`, `InputOTP`.
 
 ---
 
-## react-hook-form 整合
+## react-hook-form integration
 
-本包提供了一套薄包装把 react-hook-form 跟 `Field` 体系串起来:
+This package provides a thin wrapper that wires react-hook-form into the
+`Field` system:
 
 ```tsx
 "use client";
@@ -262,10 +264,10 @@ export function EmailForm() {
 }
 ```
 
-要在自定义控件里读 form 状态用 `useFormField()`:
+To read form state inside a custom control, use `useFormField()`:
 
 ```tsx
 const { error, formItemId, formDescriptionId, formMessageId } = useFormField();
 ```
 
-> `useFormField()` 必须用在 `<FormItem>` 内部 —— 否则抛错。
+> `useFormField()` must be used inside `<FormItem>` — otherwise it throws.

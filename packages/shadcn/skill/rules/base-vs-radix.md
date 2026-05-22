@@ -1,11 +1,12 @@
-# 本包 API 速查
+# This package's API quick reference
 
-本包导出的组件有几处 prop 形状容易写错，这份文件作为速查清单。
-照下面的写法用就对了。
+A few prop shapes on this package's exported components are easy to get
+wrong. This file is the quick-reference checklist. Follow the patterns below
+and you're fine.
 
-## 目录
+## Contents
 
-- 自定义触发器: `asChild`
+- Custom triggers: `asChild`
 - `Select`
 - `ToggleGroup`
 - `Slider`
@@ -13,10 +14,11 @@
 
 ---
 
-## 自定义触发器: `asChild`
+## Custom triggers: `asChild`
 
-要让 trigger / close 渲染成自定义元素或别的组件（最常见的是 `Button`），
-用 `asChild` 替换默认元素。**不要**用多余的元素包裹 trigger。
+To render the trigger / close as a custom element or another component (most
+commonly `Button`), use `asChild` to replace the default element. **Don't**
+wrap the trigger in an extra element.
 
 **Incorrect:**
 
@@ -36,7 +38,8 @@
 </DialogTrigger>
 ```
 
-要把 trigger 渲染成 `<a>` 这种非 button 元素，同样直接 `asChild`:
+To render the trigger as a non-button element like `<a>`, use `asChild` the
+same way:
 
 ```tsx
 <Button asChild>
@@ -44,16 +47,16 @@
 </Button>
 ```
 
-适用于所有 trigger / close 组件: `DialogTrigger`、`SheetTrigger`、
-`AlertDialogTrigger`、`DropdownMenuTrigger`、`PopoverTrigger`、
-`TooltipTrigger`、`CollapsibleTrigger`、`DialogClose`、`SheetClose`、
-`NavigationMenuLink`、`BreadcrumbLink`、`SidebarMenuButton`。
+Applies to every trigger / close component: `DialogTrigger`, `SheetTrigger`,
+`AlertDialogTrigger`, `DropdownMenuTrigger`, `PopoverTrigger`,
+`TooltipTrigger`, `CollapsibleTrigger`, `DialogClose`, `SheetClose`,
+`NavigationMenuLink`, `BreadcrumbLink`, `SidebarMenuButton`.
 
 ---
 
 ## `Select`
 
-inline `<SelectItem>`，**不要**通过 `items` 数组传入。
+inline `<SelectItem>` — **don't** pass items via an `items` array.
 
 ```tsx
 <Select>
@@ -69,35 +72,35 @@ inline `<SelectItem>`，**不要**通过 `items` 数组传入。
 </Select>
 ```
 
-要点:
-- **Placeholder**: 写在 `<SelectValue placeholder="…" />` 上。
-- **定位**: `<SelectContent position="popper">`。
-- **value 类型**: 必须是字符串。
+Notes:
+- **Placeholder**: lives on `<SelectValue placeholder="…" />`.
+- **Positioning**: `<SelectContent position="popper">`.
+- **Value type**: must be a string.
 
-> 需要 multi-select 或对象 value: 本包的 `Select` 不支持。在应用层
-> 用 `Command` + `Popover` + `Checkbox` 自己拼。
+> Need multi-select or object values: this package's `Select` doesn't
+> support it. Compose with `Command` + `Popover` + `Checkbox` in app code.
 
 ---
 
 ## `ToggleGroup`
 
-必须显式 `type="single"` 或 `type="multiple"`:
+Must explicitly set `type="single"` or `type="multiple"`:
 
 ```tsx
-// 单选, defaultValue 是字符串
+// single, defaultValue is a string
 <ToggleGroup type="single" defaultValue="daily" spacing={2}>
   <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
   <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
 </ToggleGroup>
 
-// 多选, defaultValue 是字符串数组
+// multiple, defaultValue is a string array
 <ToggleGroup type="multiple">
   <ToggleGroupItem value="bold">Bold</ToggleGroupItem>
   <ToggleGroupItem value="italic">Italic</ToggleGroupItem>
 </ToggleGroup>
 ```
 
-受控单选:
+Controlled single:
 
 ```tsx
 const [value, setValue] = React.useState("normal");
@@ -110,17 +113,17 @@ const [value, setValue] = React.useState("normal");
 
 ## `Slider`
 
-`defaultValue` / `value` **总是数组**:
+`defaultValue` / `value` is **always an array**:
 
 ```tsx
-// 单滑块
+// single slider
 <Slider defaultValue={[50]} max={100} step={1} />
 
-// 区间
+// range
 <Slider defaultValue={[20, 80]} max={100} step={1} />
 ```
 
-受控:
+Controlled:
 
 ```tsx
 const [value, setValue] = React.useState([0.3, 0.7]);
@@ -131,16 +134,16 @@ const [value, setValue] = React.useState([0.3, 0.7]);
 
 ## `Accordion`
 
-必须显式 `type="single"` 或 `type="multiple"`。单选支持 `collapsible`，
-`defaultValue` 是字符串:
+Must explicitly set `type="single"` or `type="multiple"`. Single supports
+`collapsible`; `defaultValue` is a string:
 
 ```tsx
-// 单选, 可折叠
+// single, collapsible
 <Accordion type="single" collapsible defaultValue="item-1">
   <AccordionItem value="item-1">…</AccordionItem>
 </Accordion>
 
-// 多选, defaultValue 是字符串数组
+// multiple, defaultValue is a string array
 <Accordion type="multiple" defaultValue={["item-1", "item-2"]}>
   <AccordionItem value="item-1">…</AccordionItem>
   <AccordionItem value="item-2">…</AccordionItem>
@@ -149,19 +152,20 @@ const [value, setValue] = React.useState([0.3, 0.7]);
 
 ---
 
-## 错写形态速查
+## Wrong-shape quick reference
 
-下面这些 prop 形态**不是本包的 API**，写出来跑不通 —— 按右列改:
+These prop shapes **are not this package's API** — they don't work. Use the
+right column instead:
 
-| 错写形态 | 正确形态 |
+| Wrong shape | Right shape |
 |---|---|
 | `<XTrigger render={<Button />} />` | `<XTrigger asChild><Button /></XTrigger>` |
-| `nativeButton={false}` | 不需要，`asChild` 自动处理 |
-| `<Select items={[…]}>` + `<SelectValue>{(v) => …}</SelectValue>` | inline `<SelectItem>`，placeholder 在 `<SelectValue>` |
+| `nativeButton={false}` | Not needed; `asChild` handles it |
+| `<Select items={[…]}>` + `<SelectValue>{(v) => …}</SelectValue>` | inline `<SelectItem>`, placeholder on `<SelectValue>` |
 | `<SelectContent alignItemWithTrigger={false}>` | `<SelectContent position="popper">` |
-| `itemToStringValue` | 不支持 —— 用 `Command` + `Popover` + `Checkbox` 自己拼 |
+| `itemToStringValue` | Not supported — compose with `Command` + `Popover` + `Checkbox` |
 | `<ToggleGroup multiple>` | `<ToggleGroup type="multiple">` |
-| 单选 `<ToggleGroup defaultValue={["x"]}>` | `<ToggleGroup type="single" defaultValue="x">` |
+| Single `<ToggleGroup defaultValue={["x"]}>` | `<ToggleGroup type="single" defaultValue="x">` |
 | `<Slider defaultValue={50} />` | `<Slider defaultValue={[50]} />` |
-| `<Accordion>` 没有 `type` | 加 `type="single"` 或 `type="multiple"` |
-| 单选 `<Accordion defaultValue={["x"]}>` | `<Accordion type="single" defaultValue="x">` |
+| `<Accordion>` without `type` | Add `type="single"` or `type="multiple"` |
+| Single `<Accordion defaultValue={["x"]}>` | `<Accordion type="single" defaultValue="x">` |

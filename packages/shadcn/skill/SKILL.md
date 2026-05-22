@@ -1,12 +1,13 @@
 ---
 name: openconsole-shadcn
 description: >
-  `@openconsole/shadcn` 的使用指南。完整的 shadcn UI 原语集合（Button、
-  Dialog、Form、Sidebar、Table、Card、Tabs 等），`cn` / `useIsMobile` /
-  `Icon` / `Direction` 工具，Tailwind v4 语义化 token。
-  适用场景包括: 搭建页面与表单、选择正确的组件原语、修复样式问题、
-  组合复杂交互（设置页、数据表格、仪表盘、命令面板、抽屉、确认对话框
-  等）、应用主题与品牌色。
+  Usage guide for `@openconsole/shadcn`. A complete set of shadcn UI primitives
+  (Button, Dialog, Form, Sidebar, Table, Card, Tabs, etc.), plus `cn` /
+  `useIsMobile` / `Icon` / `Direction` utilities, and Tailwind v4 semantic
+  tokens. Applies to: building pages and forms, picking the right primitive,
+  fixing styling issues, composing complex interactions (settings pages, data
+  tables, dashboards, command palettes, drawers, confirm dialogs, etc.),
+  applying themes and brand colors.
 type: ui
 library: "@openconsole/shadcn"
 runtime:
@@ -19,114 +20,123 @@ peers:
   "zod": "*"
 ---
 
-# `@openconsole/shadcn` —— UI 原语组件
+# `@openconsole/shadcn` — UI primitive components
 
-一个 npm 包，把整套 shadcn/ui 原语 + 一小撮工具（`cn`、`useIsMobile`、
-`Icon`、`Direction`）通过单一入口 `@openconsole/shadcn` 平铺导出。
+An npm package that flat-exports the entire set of shadcn/ui primitives plus
+a small set of utilities (`cn`, `useIsMobile`, `Icon`, `Direction`) through a
+single entry point: `@openconsole/shadcn`.
 
-本包是**只读消费**：所有可用的组件就是 `index.ts` 导出的全部内容。
-没有 CLI、没有源码改动、不需要额外安装。
+This package is **read-only consumption**: the available components are exactly
+what `index.ts` exports. No CLI, no source modifications, no extra installs.
 
-本文档覆盖:
+This doc covers:
 
-1. 怎么从用户的口语化需求识别到正确的组件（[应用场景速查](#应用场景速查)）
-2. 选对原语和正确组合（Item 在 Group 里、Tabs 在 TabsList 里等）
-3. 不破坏主题地写样式（语义 token，不裸用色，不手写 `dark:`）
-4. 用 `Form` + `FieldGroup` + `Field` 接表单
-5. 处理图标（`lucide-react` + `data-icon` 槽位）
-6. 调用本包组件时正确的 prop 形状（[rules/base-vs-radix.md](./rules/base-vs-radix.md)）
-7. 主题化与扩展边界（[customization.md](./customization.md)）
+1. How to map a user's natural-language request to the right component
+   ([Use-case lookup](#use-case-lookup))
+2. Picking the right primitive and the correct composition (Item inside Group,
+   Tabs inside TabsList, etc.)
+3. Writing styles without breaking the theme (semantic tokens, no raw colors,
+   no hand-written `dark:`)
+4. Wiring forms with `Form` + `FieldGroup` + `Field`
+5. Handling icons (`lucide-react` + `data-icon` slot)
+6. The correct prop shapes when calling this package's components
+   ([rules/base-vs-radix.md](./rules/base-vs-radix.md))
+7. Theming and the boundary of customization
+   ([customization.md](./customization.md))
 
 ---
 
-## 接入
+## Setup
 
-在 app 的全局 CSS（一般是 `app/globals.css`）里 @import 本包的 styles.css:
+In the app's global CSS (usually `app/globals.css`), `@import` this package's
+styles.css:
 
 ```css
 @import "tailwindcss";
 @import "@openconsole/shadcn/styles.css";
 ```
 
-styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
-`@custom-variant dark`、`tw-animate-css` 和 base 层 reset —— 一行
-`@import` 就齐了, 不需要在消费方重复定义 token 或手写 `@source`。
+styles.css ships with `@source` directives, the full token set, an
+`@theme inline` mapping, `@custom-variant dark`, `tw-animate-css`, and base
+layer resets — one `@import` covers it all. No need to redeclare tokens or
+write `@source` on the consumer side.
 
-需要覆盖 token 在 `@import` 之后重新声明同名变量即可。详见
-[customization.md —— 接入](./customization.md#接入)。
+To override tokens, redeclare the same variable names after the `@import`. See
+[customization.md — Setup](./customization.md#setup).
 
 ---
 
-## 项目上下文
+## Project context
 
-| 字段 | 值 |
+| Field | Value |
 |---|---|
-| 导入路径 | `@openconsole/shadcn`（唯一入口） |
-| 工具集 | `cn`、`useIsMobile`、`Icon`、`Direction`、`Kbd`、`KbdGroup`、`Toaster` |
-| 样式 | Tailwind v4 + 语义 token（`--background`、`--primary`、`--muted`…） |
-| 图标库 | `lucide-react`（也通过 `Icon` 二次导出，用于按名字动态渲染） |
-| 表单栈 | `react-hook-form` + `zod`（经 `@hookform/resolvers`） |
-| API 风格 | 统一 `asChild`、`type="single"` 显式、`Slider` 用数组等。见 [rules/base-vs-radix.md](./rules/base-vs-radix.md) |
-| 主题 | 配合 `next-themes` 做亮 / 暗切换；语义 token 自动跟随 |
+| Import path | `@openconsole/shadcn` (single entry) |
+| Utilities | `cn`, `useIsMobile`, `Icon`, `Direction`, `Kbd`, `KbdGroup`, `Toaster` |
+| Styling | Tailwind v4 + semantic tokens (`--background`, `--primary`, `--muted`…) |
+| Icon library | `lucide-react` (also re-exported via `Icon` for dynamic rendering by name) |
+| Form stack | `react-hook-form` + `zod` (via `@hookform/resolvers`) |
+| API style | Unified: `asChild`, explicit `type="single"`, `Slider` takes arrays, etc. See [rules/base-vs-radix.md](./rules/base-vs-radix.md) |
+| Theming | Works with `next-themes` for light/dark; semantic tokens follow automatically |
 
 ---
 
-## 应用场景速查
+## Use-case lookup
 
-用户用自然语言描述需求时，按下表识别意图，挑出本包中正确的组件。
+When a user describes a need in natural language, use this table to identify
+intent and pick the right component from this package.
 
-| 用户描述（关键词） | 选这个 | 关键组合 |
+| User description (keywords) | Pick this | Key composition |
 |---|---|---|
-| "搭一个登录页 / 注册表单 / 创建表单" | `Card` + `Form` | Card 包外层 → CardHeader + CardContent → `Form` + `FormField` + `FormItem` + `FormLabel` + `FormControl(Input)` + `FormMessage` |
-| "设置页 / 偏好 / Profile" | `Tabs` + `Field` | Tabs 分组 → 每页用 `Field orientation="horizontal"` + `Switch`/`Select`/`Input` |
-| "用户列表 / 数据表格 / 列表" | `Table` | TableHeader / TableRow / TableCell；要排序筛选，应用层接 `@tanstack/react-table` |
-| "纯展示表格" | `Table` | 见上 |
-| "仪表盘 / Dashboard / 首页指标" | `Card` 网格 + `Chart*` + `Badge` | Card 拼数据卡 → Chart 系列展可视化 → Badge 标状态 |
-| "用户头像下拉菜单" | `Avatar` + `DropdownMenu` | DropdownMenuTrigger(asChild) → Avatar + AvatarFallback → DropdownMenuContent → DropdownMenuGroup → DropdownMenuItem |
-| "删除确认 / 二次确认" | `AlertDialog` | AlertDialogTrigger + AlertDialogContent + AlertDialogFooter + AlertDialogAction(Button variant="destructive") |
-| "侧拉面板 / 详情抽屉 / 筛选侧栏" | `Sheet` | `<Sheet>` + `<SheetContent side="right">` |
-| "移动端底部抽屉 / 半屏" | `Drawer` | Drawer + DrawerContent |
-| "主框架 / 后台外壳" | `SidebarProvider` + `Sidebar` | SidebarProvider 包根 → Sidebar + SidebarMenu + SidebarMenuItem 拼侧栏 → main 区域是主内容 |
-| "空状态 / 暂无数据" | `Empty` | Empty → EmptyHeader → EmptyMedia + EmptyTitle + EmptyDescription → EmptyContent(Button) |
-| "加载中骨架" | `Skeleton` | 拼网格匹配实际布局 |
-| "加载中转圈" | `Spinner` | 在按钮里配 `data-icon` + `disabled` |
-| "命令面板 / 快速跳转 / Cmd+K" | `Dialog` + `Command` | Dialog 包外，里面 Command + CommandInput + CommandList + CommandGroup + CommandItem |
-| "下拉菜单（点开）" | `DropdownMenu` | 点击触发 |
-| "右键菜单" | `ContextMenu` | 长按 / 右键触发 |
-| "应用顶部菜单条" | `Menubar` | 类 macOS 顶部菜单 |
-| "面包屑导航" | `Breadcrumb` | BreadcrumbList → BreadcrumbItem → BreadcrumbLink |
-| "分页" | `Pagination` | PaginationContent → PaginationItem → PaginationLink/Previous/Next |
-| "标签页" | `Tabs` | Tabs → TabsList → TabsTrigger → TabsContent |
-| "可折叠区块" | `Collapsible`（单个）或 `Accordion`（多个分组） | Accordion 用于 FAQ；Collapsible 用于单个开关区 |
-| "悬浮提示" | `Tooltip` | TooltipTrigger + TooltipContent，可配 `Kbd` |
-| "悬浮卡片 / 用户名 hover 预览" | `HoverCard` | HoverCardTrigger + HoverCardContent |
-| "点击弹出小卡片 / 颜色 / 日期" | `Popover` | PopoverTrigger + PopoverContent |
-| "Toast / 通知 / 短反馈" | `toast()` from `sonner` | 根上挂一次 `<Toaster />`，业务里直接调 `toast.success(...)` |
-| "进度条" | `Progress` | 已知进度用 Progress；未知用 Spinner |
-| "标签 / 状态徽章" | `Badge` | variant: default / secondary / destructive / outline |
-| "可搜索下拉 / 自动补全" | `Popover` + `Command` | PopoverTrigger 触发 → PopoverContent 包 Command + CommandInput + CommandList |
-| "下拉选项（不搜索）" | `Select` | inline SelectItem，详见 [rules/base-vs-radix.md](./rules/base-vs-radix.md) |
-| "日期选择器" | `Popover` + `Calendar` | PopoverTrigger(Button) → PopoverContent 包 Calendar |
-| "纯日历视图" | `Calendar` | 渲染月历 |
-| "主题切换按钮" | `Button` + `next-themes` | 见下 [完整代码示例](#场景--完整代码示例) |
-| "设置抽屉（侧拉式）" | `Sheet` | Sheet + SheetContent 包 Tabs / Field 表单 |
-| "OTP / 验证码输入" | `InputOTP` | 4-6 位分格输入 |
-| "评分滑块 / 调音量" | `Slider` | **value 必须是数组**: `[50]` 不是 `50` |
-| "可调整大小的面板" | `Resizable` | ResizablePanelGroup + ResizablePanel + ResizableHandle |
-| "长内容滚动" | `ScrollArea` | 自定义滚动条样式 |
-| "图片占位（保持比例）" | `AspectRatio` | 包图片避免布局抖动 |
-| "辐射 / 分割" | `Separator` | 替代 `<hr>` 和带 border 的 div |
-| "图标按钮分组" | `ButtonGroup` 或 `ToggleGroup` | 互斥用 `ToggleGroup type="single"`；并列动作用 `ButtonGroup` |
+| "Build a login page / signup form / create form" | `Card` + `Form` | Card outer → CardHeader + CardContent → `Form` + `FormField` + `FormItem` + `FormLabel` + `FormControl(Input)` + `FormMessage` |
+| "Settings page / preferences / profile" | `Tabs` + `Field` | Tabs to section → each page uses `Field orientation="horizontal"` + `Switch`/`Select`/`Input` |
+| "User list / data table / listing" | `Table` | TableHeader / TableRow / TableCell; for sorting/filtering, wire `@tanstack/react-table` in app code |
+| "Display-only table" | `Table` | As above |
+| "Dashboard / homepage metrics" | `Card` grid + `Chart*` + `Badge` | Card for stat cards → Chart series for viz → Badge for status |
+| "User avatar dropdown" | `Avatar` + `DropdownMenu` | DropdownMenuTrigger(asChild) → Avatar + AvatarFallback → DropdownMenuContent → DropdownMenuGroup → DropdownMenuItem |
+| "Delete confirmation / second-step confirm" | `AlertDialog` | AlertDialogTrigger + AlertDialogContent + AlertDialogFooter + AlertDialogAction(Button variant="destructive") |
+| "Side panel / detail drawer / filter sidebar" | `Sheet` | `<Sheet>` + `<SheetContent side="right">` |
+| "Mobile bottom sheet / half-screen" | `Drawer` | Drawer + DrawerContent |
+| "App shell / admin chrome" | `SidebarProvider` + `Sidebar` | SidebarProvider wraps root → Sidebar + SidebarMenu + SidebarMenuItem for the sidebar → main area is content |
+| "Empty state / no data" | `Empty` | Empty → EmptyHeader → EmptyMedia + EmptyTitle + EmptyDescription → EmptyContent(Button) |
+| "Loading skeleton" | `Skeleton` | Grid that matches the real layout |
+| "Loading spinner" | `Spinner` | Inside a button with `data-icon` + `disabled` |
+| "Command palette / quick switcher / Cmd+K" | `Dialog` + `Command` | Dialog wraps; inside: Command + CommandInput + CommandList + CommandGroup + CommandItem |
+| "Dropdown menu (on click)" | `DropdownMenu` | Click trigger |
+| "Right-click menu" | `ContextMenu` | Long-press / right-click trigger |
+| "App-top menubar" | `Menubar` | macOS-style top menu |
+| "Breadcrumbs" | `Breadcrumb` | BreadcrumbList → BreadcrumbItem → BreadcrumbLink |
+| "Pagination" | `Pagination` | PaginationContent → PaginationItem → PaginationLink/Previous/Next |
+| "Tabs" | `Tabs` | Tabs → TabsList → TabsTrigger → TabsContent |
+| "Collapsible section" | `Collapsible` (single) or `Accordion` (multiple groups) | Accordion for FAQ; Collapsible for a single toggle block |
+| "Hover tooltip" | `Tooltip` | TooltipTrigger + TooltipContent, optionally with `Kbd` |
+| "Hover card / username hover preview" | `HoverCard` | HoverCardTrigger + HoverCardContent |
+| "Click-popped small card / color / date" | `Popover` | PopoverTrigger + PopoverContent |
+| "Toast / notification / brief feedback" | `toast()` from `sonner` | Mount one `<Toaster />` at the root; call `toast.success(...)` in business code |
+| "Progress bar" | `Progress` | Use Progress for known progress; Spinner for unknown |
+| "Tag / status badge" | `Badge` | variants: default / secondary / destructive / outline |
+| "Searchable dropdown / autocomplete" | `Popover` + `Command` | PopoverTrigger fires → PopoverContent wraps Command + CommandInput + CommandList |
+| "Plain dropdown (no search)" | `Select` | inline SelectItem; see [rules/base-vs-radix.md](./rules/base-vs-radix.md) |
+| "Date picker" | `Popover` + `Calendar` | PopoverTrigger(Button) → PopoverContent wraps Calendar |
+| "Plain calendar view" | `Calendar` | Renders a month grid |
+| "Theme toggle button" | `Button` + `next-themes` | See [Complete code examples](#scenario--complete-code-examples) below |
+| "Settings drawer (side-pull)" | `Sheet` | Sheet + SheetContent wraps Tabs / Field form |
+| "OTP / verification code input" | `InputOTP` | 4–6 segmented digits |
+| "Rating slider / volume" | `Slider` | **value must be an array**: `[50]`, not `50` |
+| "Resizable panels" | `Resizable` | ResizablePanelGroup + ResizablePanel + ResizableHandle |
+| "Long content scroll" | `ScrollArea` | Custom scrollbar styling |
+| "Image placeholder (keeps ratio)" | `AspectRatio` | Wraps an image to avoid layout shift |
+| "Divider / separator" | `Separator` | Replaces `<hr>` and bordered div |
+| "Icon button group" | `ButtonGroup` or `ToggleGroup` | Mutually exclusive: `ToggleGroup type="single"`; parallel actions: `ButtonGroup` |
 
-### 场景 → 完整代码示例
+### Scenario → complete code examples
 
-#### 登录表单
+#### Login form
 
 ```tsx
 <Card className="mx-auto max-w-sm">
   <CardHeader>
-    <CardTitle>登录</CardTitle>
-    <CardDescription>使用邮箱和密码登录</CardDescription>
+    <CardTitle>Sign in</CardTitle>
+    <CardDescription>Sign in with your email and password</CardDescription>
   </CardHeader>
   <CardContent>
     <Form {...form}>
@@ -136,7 +146,7 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>邮箱</FormLabel>
+              <FormLabel>Email</FormLabel>
               <FormControl><Input {...field} /></FormControl>
               <FormMessage />
             </FormItem>
@@ -147,7 +157,7 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>密码</FormLabel>
+              <FormLabel>Password</FormLabel>
               <FormControl><Input type="password" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
@@ -155,7 +165,7 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
         />
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting && <Spinner data-icon="inline-start" />}
-          登录
+          Sign in
         </Button>
       </form>
     </Form>
@@ -163,46 +173,46 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
 </Card>
 ```
 
-#### 删除确认
+#### Delete confirmation
 
 ```tsx
 <AlertDialog>
   <AlertDialogTrigger asChild>
-    <Button variant="destructive">删除项目</Button>
+    <Button variant="destructive">Delete project</Button>
   </AlertDialogTrigger>
   <AlertDialogContent>
     <AlertDialogHeader>
-      <AlertDialogTitle>确认删除?</AlertDialogTitle>
+      <AlertDialogTitle>Confirm delete?</AlertDialogTitle>
       <AlertDialogDescription>
-        此操作不可撤销。项目下的所有数据会一并删除。
+        This action cannot be undone. All data under the project will be deleted along with it.
       </AlertDialogDescription>
     </AlertDialogHeader>
     <AlertDialogFooter>
-      <AlertDialogCancel>取消</AlertDialogCancel>
-      <AlertDialogAction onClick={onConfirm}>删除</AlertDialogAction>
+      <AlertDialogCancel>Cancel</AlertDialogCancel>
+      <AlertDialogAction onClick={onConfirm}>Delete</AlertDialogAction>
     </AlertDialogFooter>
   </AlertDialogContent>
 </AlertDialog>
 ```
 
-#### 命令面板（Cmd+K）
+#### Command palette (Cmd+K)
 
 ```tsx
 <Dialog open={open} onOpenChange={setOpen}>
   <DialogContent className="p-0">
-    <DialogTitle className="sr-only">命令面板</DialogTitle>
+    <DialogTitle className="sr-only">Command palette</DialogTitle>
     <Command>
-      <CommandInput placeholder="输入命令或搜索..." />
+      <CommandInput placeholder="Type a command or search..." />
       <CommandList>
-        <CommandEmpty>没有匹配结果。</CommandEmpty>
-        <CommandGroup heading="导航">
+        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandGroup heading="Navigation">
           <CommandItem onSelect={() => router.push("/dashboard")}>
             <LayoutDashboardIcon />
-            仪表盘
+            Dashboard
           </CommandItem>
           <CommandItem onSelect={() => router.push("/settings")}>
             <SettingsIcon />
-            设置
+            Settings
           </CommandItem>
         </CommandGroup>
       </CommandList>
@@ -211,41 +221,41 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
 </Dialog>
 ```
 
-#### 仪表盘数据卡
+#### Dashboard stat cards
 
 ```tsx
 <div className="grid gap-4 md:grid-cols-3">
   <Card>
     <CardHeader>
-      <CardDescription>总营收</CardDescription>
-      <CardTitle className="text-3xl">¥45,231</CardTitle>
+      <CardDescription>Total revenue</CardDescription>
+      <CardTitle className="text-3xl">$45,231</CardTitle>
     </CardHeader>
     <CardFooter>
-      <Badge variant="secondary">+20.1% 较上月</Badge>
+      <Badge variant="secondary">+20.1% from last month</Badge>
     </CardFooter>
   </Card>
   <Card>
     <CardHeader>
-      <CardDescription>活跃用户</CardDescription>
+      <CardDescription>Active users</CardDescription>
       <CardTitle className="text-3xl">2,350</CardTitle>
     </CardHeader>
     <CardFooter>
-      <Badge variant="secondary">+18.1% 较上月</Badge>
+      <Badge variant="secondary">+18.1% from last month</Badge>
     </CardFooter>
   </Card>
   <Card>
     <CardHeader>
-      <CardDescription>转化率</CardDescription>
+      <CardDescription>Conversion rate</CardDescription>
       <CardTitle className="text-3xl">3.2%</CardTitle>
     </CardHeader>
     <CardFooter>
-      <span className="text-destructive text-sm">-2.4% 较上月</span>
+      <span className="text-destructive text-sm">-2.4% from last month</span>
     </CardFooter>
   </Card>
 </div>
 ```
 
-#### 用户头像下拉
+#### User avatar dropdown
 
 ```tsx
 <DropdownMenu>
@@ -263,69 +273,69 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
     <DropdownMenuGroup>
       <DropdownMenuItem onSelect={() => router.push("/profile")}>
         <UserIcon />
-        个人资料
+        Profile
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => router.push("/settings")}>
         <SettingsIcon />
-        设置
+        Settings
       </DropdownMenuItem>
     </DropdownMenuGroup>
     <DropdownMenuSeparator />
     <DropdownMenuItem onSelect={signOut}>
       <LogOutIcon />
-      退出
+      Sign out
     </DropdownMenuItem>
   </DropdownMenuContent>
 </DropdownMenu>
 ```
 
-#### 空状态
+#### Empty state
 
 ```tsx
 <Empty>
   <EmptyHeader>
     <EmptyMedia variant="icon"><FolderIcon /></EmptyMedia>
-    <EmptyTitle>还没有项目</EmptyTitle>
-    <EmptyDescription>创建你的第一个项目开始使用。</EmptyDescription>
+    <EmptyTitle>No projects yet</EmptyTitle>
+    <EmptyDescription>Create your first project to get started.</EmptyDescription>
   </EmptyHeader>
   <EmptyContent>
-    <Button>新建项目</Button>
+    <Button>New project</Button>
   </EmptyContent>
 </Empty>
 ```
 
-#### 设置页（分页布局）
+#### Settings page (tabbed layout)
 
 ```tsx
 <Tabs defaultValue="account" className="flex flex-col gap-6">
   <TabsList>
-    <TabsTrigger value="account">账户</TabsTrigger>
-    <TabsTrigger value="notifications">通知</TabsTrigger>
-    <TabsTrigger value="appearance">外观</TabsTrigger>
+    <TabsTrigger value="account">Account</TabsTrigger>
+    <TabsTrigger value="notifications">Notifications</TabsTrigger>
+    <TabsTrigger value="appearance">Appearance</TabsTrigger>
   </TabsList>
   <TabsContent value="account">
     <FieldGroup>
       <Field orientation="horizontal">
-        <FieldLabel>姓名</FieldLabel>
+        <FieldLabel>Name</FieldLabel>
         <Input defaultValue={user.name} />
       </Field>
       <Field orientation="horizontal">
-        <FieldLabel>邮箱</FieldLabel>
+        <FieldLabel>Email</FieldLabel>
         <Input type="email" defaultValue={user.email} />
       </Field>
     </FieldGroup>
   </TabsContent>
   <TabsContent value="notifications">
     <FieldSet>
-      <FieldLegend>邮件通知</FieldLegend>
+      <FieldLegend>Email notifications</FieldLegend>
       <FieldGroup>
         <Field orientation="horizontal">
           <Switch id="weekly" />
-          <FieldLabel htmlFor="weekly">每周摘要</FieldLabel>
+          <FieldLabel htmlFor="weekly">Weekly digest</FieldLabel>
         </Field>
         <Field orientation="horizontal">
           <Switch id="security" />
-          <FieldLabel htmlFor="security">安全提醒</FieldLabel>
+          <FieldLabel htmlFor="security">Security alerts</FieldLabel>
         </Field>
       </FieldGroup>
     </FieldSet>
@@ -333,7 +343,7 @@ styles.css 自带 `@source` 指令、完整 token、`@theme inline` 映射、
 </Tabs>
 ```
 
-#### 主题切换按钮
+#### Theme toggle button
 
 ```tsx
 "use client";
@@ -342,7 +352,7 @@ import { useTheme } from "next-themes";
 import { Button } from "@openconsole/shadcn";
 
 export function ThemeToggle() {
-  // 用 resolvedTheme，处于 System 模式时也能正确翻转。
+  // Use resolvedTheme so System mode still flips correctly.
   const { resolvedTheme, setTheme } = useTheme();
   return (
     <Button
@@ -352,27 +362,27 @@ export function ThemeToggle() {
     >
       <Sun className="rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
       <Moon className="absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">切换主题</span>
+      <span className="sr-only">Toggle theme</span>
     </Button>
   );
 }
 ```
 
-#### 可搜索下拉
+#### Searchable dropdown
 
 ```tsx
 <Popover open={open} onOpenChange={setOpen}>
   <PopoverTrigger asChild>
     <Button variant="outline" role="combobox" aria-expanded={open} className="w-[200px] justify-between">
-      {value ? options.find((o) => o.value === value)?.label : "选择..."}
+      {value ? options.find((o) => o.value === value)?.label : "Select..."}
       <ChevronsUpDownIcon data-icon="inline-end" />
     </Button>
   </PopoverTrigger>
   <PopoverContent className="w-[200px] p-0">
     <Command>
-      <CommandInput placeholder="搜索..." />
+      <CommandInput placeholder="Search..." />
       <CommandList>
-        <CommandEmpty>没有匹配项。</CommandEmpty>
+        <CommandEmpty>No matches.</CommandEmpty>
         <CommandGroup>
           {options.map((option) => (
             <CommandItem
@@ -393,14 +403,14 @@ export function ThemeToggle() {
 </Popover>
 ```
 
-#### 日期选择器
+#### Date picker
 
 ```tsx
 <Popover>
   <PopoverTrigger asChild>
     <Button variant="outline" className={cn("justify-start text-left font-normal", !date && "text-muted-foreground")}>
       <CalendarIcon data-icon="inline-start" />
-      {date ? format(date, "PPP") : "选择日期"}
+      {date ? format(date, "PPP") : "Pick a date"}
     </Button>
   </PopoverTrigger>
   <PopoverContent className="w-auto p-0">
@@ -411,70 +421,73 @@ export function ThemeToggle() {
 
 ---
 
-## 关键规则
+## Key rules
 
-下面的规则**总是被强制**。看到违反就直接修。每条都链到一个
-Incorrect/Correct 代码对照的细则文件。
+The rules below are **always enforced**. Fix violations on sight. Each links
+to a detail file with Incorrect/Correct code pairs.
 
-### 样式 & Tailwind → [rules/styling.md](./rules/styling.md)
+### Styling & Tailwind → [rules/styling.md](./rules/styling.md)
 
-- **`className` 只管布局，不管样式**。从外面覆盖组件颜色或排版是错的。
-- **不要 `space-x-*` / `space-y-*`**。改用 `flex … gap-*`。
-- **宽高相等时用 `size-*`**。`size-10` 不是 `w-10 h-10`。
-- **`truncate` 是简写**，不要 `overflow-hidden text-ellipsis whitespace-nowrap`。
-- **别手写 `dark:` 颜色覆盖**。用语义 token。
-- **状态色别用裸值**。用 `Badge` variant 或 `text-destructive`。
-- **条件 className 用 `cn()`**（从 `@openconsole/shadcn` 导入）。
-- **overlay 别加 z-index**（`Dialog`、`Popover`、`Tooltip` 等自管堆叠）。
+- **`className` is for layout only, not styling.** Overriding component colors
+  or typography from the outside is wrong.
+- **No `space-x-*` / `space-y-*`.** Use `flex … gap-*`.
+- **Equal width/height: use `size-*`.** `size-10`, not `w-10 h-10`.
+- **`truncate` is the shorthand** — not `overflow-hidden text-ellipsis whitespace-nowrap`.
+- **Don't hand-write `dark:` color overrides.** Use semantic tokens.
+- **No raw values for status colors.** Use `Badge` variants or `text-destructive`.
+- **Conditional className: use `cn()`** (import from `@openconsole/shadcn`).
+- **No z-index on overlays** (`Dialog`, `Popover`, `Tooltip`, etc. manage their own stacking).
 
-### 表单 → [rules/forms.md](./rules/forms.md)
+### Forms → [rules/forms.md](./rules/forms.md)
 
-- **表单布局用 `FieldGroup` + `Field`**，绝不要 `<div className="space-y-*">`。
-- **schema 用 `Form` + `FormField` + `FormItem` + `FormControl` + `FormMessage`**。
-- **`InputGroup` 用 `InputGroupInput` / `InputGroupTextarea`**。
-- **输入框里的按钮用 `InputGroup` + `InputGroupAddon`**。
-- **2–7 个互斥选项用 `ToggleGroup`**。
-- **相关 checkbox / radio 分组用 `FieldSet` + `FieldLegend`**。
-- **校验状态: `data-invalid` 在 `Field` + `aria-invalid` 在 control**。
+- **Form layout uses `FieldGroup` + `Field`.** Never `<div className="space-y-*">`.
+- **Schema uses `Form` + `FormField` + `FormItem` + `FormControl` + `FormMessage`.**
+- **`InputGroup` requires `InputGroupInput` / `InputGroupTextarea`.**
+- **Buttons inside inputs: `InputGroup` + `InputGroupAddon`.**
+- **2–7 mutually exclusive options: `ToggleGroup`.**
+- **Grouped checkbox/radio: `FieldSet` + `FieldLegend`.**
+- **Validation states: `data-invalid` on `Field` + `aria-invalid` on the control.**
 
-### 组合 → [rules/composition.md](./rules/composition.md)
+### Composition → [rules/composition.md](./rules/composition.md)
 
-- **Item 一定在自己的 Group 里**（`SelectItem` → `SelectGroup`，
-  `DropdownMenuItem` → `DropdownMenuGroup`，`CommandItem` →
-  `CommandGroup`，`TabsTrigger` → `TabsList`）。
-- **`Dialog` / `Sheet` / `Drawer` 一定要有 Title**（视觉隐藏用 `className="sr-only"`）。
-- **`Card` 用完整组合**: `CardHeader` / `CardTitle` / `CardDescription` /
-  `CardContent` / `CardFooter`。
-- **`Avatar` 必须有 `AvatarFallback`**。
-- **`Button` 没有 `isLoading` prop**: 用 `Spinner` + `data-icon` + `disabled` 拼。
-- **自定义触发器用 `asChild`**。
+- **Items always live inside their Group** (`SelectItem` → `SelectGroup`,
+  `DropdownMenuItem` → `DropdownMenuGroup`, `CommandItem` → `CommandGroup`,
+  `TabsTrigger` → `TabsList`).
+- **`Dialog` / `Sheet` / `Drawer` must have a Title** (use `className="sr-only"`
+  to hide visually).
+- **`Card` uses the full composition**: `CardHeader` / `CardTitle` /
+  `CardDescription` / `CardContent` / `CardFooter`.
+- **`Avatar` must have an `AvatarFallback`.**
+- **`Button` has no `isLoading` prop**: compose with `Spinner` + `data-icon` + `disabled`.
+- **Custom triggers use `asChild`.**
 
-### 用组件，别堆裸标签 → [rules/composition.md](./rules/composition.md)
+### Use components, not raw tags → [rules/composition.md](./rules/composition.md)
 
-- 提示框 → `Alert`。空状态 → `Empty`。Toast → `sonner` 的 `toast()`。
-- `Separator` 替代 `<hr>`。`Skeleton` 替代 `animate-pulse` div。
-- `Badge` 替代加样式的 span。`Kbd` 用于键盘提示。`Spinner` 替代手写转圈。
+- Alerts → `Alert`. Empty states → `Empty`. Toasts → `toast()` from `sonner`.
+- `Separator` replaces `<hr>`. `Skeleton` replaces `animate-pulse` divs.
+- `Badge` replaces styled spans. `Kbd` for keyboard hints. `Spinner` replaces
+  hand-rolled spinners.
 
-### 图标 → [rules/icons.md](./rules/icons.md)
+### Icons → [rules/icons.md](./rules/icons.md)
 
-- **按钮里的图标用 `data-icon="inline-start"` / `"inline-end"`**。
-- **组件内部图标不要加尺寸 class**（组件自管）。
-- **图标当组件对象传**，别用字符串 key 查表。
-- **按名字动态渲染用 `Icon`**（本包导出的 `lucide-react` 包装）。
+- **Icons in buttons: use `data-icon="inline-start"` / `"inline-end"`.**
+- **No size classes on icons inside components** (the component handles it).
+- **Pass icons as component objects**, not string keys looked up in a map.
+- **For dynamic rendering by name, use `Icon`** (this package's `lucide-react` wrapper).
 
-### API 形状 → [rules/base-vs-radix.md](./rules/base-vs-radix.md)
+### API shape → [rules/base-vs-radix.md](./rules/base-vs-radix.md)
 
-- 自定义 trigger 用 `asChild`。
-- `ToggleGroup` / `Accordion` 显式 `type="single"` 或 `type="multiple"`。
-- `Slider` 的 `value` 永远是数组。
-- `Select` 用 inline `<SelectItem>`，placeholder 在 `<SelectValue>` 上。
+- Custom triggers use `asChild`.
+- `ToggleGroup` / `Accordion` need explicit `type="single"` or `type="multiple"`.
+- `Slider`'s `value` is always an array.
+- `Select` uses inline `<SelectItem>`; placeholder lives on `<SelectValue>`.
 
 ---
 
-## 关键模式
+## Key patterns
 
 ```tsx
-// 表单布局: FieldGroup + Field（不是 div + Label）
+// Form layout: FieldGroup + Field (not div + Label)
 <FieldGroup>
   <Field>
     <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -482,39 +495,39 @@ Incorrect/Correct 代码对照的细则文件。
   </Field>
 </FieldGroup>
 
-// 校验: data-invalid 在 Field, aria-invalid 在 control
+// Validation: data-invalid on Field, aria-invalid on the control
 <Field data-invalid>
   <FieldLabel>Email</FieldLabel>
   <Input aria-invalid />
   <FieldDescription>Invalid email.</FieldDescription>
 </Field>
 
-// 按钮里的图标: data-icon, 不加尺寸
+// Icons inside buttons: data-icon, no size class
 <Button>
   <SearchIcon data-icon="inline-start" />
   Search
 </Button>
 
-// 间距: gap, 不要 space-y / space-x
+// Spacing: gap, not space-y / space-x
 <div className="flex flex-col gap-4">
 
-// 等宽高: size-*
+// Equal width/height: size-*
 <Avatar className="size-10">
 
-// 状态色: Badge variant 或语义 token
+// Status colors: Badge variant or semantic token
 <Badge variant="secondary">+20.1%</Badge>
 
-// 条件 class: cn()
+// Conditional class: cn()
 <div className={cn("flex items-center", isActive && "bg-primary text-primary-foreground")} />
 
-// 不显示但 a11y-合规的 Dialog: sr-only 的 title
+// Invisible-but-a11y Dialog: sr-only title
 <Dialog>
   <DialogContent>
     <DialogTitle className="sr-only">Settings</DialogTitle>
   </DialogContent>
 </Dialog>
 
-// 加载中的按钮: Spinner + data-icon + disabled
+// Loading button: Spinner + data-icon + disabled
 <Button disabled={isPending}>
   {isPending && <Spinner data-icon="inline-start" />}
   Save
@@ -523,13 +536,13 @@ Incorrect/Correct 代码对照的细则文件。
 
 ---
 
-## 导入
+## Imports
 
-所有东西从 `@openconsole/shadcn` 平铺导出，**入口只有这一个**。
+Everything is flat-exported from `@openconsole/shadcn` — **there is only one entry**.
 
 ```ts
 import {
-  // 原语
+  // Primitives
   Button, Badge, Avatar, AvatarImage, AvatarFallback,
   Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter,
   Dialog, DialogTrigger, DialogContent, DialogTitle,
@@ -537,84 +550,89 @@ import {
   Tabs, TabsList, TabsTrigger, TabsContent,
   Tooltip, TooltipTrigger, TooltipContent,
   Popover, PopoverTrigger, PopoverContent,
-  // 表单
+  // Forms
   Form, FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage,
   useFormField,
   FieldGroup, Field, FieldLabel, FieldDescription, FieldSet, FieldLegend,
   Input, InputGroup, InputGroupInput, InputGroupAddon,
   Select, SelectTrigger, SelectContent, SelectGroup, SelectItem, SelectValue,
-  // 开关类
+  // Toggles
   Switch, Checkbox, RadioGroup, RadioGroupItem,
   ToggleGroup, ToggleGroupItem,
-  // 反馈
+  // Feedback
   Alert, AlertTitle, AlertDescription,
   Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent,
   Skeleton, Spinner, Progress,
-  Toaster,            // 根上挂一次，然后从 sonner 调 toast()
-  // 导航
+  Toaster,            // Mount once at the root, then call toast() from sonner
+  // Navigation
   Sidebar, SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem,
   Breadcrumb, NavigationMenu, Pagination,
-  // 浮层
+  // Overlays
   DropdownMenu, ContextMenu, Menubar, HoverCard,
   Command, CommandInput, CommandList, CommandGroup, CommandItem, CommandEmpty,
-  // 日期
+  // Date
   Calendar,
-  // 工具
+  // Utilities
   cn, useIsMobile, Icon, Direction, Kbd, KbdGroup,
 } from "@openconsole/shadcn";
 
-import { toast } from "sonner";   // toast() 在 sonner 里，不在本包
+import { toast } from "sonner";   // toast() lives in sonner, not in this package
 ```
 
-需要某个组件但本包没导出 —— 不要碰运气拼 import 路径，也不要从别处
-复制源码进来。在应用层用已有原语自己组合。
+If you need a component that this package doesn't export — don't guess import
+paths, don't copy source from elsewhere. Compose it in app code from the
+existing primitives.
 
 ---
 
-## 主题化
+## Theming
 
-详见 [customization.md](./customization.md)。短版本:
+See [customization.md](./customization.md). Short version:
 
-- 接入: 在 app 全局 CSS 里 `@import "@openconsole/shadcn/styles.css"`
-  —— 默认 token、`@theme inline` 映射、`@source` 注册等全部自带。
-- 主题色由 CSS 变量驱动 —— 改 `:root` / `.dark` 里的变量就改了所有组件。
-- 颜色用 OKLCH（`oklch(L C H)`）。
-- 覆盖默认 token: 在 `@import` 之后重新声明同名变量。
-- 加自定义色: 同样在全局 CSS 里加 `:root` 变量 + 在 `@theme inline`
-  里映射（Tailwind v4）。
-- 亮 / 暗切换用 `next-themes` 的 `ThemeProvider` 包根 + `useTheme()`
-  钩子写自己的切换按钮。
-
----
-
-## 常见坑
-
-- **本包没有的组件不要伪造**: `import { Calendar2 } from "@openconsole/shadcn"`
-  这种碰运气的 import 永远不会成功。先翻 [导入](#导入) 或
-  [应用场景速查](#应用场景速查) 确认。
-- **入口只有 `@openconsole/shadcn` 根**: 不存在 `@openconsole/shadcn/dialog`、
-  `@openconsole/shadcn/lib/utils` 这种 subpath import。
-- **wrapper 用了 `useState` / `useEffect` / `onClick` 却忘了 `"use client"`**:
-  每个交互原语本身已经标了，但你自己包出来的 wrapper 要自己加。
-- **给 `DialogContent` 加 `z-50`**: 浮层组件自己分层。手写 z-index 会
-  破坏跟 `Tooltip` / `Toaster` 的堆叠顺序。
-- **手写 `dark:bg-*`**: 跟主题 token 打架。用 `bg-background`、
-  `bg-muted`、`bg-card` 等。
-- **`SelectItem` 写在 `SelectGroup` 外面**: TS 检查能过，但键盘导航
-  和屏幕阅读器都坏。
-- **`Dialog` 没有 `DialogTitle`**: 屏幕阅读器会报缺标题。不想显示就
-  `<DialogTitle className="sr-only">…</DialogTitle>`。
-- **主题切换读 `theme` 而不是 `resolvedTheme`**: 用户处于 System 模式
-  时 `theme === "system"`，naive 的 `theme === "dark" ? "light" : "dark"`
-  第一次点会无动作。读 `resolvedTheme` 来决定切到哪边。
+- Setup: `@import "@openconsole/shadcn/styles.css"` in the app's global CSS —
+  default tokens, `@theme inline` mapping, `@source` registration, etc. are
+  all included.
+- Theme colors are driven by CSS variables — change the variables in `:root`
+  / `.dark` and you change every component.
+- Colors use OKLCH (`oklch(L C H)`).
+- Override default tokens: redeclare the same variable names after the `@import`.
+- Add custom colors: same approach — declare `:root` variables and map them
+  in `@theme inline` (Tailwind v4).
+- Light/dark switching: wrap the root with `next-themes`'s `ThemeProvider`
+  and use the `useTheme()` hook in your own toggle button.
 
 ---
 
-## 详细参考
+## Common pitfalls
 
-- [rules/styling.md](./rules/styling.md) —— 语义色、variant、`className`、间距、`size-*`、`truncate`、暗色、`cn()`、z-index。
-- [rules/forms.md](./rules/forms.md) —— `FieldGroup`、`Field`、`InputGroup`、`ToggleGroup`、`FieldSet`、校验状态、react-hook-form 整合。
-- [rules/composition.md](./rules/composition.md) —— Group、overlay、`Card`、`Tabs`、`Avatar`、`Alert`、`Empty`、toast、`Separator`、`Skeleton`、`Badge`、按钮加载态。
-- [rules/icons.md](./rules/icons.md) —— `data-icon`、图标尺寸、图标作为对象传递、`Icon` 名字查找。
-- [rules/base-vs-radix.md](./rules/base-vs-radix.md) —— 本包 API 速查（`asChild`、`Select`、`ToggleGroup`、`Slider`、`Accordion`）。
-- [customization.md](./customization.md) —— 主题、CSS 变量、新增自定义色。
+- **Don't fabricate components this package doesn't have**: imports like
+  `import { Calendar2 } from "@openconsole/shadcn"` never work. Check
+  [Imports](#imports) or the [Use-case lookup](#use-case-lookup) first.
+- **The only entry is `@openconsole/shadcn` root**: subpath imports like
+  `@openconsole/shadcn/dialog` or `@openconsole/shadcn/lib/utils` do not
+  exist.
+- **Wrappers using `useState` / `useEffect` / `onClick` without `"use client"`**:
+  each interactive primitive is already marked, but wrappers you write must
+  declare it themselves.
+- **Adding `z-50` to `DialogContent`**: overlay components stack themselves.
+  Hand-written z-index breaks the order with `Tooltip` / `Toaster`.
+- **Hand-written `dark:bg-*`**: fights the theme tokens. Use `bg-background`,
+  `bg-muted`, `bg-card`, etc.
+- **`SelectItem` outside `SelectGroup`**: TS will let it pass, but keyboard
+  navigation and screen readers break.
+- **`Dialog` without `DialogTitle`**: screen readers report a missing title.
+  Hide visually with `<DialogTitle className="sr-only">…</DialogTitle>`.
+- **Theme toggle reading `theme` instead of `resolvedTheme`**: in System mode,
+  `theme === "system"`, so the naive `theme === "dark" ? "light" : "dark"`
+  does nothing on first click. Read `resolvedTheme` to decide where to flip.
+
+---
+
+## Detailed reference
+
+- [rules/styling.md](./rules/styling.md) — semantic colors, variants, `className`, spacing, `size-*`, `truncate`, dark mode, `cn()`, z-index.
+- [rules/forms.md](./rules/forms.md) — `FieldGroup`, `Field`, `InputGroup`, `ToggleGroup`, `FieldSet`, validation states, react-hook-form integration.
+- [rules/composition.md](./rules/composition.md) — Groups, overlays, `Card`, `Tabs`, `Avatar`, `Alert`, `Empty`, toast, `Separator`, `Skeleton`, `Badge`, button loading state.
+- [rules/icons.md](./rules/icons.md) — `data-icon`, icon sizing, passing icons as objects, `Icon` name lookup.
+- [rules/base-vs-radix.md](./rules/base-vs-radix.md) — this package's API quick reference (`asChild`, `Select`, `ToggleGroup`, `Slider`, `Accordion`).
+- [customization.md](./customization.md) — theming, CSS variables, adding custom colors.

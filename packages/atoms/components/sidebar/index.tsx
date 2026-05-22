@@ -40,6 +40,18 @@ export interface SidebarProps
   account?: User;
 }
 
+/**
+ * Three-section sidebar (brand / menu / account) wired to atoms'
+ * `LayoutProvider` for variant configuration.
+ *
+ * - `brand` (optional) renders inside `SidebarHeader`.
+ * - `menu` is rendered inside `SidebarContent`; supports one level of
+ *   nesting via `MenuItem.children`.
+ * - `account` (optional) renders inside `SidebarFooter`; when
+ *   `account.menu` is non-empty, the card becomes a dropdown trigger.
+ *
+ * Must be wrapped by shadcn's `SidebarProvider` (atoms does not bundle it).
+ */
 export function Sidebar({ brand, menu, account, ...props }: SidebarProps) {
   const { config } = useLayout();
 

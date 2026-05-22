@@ -33,7 +33,9 @@ import type { ImportedTheme, ThemePreset } from "./types";
 import { useTokens } from "./use-tokens";
 
 interface PreferencesProps {
+  /** Whether the drawer is open. */
   open: boolean;
+  /** Called with the new open state when the user opens or dismisses. */
   onOpenChange: (open: boolean) => void;
 }
 
@@ -86,6 +88,20 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+/**
+ * Settings drawer that slides in from the side opposite the sidebar.
+ * Built-in tabs:
+ *
+ * - **Theme**: shadcn / tweakcn preset pickers, per-token color editing
+ *   via `<ColorPicker>`, radius selector, light/dark mode toggle, and a
+ *   "paste CSS" Importer dialog for ad-hoc themes.
+ * - **Layout**: live-preview controls for the sidebar variant,
+ *   collapsible mode, and side (mirrors `LayoutProvider` state).
+ *
+ * Requires `<ThemeProvider>`, `<FontProvider>`, and `<LayoutProvider>`
+ * to be mounted above. `<Header>` opens this drawer by default — only
+ * render `<Preferences>` directly when not using `<Header>`.
+ */
 export function Preferences({ open, onOpenChange }: PreferencesProps) {
   const {
     isDarkMode,

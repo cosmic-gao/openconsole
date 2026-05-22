@@ -1,96 +1,101 @@
-# 主题化 & 定制
+# Theming & customization
 
-组件引用语义化的 CSS 变量。改变量就等于改所有组件。
+Components reference semantic CSS variables. Change the variables, and you
+change every component.
 
-## 目录
+## Contents
 
-- 接入（一次 @import 搞定）
-- 工作原理（CSS 变量 → Tailwind 工具类 → 组件）
-- 颜色变量与 OKLCH 格式
-- 暗色模式配置
-- 切主题（覆盖默认 token 或粘 CSS）
-- 新增自定义色（Tailwind v4）
-- 圆角 `--radius`
-- view-transition 变量（圆形展开切主题）
-- 定制组件的边界（只能从外面来）
+- Setup (one @import covers it)
+- How it works (CSS variables → Tailwind utilities → components)
+- Color variables and OKLCH format
+- Dark mode setup
+- Switching themes (override default tokens or paste CSS)
+- Adding custom colors (Tailwind v4)
+- Border radius `--radius`
+- View-transition variables (circular reveal theme switch)
+- Customization boundary (only from the outside)
 
 ---
 
-## 接入
+## Setup
 
-在 app 的全局 CSS（一般是 `app/globals.css`）里 @import 本包的 styles.css:
+In the app's global CSS (usually `app/globals.css`), `@import` this package's
+styles.css:
 
 ```css
 @import "tailwindcss";
 @import "@openconsole/shadcn/styles.css";
-@import "@openconsole/atoms/styles.css";  /* 用到 atoms 时 */
+@import "@openconsole/atoms/styles.css";  /* when using atoms */
 ```
 
-`@openconsole/shadcn/styles.css` 自带:
+`@openconsole/shadcn/styles.css` ships with:
 
-- `@source` 指令注册自己的源码（Tailwind 自动扫到所有组件用到的工具类）
-- 完整的 `:root` / `.dark` 主题 token 默认值
-- `@theme inline` 映射（让 token 变成 `bg-primary` / `text-muted-foreground` 等工具类）
+- `@source` directives registering its own sources (Tailwind picks up every utility used by every component automatically)
+- Full `:root` / `.dark` default values for theme tokens
+- `@theme inline` mapping (turns tokens into utilities like `bg-primary` / `text-muted-foreground`)
 - `@custom-variant dark`
-- `tw-animate-css` 动画工具
-- base 层 reset
+- `tw-animate-css` animation utilities
+- Base-layer resets
 
-**消费方不需要重复定义 token、不需要手写 `@source`**。要覆盖 token 在
-`@import` 之后重新声明同名变量即可（见下面 [切主题](#切主题)）。
-
----
-
-## 工作原理
-
-1. CSS 变量定义在 `:root`（亮）和 `.dark`（暗）—— 默认值在
-   `@openconsole/shadcn/styles.css` 里。
-2. Tailwind v4 把它们映射成工具类: `bg-primary`、`text-muted-foreground` 等。
-3. 组件用这些工具类 —— **改一个变量，所有引用它的组件全跟着变**。
+**Consumers don't need to redeclare tokens or hand-write `@source`.** To
+override tokens, redeclare the same variable names after the `@import` (see
+[Switching themes](#switching-themes) below).
 
 ---
 
-## 颜色变量
+## How it works
 
-每种颜色都遵循 `name` / `name-foreground` 约定。基础变量给背景用，
-`-foreground` 给该背景上的文字 / 图标用。
+1. CSS variables are defined in `:root` (light) and `.dark` (dark) — the
+   defaults live in `@openconsole/shadcn/styles.css`.
+2. Tailwind v4 maps them into utilities: `bg-primary`, `text-muted-foreground`, etc.
+3. Components use these utilities — **change one variable and every component
+   referencing it follows**.
 
-| 变量 | 用途 |
+---
+
+## Color variables
+
+Every color follows the `name` / `name-foreground` convention. The base
+variable is for backgrounds; `-foreground` is for text / icons on top of that
+background.
+
+| Variable | Purpose |
 |---|---|
-| `--background` / `--foreground` | 页面背景与默认文字 |
-| `--card` / `--card-foreground` | 卡片表面 |
-| `--primary` / `--primary-foreground` | 主按钮与主操作 |
-| `--secondary` / `--secondary-foreground` | 次要操作 |
-| `--muted` / `--muted-foreground` | 弱化 / 禁用状态 |
-| `--accent` / `--accent-foreground` | 悬浮与点缀 |
-| `--destructive` / `--destructive-foreground` | 错误与破坏性操作 |
-| `--border` | 默认边框 |
-| `--input` | 表单输入边框 |
-| `--ring` | 焦点环 |
-| `--chart-1` 到 `--chart-5` | 图表 / 可视化 |
-| `--sidebar-*` | 侧边栏专用色 |
-| `--surface` / `--surface-foreground` | 次级表面 |
+| `--background` / `--foreground` | Page background and default text |
+| `--card` / `--card-foreground` | Card surface |
+| `--primary` / `--primary-foreground` | Primary buttons and primary actions |
+| `--secondary` / `--secondary-foreground` | Secondary actions |
+| `--muted` / `--muted-foreground` | Muted / disabled states |
+| `--accent` / `--accent-foreground` | Hover and accents |
+| `--destructive` / `--destructive-foreground` | Errors and destructive actions |
+| `--border` | Default border |
+| `--input` | Form input border |
+| `--ring` | Focus ring |
+| `--chart-1` through `--chart-5` | Charts / visualizations |
+| `--sidebar-*` | Sidebar-specific colors |
+| `--surface` / `--surface-foreground` | Secondary surface |
 
-颜色用 **OKLCH**: `--primary: oklch(0.205 0 0)`。三个值依次是 lightness
-（0–1）、chroma（0 表示灰）、hue（0–360）。
+Colors use **OKLCH**: `--primary: oklch(0.205 0 0)`. The three values are
+lightness (0–1), chroma (0 means gray), and hue (0–360).
 
 ---
 
-## 暗色模式
+## Dark mode
 
-通过根元素上的 `.dark` 类切换。用 `next-themes` 的 `ThemeProvider`
-包根:
+Toggled via a `.dark` class on the root element. Wrap the root with
+`next-themes`'s `ThemeProvider`:
 
 ```tsx
 "use client";
 import { ThemeProvider } from "next-themes";
 
-// app/layout.tsx 或类似根布局
+// app/layout.tsx or similar root layout
 <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
   {children}
 </ThemeProvider>
 ```
 
-主题切换按钮自己写一个，调用 `useTheme()`:
+Write your own toggle button using `useTheme()`:
 
 ```tsx
 "use client";
@@ -99,7 +104,7 @@ import { useTheme } from "next-themes";
 import { Button } from "@openconsole/shadcn";
 
 export function ThemeToggle() {
-  // 用 resolvedTheme，处于 System 模式时也能正确翻转。
+  // Use resolvedTheme so System mode still flips correctly.
   const { resolvedTheme, setTheme } = useTheme();
   return (
     <Button
@@ -109,7 +114,7 @@ export function ThemeToggle() {
     >
       <Sun className="rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
       <Moon className="absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">切换主题</span>
+      <span className="sr-only">Toggle theme</span>
     </Button>
   );
 }
@@ -117,40 +122,41 @@ export function ThemeToggle() {
 
 ---
 
-## 切主题
+## Switching themes
 
-### 覆盖默认 token
+### Override default tokens
 
-在 app 的全局 CSS 里 `@import "@openconsole/shadcn/styles.css"` **之后**
-重新声明同名变量即可。只列要改的, 没列的保持 shadcn 默认值:
+In the app's global CSS, **after** `@import "@openconsole/shadcn/styles.css"`,
+redeclare the same variable names. Only list the ones you want to change; the
+rest stay at shadcn defaults:
 
 ```css
 @import "tailwindcss";
 @import "@openconsole/shadcn/styles.css";
 
 :root {
-  --primary: oklch(0.6 0.18 250);    /* 覆盖默认黑色为蓝 */
-  --radius: 0.5rem;                   /* 覆盖默认圆角 */
+  --primary: oklch(0.6 0.18 250);    /* override default black with blue */
+  --radius: 0.5rem;                   /* override default radius */
 }
 .dark {
   --primary: oklch(0.7 0.18 250);
 }
 ```
 
-### 粘 CSS 主题
+### Paste a CSS theme
 
-从 <https://ui.shadcn.com/themes> 或 <https://tweakcn.com> 复制出来
-的 `:root { … } .dark { … }`, 同样粘在 `@import` 之后即可。CSS 后定义
-的规则覆盖前面的, 所以默认 token 会被整套替换。
+`:root { … } .dark { … }` blocks copied from <https://ui.shadcn.com/themes>
+or <https://tweakcn.com> work the same way — paste them after the `@import`.
+Later CSS rules win, so the default tokens get replaced wholesale.
 
 ---
 
-## 新增自定义色
+## Adding custom colors
 
-加到 app 的全局 CSS 里（同样在 `@import` 之后, 不需要新建 CSS 文件）。
+Add to the app's global CSS (after the `@import`; no new CSS file needed).
 
 ```css
-/* 1. 在全局 CSS 文件里定义。 */
+/* 1. Define in your global CSS file. */
 :root {
   --warning: oklch(0.84 0.16 84);
   --warning-foreground: oklch(0.28 0.07 46);
@@ -160,7 +166,7 @@ export function ThemeToggle() {
   --warning-foreground: oklch(0.99 0.02 95);
 }
 
-/* 2. 用 Tailwind v4 的 @theme inline 注册成工具类。 */
+/* 2. Register as utilities via Tailwind v4's @theme inline. */
 @theme inline {
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
@@ -168,30 +174,30 @@ export function ThemeToggle() {
 ```
 
 ```tsx
-// 3. 在组件里用。
+// 3. Use it in components.
 <div className="bg-warning text-warning-foreground">Warning</div>
 ```
 
 ---
 
-## 圆角
+## Border radius
 
-`--radius` 全局控制圆角。组件从它派生:
+`--radius` controls border-radius globally. Components derive from it:
 
-| 工具类 | 等价值 |
+| Utility | Equivalent |
 |---|---|
 | `rounded-lg` | `var(--radius)` |
 | `rounded-md` | `calc(var(--radius) - 2px)` |
 | `rounded-sm` | `calc(var(--radius) - 4px)` |
 
-要在运行时调圆角，直接 `document.documentElement.style.setProperty("--radius", "0.75rem")`。
+To adjust radius at runtime: `document.documentElement.style.setProperty("--radius", "0.75rem")`.
 
 ---
 
-## View-transition 变量（圆形展开切主题）
+## View-transition variables (circular reveal theme switch)
 
-切主题时想要从点击位置圆形展开的过渡动画，用 View Transitions API +
-CSS 变量做。给全局 CSS 加:
+To get a circular reveal animation from the click position when switching
+themes, use the View Transitions API + CSS variables. Add to your global CSS:
 
 ```css
 @supports (view-transition-name: root) {
@@ -205,7 +211,7 @@ CSS 变量做。给全局 CSS 加:
 }
 ```
 
-切换按钮里在点击时设置原点变量并启动 transition:
+In the toggle button, set the origin variables on click and start the transition:
 
 ```tsx
 "use client";
@@ -236,45 +242,48 @@ export function ThemeToggle() {
 }
 ```
 
-> 变量名用 `--vt-origin-x` / `--vt-origin-y` 而不是 `--x` / `--y` ——
-> 太通用的名字容易跟其他库的临时变量冲突。
+> Use `--vt-origin-x` / `--vt-origin-y` rather than `--x` / `--y` — overly
+> generic names clash with other libraries' scratch variables.
 
 ---
 
-## 定制组件的边界
+## Customization boundary
 
-`@openconsole/shadcn` 是只读消费包 —— 你**不能**改组件源码加 variant、
-不能 fork 文件、不能 patch。能做的就是从外面调整:
+`@openconsole/shadcn` is a read-only consumption package — you **cannot**
+modify component source to add variants, fork files, or patch. What you can
+do, from the outside:
 
-### 1. 内置 variant（优先）
+### 1. Built-in variants (preferred)
 
 ```tsx
 <Button variant="outline" size="sm">Click</Button>
 ```
 
-`Button` variant: `default` / `secondary` / `outline` / `ghost` /
-`destructive` / `link`。`Badge` variant: `default` / `secondary` /
-`destructive` / `outline`。其它原语的 variant hover 上去看 IDE 提示。
+`Button` variants: `default` / `secondary` / `outline` / `ghost` /
+`destructive` / `link`. `Badge` variants: `default` / `secondary` /
+`destructive` / `outline`. For other primitives, hover for IDE hints.
 
-### 2. `className` 加 Tailwind 类（仅布局）
+### 2. `className` with Tailwind utilities (layout only)
 
 ```tsx
 <Card className="mx-auto max-w-md">…</Card>
 ```
 
-**不要**用 `className` 覆盖颜色或排版 —— 改主题变量。
+**Don't** use `className` to override colors or typography — change theme
+variables instead.
 
-### 3. CSS 变量（颜色 / 圆角 / 字体）
+### 3. CSS variables (colors / radius / fonts)
 
-见上面 [新增自定义色](#新增自定义色) 和 [圆角](#圆角)。
+See [Adding custom colors](#adding-custom-colors) and
+[Border radius](#border-radius) above.
 
-### 4. wrapper 组件（应用层抽象）
+### 4. Wrapper components (app-layer abstractions)
 
-应用里要 `ConfirmDialog`、`PageHeader`、`Toolbar` 这种复合形态，在自己
-的应用代码里拼:
+For composite shapes like `ConfirmDialog`, `PageHeader`, `Toolbar`, compose
+them in your own application code:
 
 ```tsx
-// 在你的应用代码里
+// In your application code
 import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent,
   AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,

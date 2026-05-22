@@ -1,24 +1,25 @@
-# 样式 & 定制
+# Styling & customization
 
-主题 / CSS 变量 / 自定义色见 [customization.md](../customization.md)。
-这份文件全是 Incorrect / Correct 对照，方便快速识别和修复违例。
+For theming / CSS variables / custom colors, see
+[customization.md](../customization.md). This file is all Incorrect / Correct
+pairs to make violations easy to spot and fix.
 
-## 目录
+## Contents
 
-- 语义色
-- 状态色不要裸值
-- 内置 variant 优先
-- `className` 只管布局
-- 不要 `space-x-*` / `space-y-*`
-- 宽高相等用 `size-*`
-- `truncate` 简写
-- 不要手写 `dark:` 颜色覆盖
-- `cn()` 用于条件 class
-- overlay 不要手写 z-index
+- Semantic colors
+- No raw values for status colors
+- Built-in variants first
+- `className` is for layout only
+- No `space-x-*` / `space-y-*`
+- Equal width/height: `size-*`
+- `truncate` shorthand
+- Don't hand-write `dark:` color overrides
+- `cn()` for conditional classes
+- No hand-written z-index on overlays
 
 ---
 
-## 语义色
+## Semantic colors
 
 **Incorrect:**
 
@@ -38,11 +39,11 @@
 
 ---
 
-## 状态色不要裸值
+## No raw values for status colors
 
-正面、负面、状态指示要么用 `Badge` variant，要么用语义 token
-（`text-destructive` 等），要么定义自定义 CSS 变量 —— **不要**裸用
-Tailwind 调色板。
+Positive, negative, and status indicators should use a `Badge` variant, a
+semantic token (`text-destructive`, etc.), or a custom CSS variable —
+**never** raw Tailwind palette values.
 
 **Incorrect:**
 
@@ -60,13 +61,13 @@ Tailwind 调色板。
 <span className="text-destructive">-3.2%</span>
 ```
 
-需要 success / positive 色但没有对应语义 token? 用 `Badge` variant，
-或者按 [customization.md —— 新增自定义色](../customization.md#新增自定义色)
-加一个 `--success` 变量。
+Need a success / positive color but no matching semantic token exists? Use a
+`Badge` variant, or add a `--success` variable as described in
+[customization.md — Adding custom colors](../customization.md#adding-custom-colors).
 
 ---
 
-## 内置 variant 优先
+## Built-in variants first
 
 **Incorrect:**
 
@@ -82,16 +83,17 @@ Tailwind 调色板。
 <Button variant="outline">Click me</Button>
 ```
 
-`Button` variant: `default` / `secondary` / `outline` / `ghost` /
-`destructive` / `link`。`Badge` variant: `default` / `secondary` /
-`destructive` / `outline`。其它原语自行查 source。
+`Button` variants: `default` / `secondary` / `outline` / `ghost` /
+`destructive` / `link`. `Badge` variants: `default` / `secondary` /
+`destructive` / `outline`. Check source for other primitives.
 
 ---
 
-## `className` 只管布局
+## `className` is for layout only
 
-`className` 用来加布局类（`max-w-md`、`mx-auto`、`mt-4`），**不要**
-覆盖组件颜色或排版。改色用语义 token、内置 variant、或 CSS 变量。
+`className` is for layout utilities (`max-w-md`, `mx-auto`, `mt-4`) —
+**don't** use it to override component colors or typography. For colors, use
+semantic tokens, built-in variants, or CSS variables.
 
 **Incorrect:**
 
@@ -109,17 +111,17 @@ Tailwind 调色板。
 </Card>
 ```
 
-定制顺序:
-1. **内置 variant** —— `variant="outline"`、`variant="destructive"`…
-2. **语义 token** —— `bg-primary`、`text-muted-foreground`。
-3. **CSS 变量** —— 加到全局 CSS（见
-   [customization.md](../customization.md)）。
+Customization order:
+1. **Built-in variants** — `variant="outline"`, `variant="destructive"`…
+2. **Semantic tokens** — `bg-primary`, `text-muted-foreground`.
+3. **CSS variables** — add to global CSS (see
+   [customization.md](../customization.md)).
 
 ---
 
-## 不要 `space-x-*` / `space-y-*`
+## No `space-x-*` / `space-y-*`
 
-改用 `gap-*`。`space-y-4` → `flex flex-col gap-4`。`space-x-2` → `flex gap-2`。
+Use `gap-*` instead. `space-y-4` → `flex flex-col gap-4`. `space-x-2` → `flex gap-2`.
 
 ```tsx
 <div className="flex flex-col gap-4">
@@ -131,29 +133,31 @@ Tailwind 调色板。
 
 ---
 
-## 宽高相等用 `size-*`
+## Equal width/height: `size-*`
 
-`size-10` 不是 `w-10 h-10`。适用于图标、头像、骨架屏、按钮等。
-
----
-
-## `truncate` 简写
-
-`truncate` 不是 `overflow-hidden text-ellipsis whitespace-nowrap`。
+`size-10`, not `w-10 h-10`. Applies to icons, avatars, skeletons, buttons,
+etc.
 
 ---
 
-## 不要手写 `dark:` 颜色覆盖
+## `truncate` shorthand
 
-语义 token 通过 CSS 变量自动处理亮 / 暗 —— `bg-background text-foreground`
-不是 `bg-white dark:bg-gray-950`。
+`truncate`, not `overflow-hidden text-ellipsis whitespace-nowrap`.
 
 ---
 
-## `cn()` 用于条件 class
+## Don't hand-write `dark:` color overrides
 
-从 `@openconsole/shadcn` 导入 `cn()` 来拼条件或合并的 class，**不要**在
-`className` 字符串里手写模板字面量的三元。
+Semantic tokens handle light / dark automatically via CSS variables —
+`bg-background text-foreground`, not `bg-white dark:bg-gray-950`.
+
+---
+
+## `cn()` for conditional classes
+
+Import `cn()` from `@openconsole/shadcn` to compose conditional or merged
+classes. **Don't** hand-write template-literal ternaries inside `className`
+strings.
 
 **Incorrect:**
 
@@ -169,12 +173,12 @@ import { cn } from "@openconsole/shadcn";
 <div className={cn("flex items-center", isActive ? "bg-primary text-primary-foreground" : "bg-muted")}>
 ```
 
-> 注意导入路径是 `@openconsole/shadcn`，不是 `@/lib/utils`。
+> The import path is `@openconsole/shadcn`, not `@/lib/utils`.
 
 ---
 
-## overlay 不要手写 z-index
+## No hand-written z-index on overlays
 
-`Dialog`、`Sheet`、`Drawer`、`AlertDialog`、`DropdownMenu`、`Popover`、
-`Tooltip`、`HoverCard` **自己管堆叠**。绝对不要加 `z-50` 或 `z-[999]` ——
-这样会破坏它们跟 `Toaster` 之间的堆叠顺序。
+`Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `DropdownMenu`, `Popover`,
+`Tooltip`, `HoverCard` **manage their own stacking**. Never add `z-50` or
+`z-[999]` — it breaks the stacking order with `Toaster`.
