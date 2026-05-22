@@ -1,15 +1,15 @@
-# @opendesign/tsconfig
+# @openclound/tsconfig
 
 OpenDesign TypeScript 配置预设包，提供分层配置的 TypeScript 编译选项。
 
 ## 安装
 
 ```bash
-npm install @opendesign/tsconfig -D
+npm install @openclound/tsconfig -D
 # 或
-pnpm add @opendesign/tsconfig -D
+pnpm add @openclound/tsconfig -D
 # 或
-yarn add @opendesign/tsconfig -D
+yarn add @openclound/tsconfig -D
 ```
 
 ## 使用方式
@@ -18,7 +18,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/base"
+  "extends": "@openclound/tsconfig/base"
 }
 ```
 
@@ -26,7 +26,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/browser"
+  "extends": "@openclound/tsconfig/browser"
 }
 ```
 
@@ -34,7 +34,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/node"
+  "extends": "@openclound/tsconfig/node"
 }
 ```
 
@@ -42,7 +42,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/react"
+  "extends": "@openclound/tsconfig/react"
 }
 ```
 
@@ -50,7 +50,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/vue"
+  "extends": "@openclound/tsconfig/vue"
 }
 ```
 
@@ -58,7 +58,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/next"
+  "extends": "@openclound/tsconfig/next"
 }
 ```
 
@@ -66,7 +66,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/nuxt"
+  "extends": "@openclound/tsconfig/nuxt"
 }
 ```
 
@@ -74,7 +74,7 @@ yarn add @opendesign/tsconfig -D
 
 ```json
 {
-  "extends": "@opendesign/tsconfig/electron"
+  "extends": "@openclound/tsconfig/electron"
 }
 ```
 
@@ -85,8 +85,8 @@ yarn add @opendesign/tsconfig -D
 ```json
 {
   "extends": [
-    "@opendesign/tsconfig/react",
-    "@opendesign/tsconfig/lib"
+    "@openclound/tsconfig/react",
+    "@openclound/tsconfig/lib"
   ]
 }
 ```
@@ -96,8 +96,8 @@ yarn add @opendesign/tsconfig -D
 ```json
 {
   "extends": [
-    "@opendesign/tsconfig/react",
-    "@opendesign/tsconfig/app"
+    "@openclound/tsconfig/react",
+    "@openclound/tsconfig/app"
   ]
 }
 ```
@@ -107,8 +107,8 @@ yarn add @opendesign/tsconfig -D
 ```json
 {
   "extends": [
-    "@opendesign/tsconfig/node",
-    "@opendesign/tsconfig/lib"
+    "@openclound/tsconfig/node",
+    "@openclound/tsconfig/lib"
   ]
 }
 ```

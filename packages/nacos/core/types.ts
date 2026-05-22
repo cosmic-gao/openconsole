@@ -1,7 +1,7 @@
 /**
  * Shared types. Names are package-scoped (no `Nacos*` prefix) — consumers
- * disambiguate via the namespace import: `import * as nacos from '@opendesign/nacos'`
- * or named imports: `import type { Client, Instance } from '@opendesign/nacos'`.
+ * disambiguate via the namespace import: `import * as nacos from '@openclound/nacos'`
+ * or named imports: `import type { Client, Instance } from '@openclound/nacos'`.
  */
 
 // -- Service discovery -----------------------------------------------------

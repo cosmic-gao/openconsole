@@ -1,5 +1,5 @@
 {
-  "name": "@opendesign/graph",
+  "name": "@openclound/graph",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {
-    "@opendesign/heap": "workspace:*",
-    "@opendesign/signal": "workspace:*"
+    "@openclound/heap": "workspace:*",
+    "@openclound/signal": "workspace:*"
   }
 }

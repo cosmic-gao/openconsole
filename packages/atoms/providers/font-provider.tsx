@@ -3,7 +3,7 @@
 import * as React from "react";
 
 const DEFAULT_OPTIONS = ["inter", "manrope", "system"] as const;
-const DEFAULT_STORAGE = "opendesign-font";
+const DEFAULT_STORAGE = "openclound-font";
 const DEFAULT_CLASS_PREFIX = "font-";
 
 export type FontOption = (typeof DEFAULT_OPTIONS)[number];
@@ -28,7 +28,7 @@ export interface FontProviderProps {
   defaultFont?: string;
   /**
    * localStorage key for persistence. Pass `null` to disable persistence.
-   * @default "opendesign-font"
+   * @default "openclound-font"
    */
   storage?: string | null;
   /**

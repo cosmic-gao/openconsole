@@ -6,7 +6,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 import type { Brand as BrandData } from "./types";
 
 function BrandLogo({ name }: { name: string }) {

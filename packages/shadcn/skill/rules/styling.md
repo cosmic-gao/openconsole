@@ -152,7 +152,7 @@ Tailwind 调色板。
 
 ## `cn()` 用于条件 class
 
-从 `@opendesign/shadcn` 导入 `cn()` 来拼条件或合并的 class，**不要**在
+从 `@openclound/shadcn` 导入 `cn()` 来拼条件或合并的 class，**不要**在
 `className` 字符串里手写模板字面量的三元。
 
 **Incorrect:**
@@ -164,12 +164,12 @@ Tailwind 调色板。
 **Correct:**
 
 ```tsx
-import { cn } from "@opendesign/shadcn";
+import { cn } from "@openclound/shadcn";
 
 <div className={cn("flex items-center", isActive ? "bg-primary text-primary-foreground" : "bg-muted")}>
 ```
 
-> 注意导入路径是 `@opendesign/shadcn`，不是 `@/lib/utils`。
+> 注意导入路径是 `@openclound/shadcn`，不是 `@/lib/utils`。
 
 ---
 

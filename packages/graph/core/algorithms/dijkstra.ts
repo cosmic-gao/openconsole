@@ -2,7 +2,7 @@
  * dijkstra：单源最短路径（非负权重，配对堆 + 真 decrease-key）。
  */
 
-import { PairingHeap, type PairingNode } from '@opendesign/heap';
+import { PairingHeap, type PairingNode } from '@openclound/heap';
 
 import { Negative } from '../classic';
 import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';

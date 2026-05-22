@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   Textarea,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 import type { ImportedTheme } from "./types";
 
 interface ImporterProps {

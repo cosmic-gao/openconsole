@@ -7,7 +7,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 
 import { useViewTransition } from "../hooks/use-view-transition";
 

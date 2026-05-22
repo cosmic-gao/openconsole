@@ -15,7 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   cn,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 
 export interface ComboboxOption {
   value: string;

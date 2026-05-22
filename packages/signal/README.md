@@ -1,4 +1,4 @@
-# @opendesign/signal
+# @openclound/signal
 
 类型安全、支持通配符监听、与 AbortSignal / Disposable 集成的事件发射器。
 
@@ -20,7 +20,7 @@
 ```json
 {
   "dependencies": {
-    "@opendesign/signal": "workspace:*"
+    "@openclound/signal": "workspace:*"
   }
 }
 ```
@@ -30,7 +30,7 @@
 ### 基础用法
 
 ```ts
-import { Signal } from '@opendesign/signal';
+import { Signal } from '@openclound/signal';
 
 interface AppEvents {
   'user:login': { id: number; name: string };
@@ -172,9 +172,9 @@ interface Init<E> {
 ## 开发
 
 ```bash
-pnpm --filter @opendesign/signal check    # tsc + tests
-pnpm --filter @opendesign/signal test
-pnpm --filter @opendesign/signal typecheck
+pnpm --filter @openclound/signal check    # tsc + tests
+pnpm --filter @openclound/signal test
+pnpm --filter @openclound/signal typecheck
 ```
 
 ## License

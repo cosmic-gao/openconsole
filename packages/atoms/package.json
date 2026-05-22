@@ -1,5 +1,5 @@
 {
-  "name": "@opendesign/atoms",
+  "name": "@openclound/atoms",
   "version": "0.0.0",
   "private": false,
   "type": "module",
@@ -10,7 +10,7 @@
     "check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@opendesign/shadcn": "workspace:*",
+    "@openclound/shadcn": "workspace:*",
     "@tanstack/react-table": "*",
     "cmdk": "*",
     "date-fns": "*",

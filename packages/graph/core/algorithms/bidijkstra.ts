@@ -2,7 +2,7 @@
  * bidijkstra：双向 Dijkstra 单源单汇最短路径。
  */
 
-import { PairingHeap, type PairingNode } from '@opendesign/heap';
+import { PairingHeap, type PairingNode } from '@openclound/heap';
 
 import { Negative } from '../classic';
 import type { Catalog, EdgeId, EdgeView, IntoEdges, NodeId } from '../types';

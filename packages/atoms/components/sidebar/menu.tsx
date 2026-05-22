@@ -28,7 +28,7 @@ import {
   SidebarMenuSubItem,
   cn,
   useSidebar,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 import type { MenuGroup, MenuItem } from "./types";
 
 const ACTIVE_TEXT = "text-primary";

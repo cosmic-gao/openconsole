@@ -10,7 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   cn,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 
 export interface DatePickerProps {
   value?: Date;

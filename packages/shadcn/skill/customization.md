@@ -70,7 +70,7 @@ import { ThemeProvider } from "next-themes";
 "use client";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { Button } from "@opendesign/shadcn";
+import { Button } from "@openclound/shadcn";
 
 export function ThemeToggle() {
   // 用 resolvedTheme，处于 System 模式时也能正确翻转。
@@ -172,7 +172,7 @@ CSS 变量做。给全局 CSS 加:
 ```tsx
 "use client";
 import { useTheme } from "next-themes";
-import { Button } from "@opendesign/shadcn";
+import { Button } from "@openclound/shadcn";
 
 type TransitionDocument = Document & {
   startViewTransition?: (cb: () => void) => { finished: Promise<void> };
@@ -205,7 +205,7 @@ export function ThemeToggle() {
 
 ## 定制组件的边界
 
-`@opendesign/shadcn` 是只读消费包 —— 你**不能**改组件源码加 variant、
+`@openclound/shadcn` 是只读消费包 —— 你**不能**改组件源码加 variant、
 不能 fork 文件、不能 patch。能做的就是从外面调整:
 
 ### 1. 内置 variant（优先）
@@ -241,7 +241,7 @@ import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent,
   AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
   AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 
 export function ConfirmDialog({ title, description, onConfirm, children }) {
   return (

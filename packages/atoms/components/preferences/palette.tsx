@@ -25,7 +25,7 @@ import {
   SelectValue,
   Separator,
   cn,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 
 import { ColorPicker } from "../color-picker";
 

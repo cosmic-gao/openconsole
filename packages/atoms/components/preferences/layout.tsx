@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { Label, Separator, cn, useSidebar } from "@opendesign/shadcn";
+import { Label, Separator, cn, useSidebar } from "@openclound/shadcn";
 
 import { useLayout } from "../../providers/layout-provider";
 import { collapsibleOptions, sideOptions, sidebarVariants } from "./data";

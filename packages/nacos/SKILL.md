@@ -2,16 +2,16 @@
 name: nacos
 description: >
   Use this skill to integrate, configure, or troubleshoot the
-  `@opendesign/nacos` client in a Next.js 16+ app — service registry,
+  `@openclound/nacos` client in a Next.js 16+ app — service registry,
   discovery, config center, load balancing, custom plugins, and the
   `nacos://service/path` URL convention. Triggers on phrases like "set up
-  nacos", "add @opendesign/nacos to my app", "register this service with
+  nacos", "add @openclound/nacos to my app", "register this service with
   nacos", "call another service via nacos", "write a nacos plugin",
   "nacos config not updating", "nacos load balancer", or anything that
-  imports from `@opendesign/nacos` / `@opendesign/nacos/next` or uses
+  imports from `@openclound/nacos` / `@openclound/nacos/next` or uses
   `nacos://` URLs.
 type: lifecycle
-library: "@opendesign/nacos"
+library: "@openclound/nacos"
 library_version: "0.1.0"
 runtime:
   node: ">=18.18"
@@ -20,7 +20,7 @@ peers:
   nacos: "^2"
 ---
 
-# `@opendesign/nacos` — integration & usage
+# `@openclound/nacos` — integration & usage
 
 An opinionated Nacos client for Next.js 16+ apps that wires registry,
 discovery, load balancing, config center, and a fetch-style HTTP client
@@ -46,7 +46,7 @@ This skill teaches Claude how to:
 
 Apply when the user is doing any of:
 
-- **Adding `@opendesign/nacos` to a new Next.js app** — configure env vars,
+- **Adding `@openclound/nacos` to a new Next.js app** — configure env vars,
   wire `instrumentation.ts`, expose typed helpers.
 - **Calling another service through Nacos** (`nacos://user-service/...`)
   from a Server Component, Route Handler, Server Action, or background job.
@@ -63,7 +63,7 @@ Apply when the user is doing any of:
   refresh.
 
 Do NOT apply for unrelated Nacos products (the Nacos Java SDK, the Nacos
-admin console) — this skill is specifically for `@opendesign/nacos`.
+admin console) — this skill is specifically for `@openclound/nacos`.
 
 ---
 
@@ -150,9 +150,9 @@ above is read by *your* bootstrap code (Step 3) and passed in as options.
 ## Step 2 — Install
 
 ```bash
-pnpm add @opendesign/nacos nacos
+pnpm add @openclound/nacos nacos
 # or
-npm install @opendesign/nacos nacos
+npm install @openclound/nacos nacos
 ```
 
 `nacos` is a required peer dependency (the underlying Node SDK).
@@ -172,8 +172,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   // Dynamic import keeps the SDK out of the Edge build's static analysis.
-  const { init } = await import("@opendesign/nacos/next");
-  const { logger } = await import("@opendesign/nacos");
+  const { init } = await import("@openclound/nacos/next");
+  const { logger } = await import("@openclound/nacos");
 
   if (!process.env.NACOS_SERVER_ADDR) {
     console.warn("[nacos] NACOS_SERVER_ADDR not set — skipping");
@@ -232,7 +232,7 @@ gotcha section below.
 ### 4a. `nacos://` URLs with the global `client.fetch`
 
 ```ts
-import { client } from "@opendesign/nacos/next";
+import { client } from "@openclound/nacos/next";
 
 const res = await client().fetch("nacos://user-service/users/me", {
   // Standard RequestInit + per-call balancer / hint / timeout / retry / group
@@ -255,7 +255,7 @@ URL anatomy:
 For code paths that may run before `init()` resolves, use `tryClient()`:
 
 ```ts
-import { tryClient } from "@opendesign/nacos/next";
+import { tryClient } from "@openclound/nacos/next";
 
 const c = tryClient();
 if (!c) throw new Error("nacos client not initialized");
@@ -266,7 +266,7 @@ if (!c) throw new Error("nacos client not initialized");
 For JSON-in / JSON-out APIs, use `service(name)`:
 
 ```ts
-import { client } from "@opendesign/nacos/next";
+import { client } from "@openclound/nacos/next";
 
 const users = client().service("user-service");
 
@@ -302,7 +302,7 @@ plugin pipeline, same retry logic. One surface for internal + external.
 ### 5a. Read the snapshot
 
 ```ts
-import { client } from "@opendesign/nacos/next";
+import { client } from "@openclound/nacos/next";
 
 // Per-key read with fallback (synchronous against the long-polled snapshot)
 const flags = client().config.get<{ darkMode: boolean }>("featureFlags", {
@@ -326,7 +326,7 @@ re-renders on the next request:
 
 ```tsx
 // app/dashboard/page.tsx
-import { client } from "@opendesign/nacos/next";
+import { client } from "@openclound/nacos/next";
 
 export default async function Page() {
   // The page itself can read straight from the snapshot:
@@ -414,7 +414,7 @@ void leaves it untouched. Errors thrown from `onError` are swallowed so
 the original failure isn't masked.
 
 ```ts
-import type { Plugin } from "@opendesign/nacos";
+import type { Plugin } from "@openclound/nacos";
 
 // Auth: inject a bearer token resolved per-request.
 export const auth = (token: () => Promise<string> | string): Plugin => ({
@@ -475,7 +475,7 @@ Set `consumer.balancer` to a strategy name or a custom `Balancer`:
 Per-call override:
 
 ```ts
-import { sticky } from "@opendesign/nacos";
+import { sticky } from "@openclound/nacos";
 
 const stickyForTenant = sticky();
 await client().fetch("nacos://svc/x", {
@@ -487,7 +487,7 @@ await client().fetch("nacos://svc/x", {
 Custom balancer:
 
 ```ts
-import type { Balancer, Instance, Hint } from "@opendesign/nacos";
+import type { Balancer, Instance, Hint } from "@openclound/nacos";
 
 export const leastBusy = (load: Map<string, number>): Balancer => ({
   name: "least-busy",
@@ -533,7 +533,7 @@ Nacos and pile up SIGTERM handlers. If you need a hard reset (test or
 intentional restart):
 
 ```ts
-import { dispose } from "@opendesign/nacos/next";
+import { dispose } from "@openclound/nacos/next";
 await dispose(); // stops the client and clears globalThis.__nacos
 await init(/* ... */); // safe to re-init now
 ```
@@ -652,10 +652,10 @@ import {
   type Options, type Strategy, type Balancer, type Retry,
   type Registry, type ProviderOptions, type ConsumerOptions,
   type ConfigOptions, type RegistryOptions,
-} from "@opendesign/nacos";
+} from "@openclound/nacos";
 
 // Next.js singleton accessor
-import { init, client, tryClient, dispose } from "@opendesign/nacos/next";
+import { init, client, tryClient, dispose } from "@openclound/nacos/next";
 ```
 
 Key option types (the full schema lives in the package's `types.ts`):
@@ -708,8 +708,8 @@ real Nacos, inject a fake `Registry` (the interface is the only required
 surface) and construct the lower-level modules directly:
 
 ```ts
-import type { Registry, Instance } from "@opendesign/nacos";
-import { Discovery, Http, Plugins } from "@opendesign/nacos";
+import type { Registry, Instance } from "@openclound/nacos";
+import { Discovery, Http, Plugins } from "@openclound/nacos";
 
 class FakeRegistry implements Registry {
   async ready() {}
@@ -742,7 +742,7 @@ tests skip `create()` and assemble the modules yourself as above.
 - [ ] **Asked which modes are needed** (provider / config / consumer)
 - [ ] **Asked for `NACOS_SERVICE_NAME`** if provider mode is on
 - [ ] **Asked for `NACOS_DATA_ID`** if config center is used
-- [ ] `pnpm add @opendesign/nacos nacos`
+- [ ] `pnpm add @openclound/nacos nacos`
 - [ ] `instrumentation.ts` exists and guards on `NEXT_RUNTIME === 'nodejs'`
 - [ ] `init()` called from inside the guard, with options built from env
 - [ ] `.env.local` has `NACOS_SERVER_ADDR` at minimum
@@ -752,4 +752,4 @@ tests skip `create()` and assemble the modules yourself as above.
       `tag` if you want Next.js cache revalidation
 - [ ] Plugins: at least `logger({ success: false })` so failures show up
 - [ ] Multi-NIC / K8s: set `NACOS_PREFER_INTERFACE` or `NACOS_HOST_IP`
-- [ ] Edge runtime: never `import '@opendesign/nacos'` in Edge code paths
+- [ ] Edge runtime: never `import '@openclound/nacos'` in Edge code paths

@@ -1,5 +1,5 @@
 /**
- * `@opendesign/signal` — 类型安全的事件发射器。
+ * `@openclound/signal` — 类型安全的事件发射器。
  *
  * 设计要点：
  * - 事件键到载荷类型的映射（`E extends object`）通过 TS 重载逐方法精确推导；

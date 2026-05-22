@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": [
-    "@opendesign/tsconfig/base",
-    "@opendesign/tsconfig/strict",
-    "@opendesign/tsconfig/esm"
+    "@openclound/tsconfig/base",
+    "@openclound/tsconfig/strict",
+    "@openclound/tsconfig/esm"
   ],
   "compilerOptions": {
     "noEmit": true

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": [
-    "@opendesign/tsconfig/lib",
-    "@opendesign/tsconfig/esm"
+    "@openclound/tsconfig/lib",
+    "@openclound/tsconfig/esm"
   ],
   "compilerOptions": {
     "lib": ["ES2022"]

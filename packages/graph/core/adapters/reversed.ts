@@ -238,7 +238,7 @@ implements
  *
  * @example
  * ```ts
- * import { reversed, dfs } from '@opendesign/graph';
+ * import { reversed, dfs } from '@openclound/graph';
  * // g: Graph<unknown, number> → reversed(g): Reversed<G, number>
  * for (const ancestor of dfs(reversed(g), node)) console.log(ancestor);
  * ```

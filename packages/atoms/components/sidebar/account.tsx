@@ -7,7 +7,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 import type { User } from "./types";
 
 const initialsOf = (name: string) => {

@@ -1,5 +1,5 @@
 {
-  "name": "@opendesign/nacos",
+  "name": "@openclound/nacos",
   "version": "0.1.0",
   "private": false,
   "type": "module",
@@ -23,7 +23,7 @@
     "next": { "optional": true }
   },
   "devDependencies": {
-    "@opendesign/tsconfig": "workspace:*",
+    "@openclound/tsconfig": "workspace:*",
     "@types/node": "^25.4.0"
   }
 }

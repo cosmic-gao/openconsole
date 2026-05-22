@@ -111,7 +111,7 @@ function StatusBadge({ icon: Icon }: { icon: React.ComponentType }) {
 import 时，用本包导出的 `Icon`:
 
 ```tsx
-import { Icon } from "@opendesign/shadcn";
+import { Icon } from "@openclound/shadcn";
 
 // 数据
 const menu = [

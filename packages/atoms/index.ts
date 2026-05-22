@@ -1,4 +1,4 @@
-// Custom higher-order blocks composed from @opendesign/shadcn primitives.
+// Custom higher-order blocks composed from @openclound/shadcn primitives.
 //
 // 目录:
 //   - components/   视觉组件 (ThemeSwitch, ColorPicker, Combobox, DataTable,

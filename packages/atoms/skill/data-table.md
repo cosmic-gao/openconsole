@@ -4,7 +4,7 @@
 分页和基本无障碍。这份文件记下常见 column 模式 + 跟 shadcn 原语的协作。
 
 ```tsx
-import { DataTable } from "@opendesign/atoms";
+import { DataTable } from "@openclound/atoms";
 import type { ColumnDef } from "@tanstack/react-table";
 
 <DataTable columns={columns} data={rows} pageSize={10} pagination />
@@ -35,7 +35,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 `enableSorting: true` 默认开启，header 用 `Button` 加排序图标即可触发:
 
 ```tsx
-import { Button } from "@opendesign/shadcn";
+import { Button } from "@openclound/shadcn";
 import { ArrowUpDown } from "lucide-react";
 
 {
@@ -55,7 +55,7 @@ import { ArrowUpDown } from "lucide-react";
 ### 自定义 cell（状态徽章）
 
 ```tsx
-import { Badge } from "@opendesign/shadcn";
+import { Badge } from "@openclound/shadcn";
 
 {
   accessorKey: "status",
@@ -97,7 +97,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@opendesign/shadcn";
+} from "@openclound/shadcn";
 import { MoreHorizontal } from "lucide-react";
 
 {
@@ -131,7 +131,7 @@ import { MoreHorizontal } from "lucide-react";
 ### 选择列（checkbox）
 
 ```tsx
-import { Checkbox } from "@opendesign/shadcn";
+import { Checkbox } from "@openclound/shadcn";
 
 {
   id: "select",
@@ -169,8 +169,8 @@ import { Checkbox } from "@opendesign/shadcn";
 "use client";
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, Button } from "@opendesign/shadcn";
-import { DataTable } from "@opendesign/atoms";
+import { Badge, Button } from "@openclound/shadcn";
+import { DataTable } from "@openclound/atoms";
 import { ArrowUpDown } from "lucide-react";
 
 type Project = {
