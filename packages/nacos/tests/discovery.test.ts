@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Discovery } from "../src/discovery";
+import { Discovery } from "../core/discovery";
 import { FakeRegistry, instance } from "./helpers";
 
 describe("Discovery", () => {

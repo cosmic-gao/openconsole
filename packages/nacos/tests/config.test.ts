@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Config } from "../src/config";
+import { Config } from "../core/config";
 import { FakeRegistry } from "./helpers";
 
 describe("Config", () => {

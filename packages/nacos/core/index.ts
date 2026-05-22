@@ -64,6 +64,7 @@ export {
 };
 export { roundRobin, random, weighted, sticky, resolve as strategy } from "./balancer";
 export { logger, headers, context as makeContext } from "./plugin";
+export { Adapter, type AdapterConfig } from "./adapter";
 
 export interface Client {
   /** Lifecycle. */

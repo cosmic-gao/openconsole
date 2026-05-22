@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
+  "main": "./index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit"
   },
   "peerDependencies": {
     "@hookform/resolvers": "*",
@@ -42,5 +42,10 @@
     "tailwind-merge": "*",
     "vaul": "*",
     "zod": "*"
+  },
+  "devDependencies": {
+    "@opendesign/tsconfig": "workspace:*",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3"
   }
 }

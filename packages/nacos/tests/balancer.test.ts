@@ -7,7 +7,7 @@ import {
   roundRobin,
   sticky,
   weighted,
-} from "../src/balancer";
+} from "../core/balancer";
 import { instance } from "./helpers";
 
 describe("balancer", () => {

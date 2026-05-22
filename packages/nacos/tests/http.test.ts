@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Discovery } from "../src/discovery";
-import { Http, NoInstanceError, TimeoutError } from "../src/http";
-import { Plugins } from "../src/plugin";
+import { Discovery } from "../core/discovery";
+import { Http, NoInstanceError, TimeoutError } from "../core/http";
+import { Plugins } from "../core/plugin";
 import { FakeRegistry, instance } from "./helpers";
 
 function mkHttp(reg: FakeRegistry, opts?: { timeout?: number }) {

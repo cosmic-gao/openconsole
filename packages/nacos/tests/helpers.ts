@@ -5,7 +5,7 @@ import type {
   Instance,
   RegisterOptions,
   Registry,
-} from "../src/types";
+} from "../core/types";
 
 export class FakeRegistry implements Registry {
   watchCalls = 0;
