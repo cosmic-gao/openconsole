@@ -36,7 +36,7 @@ import {
   tweakcnThemes,
 } from "./data";
 import type { ColorTheme, ThemePreset } from "./types";
-import { useViewTransition } from "./use-view-transition";
+import { useViewTransition } from "../../hooks/use-view-transition";
 
 const PREVIEW_TOKENS = ["primary", "secondary", "accent", "muted"] as const;
 const TWEAKCN_URL = "https://tweakcn.com/editor/theme";

@@ -22,7 +22,7 @@ import {
   TabsTrigger,
 } from "@opendesign/shadcn";
 
-import { useSidebarConfig } from "../sidebar-config";
+import { useLayout } from "../../providers/layout-provider";
 
 import "./circular-transition.css";
 import { shadcnThemes, tweakcnThemes } from "./data";
@@ -96,7 +96,7 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
     setColor,
     resetTheme,
   } = useTokens();
-  const { config, updateConfig } = useSidebarConfig();
+  const { config, updateConfig } = useLayout();
 
   const [state, dispatch] = React.useReducer(reducer, INITIAL_STATE);
   const [activeTab, setActiveTab] = React.useState("theme");

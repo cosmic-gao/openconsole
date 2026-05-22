@@ -9,9 +9,9 @@ import {
   TooltipTrigger,
 } from "@opendesign/shadcn";
 
-import { useViewTransition } from "./preferences/use-view-transition";
+import { useViewTransition } from "../hooks/use-view-transition";
 
-export function Appearance() {
+export function ThemeSwitch() {
   const { toggleTheme } = useViewTransition();
 
   return (

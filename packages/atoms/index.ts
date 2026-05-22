@@ -1,16 +1,21 @@
 // Custom higher-order blocks composed from @opendesign/shadcn primitives.
-// 跟 @opendesign/shadcn 的对应:
-//   - @opendesign/shadcn      : shadcn primitives + 通用工具(cn, useIsMobile, Icon, Direction)
-//   - @opendesign/atoms  : 业务组合 + 自定义 Context(本文件)
+//
+// 目录:
+//   - components/   视觉组件 (ThemeSwitch, ColorPicker, Combobox, DataTable,
+//                   DatePicker, Preferences, Sidebar)。单文件或多文件目录平级共存。
+//   - providers/    Context provider (FontProvider, LayoutProvider, ThemeProvider)
+//   - hooks/        通用 hook (useViewTransition)
 
-export * from "./sidebar-config"; // SidebarConfigProvider / useSidebarConfig — Sider 变体驱动的自定义 Context
+// Providers / context
+export * from "./providers/font-provider";
+export * from "./providers/layout-provider";
+export * from "./providers/theme-provider";
 
-export * from "./appearance";
-export * from "./color-picker";
-export * from "./combobox";
-export * from "./data-table";
-export * from "./date-picker";
-export * from "./font-provider";
-export * from "./preferences";
-export * from "./sider";
-export * from "./theme-provider";
+// Components
+export * from "./components/theme-switch";
+export * from "./components/color-picker";
+export * from "./components/combobox";
+export * from "./components/data-table";
+export * from "./components/date-picker";
+export * from "./components/preferences";
+export * from "./components/sidebar";

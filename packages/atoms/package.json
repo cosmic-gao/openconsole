@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "sideEffects": ["**/*.css"],
-  "main": "./index.ts",
+  "main": "index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit"
@@ -22,7 +22,6 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@opendesign/tsconfig": "workspace:*",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3"
   }

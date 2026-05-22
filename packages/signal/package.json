@@ -4,14 +4,7 @@
   "private": true,
   "type": "module",
   "main": "index.ts",
-  "types": "index.ts",
   "sideEffects": false,
-  "exports": {
-    ".": {
-      "types": "./index.ts",
-      "default": "./index.ts"
-    }
-  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

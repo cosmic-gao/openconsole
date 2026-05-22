@@ -75,9 +75,6 @@ importers:
         specifier: ^19.0.0
         version: 19.2.6(react@19.2.6)
     devDependencies:
-      '@opendesign/tsconfig':
-        specifier: workspace:*
-        version: link:../../configs/tsconfig
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.15
@@ -211,9 +208,6 @@ importers:
         specifier: '*'
         version: 4.4.3
     devDependencies:
-      '@opendesign/tsconfig':
-        specifier: workspace:*
-        version: link:../../configs/tsconfig
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.15
@@ -232,9 +226,6 @@ importers:
         specifier: ^4.12.12
         version: 4.12.21
     devDependencies:
-      '@opendesign/tsconfig':
-        specifier: workspace:*
-        version: link:../../configs/tsconfig
       '@types/node':
         specifier: ^25.4.0
         version: 25.9.1

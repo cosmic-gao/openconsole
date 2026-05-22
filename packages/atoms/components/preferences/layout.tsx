@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { Label, Separator, cn, useSidebar } from "@opendesign/shadcn";
 
-import { useSidebarConfig } from "../sidebar-config";
+import { useLayout } from "../../providers/layout-provider";
 import { collapsibleOptions, sideOptions, sidebarVariants } from "./data";
 
 // ---- Visual primitives -----------------------------------------------------
@@ -180,7 +180,7 @@ function SidePreview({ value }: { value: "left" | "right" }) {
 // ---- Main component --------------------------------------------------------
 
 export function Layout() {
-  const { config, updateConfig } = useSidebarConfig();
+  const { config, updateConfig } = useLayout();
   const { toggleSidebar, state: sidebarState } = useSidebar();
 
   const variantDescription = sidebarVariants.find(

@@ -3,14 +3,14 @@
 import * as React from "react";
 
 import {
-  Sidebar,
+  Sidebar as SidebarPrimitive,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
 } from "@opendesign/shadcn";
 
-import { useSidebarConfig } from "../sidebar-config";
+import { useLayout } from "../../providers/layout-provider";
 
 import { Account } from "./account";
 import { Brand } from "./brand";
@@ -24,11 +24,12 @@ import type {
 export type { Brand, MenuGroup, MenuItem, User } from "./types";
 
 /**
- * Sider props. `brand`/`menu`/`account` shape the rendered chrome; the rest
+ * Sidebar props. `brand`/`menu`/`account` shape the rendered chrome; the rest
  * pass through to the underlying Sidebar primitive (e.g. `className`,
  * `side`/`variant`/`collapsible` overrides).
  */
-export interface SiderProps extends React.ComponentProps<typeof Sidebar> {
+export interface SidebarProps
+  extends React.ComponentProps<typeof SidebarPrimitive> {
   /** Top brand block. Omit to hide the header. */
   brand?: BrandData;
   /** Sectioned menu groups. */
@@ -37,11 +38,11 @@ export interface SiderProps extends React.ComponentProps<typeof Sidebar> {
   account?: User;
 }
 
-export function Sider({ brand, menu, account, ...props }: SiderProps) {
-  const { config } = useSidebarConfig();
+export function Sidebar({ brand, menu, account, ...props }: SidebarProps) {
+  const { config } = useLayout();
 
   return (
-    <Sidebar
+    <SidebarPrimitive
       variant={config.variant}
       collapsible={config.collapsible}
       side={config.side}
@@ -61,6 +62,6 @@ export function Sider({ brand, menu, account, ...props }: SiderProps) {
         </SidebarFooter>
       )}
       <SidebarRail />
-    </Sidebar>
+    </SidebarPrimitive>
   );
 }

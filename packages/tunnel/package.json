@@ -9,7 +9,6 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@opendesign/tsconfig": "workspace:*",
     "@types/node": "^25.4.0",
     "vitest": "^3.2.4"
   },
