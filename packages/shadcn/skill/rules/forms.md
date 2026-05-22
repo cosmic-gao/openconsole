@@ -1,7 +1,5 @@
 # 表单 & 输入
 
-> 来源对比: <https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/rules/forms.md>
-
 ## 目录
 
 - 表单用 `FieldGroup` + `Field`
@@ -44,7 +42,7 @@ import {
 |---|---|
 | 简单文本输入 | `Input` |
 | 预定义选项下拉 | `Select` |
-| 可搜索下拉 | atoms 的 `Combobox` |
+| 可搜索下拉 | `Popover` + `Command`（`CommandInput` + `CommandList` + `CommandGroup` + `CommandItem`） |
 | 原生 HTML select（无 JS） | `NativeSelect` |
 | 布尔切换 | `Switch`（设置）或 `Checkbox`（表单） |
 | 几个选项里单选 | `RadioGroup` |

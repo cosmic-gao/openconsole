@@ -1,9 +1,7 @@
-# Radix API 速查
+# 本包 API 速查
 
-`@opendesign/shadcn` 导出的组件统一使用 **radix** 风格 API。这份文件
-记下几个 prop 形状容易踩坑的地方 —— 这些 prop 跟 `ui.shadcn.com` 上
-有些示例（那边叫 base 风格）形态不同，从那边复制代码可能跑不通。
-**以本文件的写法为准**。
+本包导出的组件有几处 prop 形状容易写错，这份文件作为速查清单。
+照下面的写法用就对了。
 
 ## 目录
 
@@ -51,14 +49,11 @@
 `TooltipTrigger`、`CollapsibleTrigger`、`DialogClose`、`SheetClose`、
 `NavigationMenuLink`、`BreadcrumbLink`、`SidebarMenuButton`。
 
-> 看到 `render={…}` / `nativeButton={false}` 这种 prop —— **不是本包
-> 的 API**，从别处复制的，全部改成 `asChild` 形式。
-
 ---
 
 ## `Select`
 
-用 inline `<SelectItem>`，不用 `items` 数组。
+inline `<SelectItem>`，**不要**通过 `items` 数组传入。
 
 ```tsx
 <Select>
@@ -75,14 +70,12 @@
 ```
 
 要点:
-- **Placeholder**: `<SelectValue placeholder="…" />`，不是 `items` 里一条
-  `{ value: null }` 的项。
-- **定位**: `<SelectContent position="popper">`，不是 `alignItemWithTrigger`。
-- **value 类型**: 必须是字符串 —— 没有 `itemToStringValue` 这种 prop。
+- **Placeholder**: 写在 `<SelectValue placeholder="…" />` 上。
+- **定位**: `<SelectContent position="popper">`。
+- **value 类型**: 必须是字符串。
 
-> **要 multi-select 或对象 value**: 本包的 `Select` **不支持**。改用
-> `@opendesign/atoms` 的 `Combobox`，或者自己拼 `Command` + `Popover` +
-> `Checkbox`。
+> 需要 multi-select 或对象 value: 本包的 `Select` 不支持。在应用层
+> 用 `Command` + `Popover` + `Checkbox` 自己拼。
 
 ---
 
@@ -113,10 +106,6 @@ const [value, setValue] = React.useState("normal");
 </ToggleGroup>
 ```
 
-> 看到 `<ToggleGroup multiple>`（布尔）或单选时 `defaultValue={["daily"]}`
-> （数组）—— 不是本包的 API，从别处复制的。`multiple` 改成
-> `type="multiple"`，单选 `defaultValue` 改成字符串。
-
 ---
 
 ## `Slider`
@@ -138,9 +127,6 @@ const [value, setValue] = React.useState([0.3, 0.7]);
 <Slider value={value} onValueChange={setValue} />
 ```
 
-> 看到 `<Slider defaultValue={50} />`（标量）—— 不是本包的 API。包成
-> `[50]`。
-
 ---
 
 ## `Accordion`
@@ -161,22 +147,19 @@ const [value, setValue] = React.useState([0.3, 0.7]);
 </Accordion>
 ```
 
-> 看到 `<Accordion>` 没有 `type` 或者单选 `defaultValue={["item-1"]}`
-> （数组）—— 不是本包的 API，按上面写法改。
-
 ---
 
-## 快速判定
+## 错写形态速查
 
-复制代码进来时下面任一特征出现就是**别处的 API**，需要按本文件改写:
+下面这些 prop 形态**不是本包的 API**，写出来跑不通 —— 按右列改:
 
-| 别处写法 | 本包写法 |
+| 错写形态 | 正确形态 |
 |---|---|
-| `render={<Button />}` | `<XTrigger asChild><Button /></XTrigger>` |
-| `nativeButton={false}` | 不需要 —— `asChild` 自动处理 |
-| `<Select items={[…]}>` + render-function `SelectValue` | inline `<SelectItem>` |
-| `<SelectContent alignItemWithTrigger={false}>` | `position="popper"` |
-| `itemToStringValue` | 不支持 —— 用 `Combobox`（atoms） |
+| `<XTrigger render={<Button />} />` | `<XTrigger asChild><Button /></XTrigger>` |
+| `nativeButton={false}` | 不需要，`asChild` 自动处理 |
+| `<Select items={[…]}>` + `<SelectValue>{(v) => …}</SelectValue>` | inline `<SelectItem>`，placeholder 在 `<SelectValue>` |
+| `<SelectContent alignItemWithTrigger={false}>` | `<SelectContent position="popper">` |
+| `itemToStringValue` | 不支持 —— 用 `Command` + `Popover` + `Checkbox` 自己拼 |
 | `<ToggleGroup multiple>` | `<ToggleGroup type="multiple">` |
 | 单选 `<ToggleGroup defaultValue={["x"]}>` | `<ToggleGroup type="single" defaultValue="x">` |
 | `<Slider defaultValue={50} />` | `<Slider defaultValue={[50]} />` |

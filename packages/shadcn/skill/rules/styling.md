@@ -1,9 +1,7 @@
 # 样式 & 定制
 
 主题 / CSS 变量 / 自定义色见 [customization.md](../customization.md)。
-这份文件全是 **Incorrect / Correct 对照**，方便快速识别和修复违例。
-
-> 来源对比: <https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/rules/styling.md>
+这份文件全是 Incorrect / Correct 对照，方便快速识别和修复违例。
 
 ## 目录
 

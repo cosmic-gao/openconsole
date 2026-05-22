@@ -7,10 +7,10 @@
 - 工作原理（CSS 变量 → Tailwind 工具类 → 组件）
 - 颜色变量与 OKLCH 格式
 - 暗色模式配置
-- 切主题（用 `@opendesign/atoms` 的 `Preferences` / `Appearance`）
+- 切主题（编辑全局 CSS 或粘 CSS）
 - 新增自定义色（Tailwind v4）
 - 圆角 `--radius`
-- view-transition 变量
+- view-transition 变量（圆形展开切主题）
 - 定制组件的边界（只能从外面来）
 
 ---
@@ -20,8 +20,6 @@
 1. CSS 变量定义在 `:root`（亮）和 `.dark`（暗）。
 2. Tailwind v4 把它们映射成工具类: `bg-primary`、`text-muted-foreground` 等。
 3. 组件用这些工具类 —— **改一个变量，所有引用它的组件全跟着变**。
-
-> Tailwind 版本: 本仓库统一用 **v4**。所有示例都以 v4 为准。
 
 ---
 
@@ -53,54 +51,59 @@
 
 ## 暗色模式
 
-通过根元素上的 `.dark` 类切换。我们用 `next-themes`，包装在
-`@opendesign/atoms` 的 `ThemeProvider`:
+通过根元素上的 `.dark` 类切换。用 `next-themes` 的 `ThemeProvider`
+包根:
 
 ```tsx
-import { ThemeProvider } from "@opendesign/atoms";
+"use client";
+import { ThemeProvider } from "next-themes";
 
+// app/layout.tsx 或类似根布局
 <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
   {children}
 </ThemeProvider>
 ```
 
-主题切换按钮直接用 atoms 的 `Appearance` 组件 —— 它内置 view-transition
-圆形展开动画，并且正确读 `resolvedTheme`（处理 System 模式）:
+主题切换按钮自己写一个，调用 `useTheme()`:
 
 ```tsx
-import { Appearance } from "@opendesign/atoms";
+"use client";
+import { Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Button } from "@opendesign/shadcn";
 
-<Appearance />
+export function ThemeToggle() {
+  // 用 resolvedTheme，处于 System 模式时也能正确翻转。
+  const { resolvedTheme, setTheme } = useTheme();
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+    >
+      <Sun className="rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+      <span className="sr-only">切换主题</span>
+    </Button>
+  );
+}
 ```
 
 ---
 
 ## 切主题
 
-三种合规做法:
+### 直接编辑全局 CSS
 
-### A. 用 `Preferences` 组件（推荐）
+如果要永久换主题色，找到 app 的全局 CSS 文件（一般是
+`app/globals.css`）直接改 `:root` / `.dark` 块。修改后所有组件自动
+跟着变。
 
-`@opendesign/atoms` 暴露一个完整的设置抽屉，自带主题预设、调色板、
-布局、CSS 导入:
+### 粘 CSS 主题
 
-```tsx
-import { Preferences } from "@opendesign/atoms";
-
-const [open, setOpen] = useState(false);
-<Preferences open={open} onOpenChange={setOpen} />
-```
-
-### B. 粘 CSS 到导入器
-
-用户从 <https://ui.shadcn.com/themes> 或 <https://tweakcn.com> 复制
-出来的 `:root { … } .dark { … }` 直接粘进 `Preferences` 的 Importer
-tab，自动解析 + 应用。
-
-### C. 直接编辑全局 CSS
-
-如果你只是想永久换主题色，找到 app 的全局 CSS 文件（一般是
-`app/globals.css`）直接改 `:root` / `.dark` 块。
+从 <https://ui.shadcn.com/themes> 或 <https://tweakcn.com> 复制出来
+的 `:root { … } .dark { … }` 直接粘到全局 CSS 文件覆盖现有的同名
+变量即可。
 
 ---
 
@@ -131,8 +134,6 @@ tab，自动解析 + 应用。
 <div className="bg-warning text-warning-foreground">Warning</div>
 ```
 
-> 不支持 Tailwind v3。如果在 v3 项目里遇到本包，先把项目升到 v4。
-
 ---
 
 ## 圆角
@@ -145,23 +146,60 @@ tab，自动解析 + 应用。
 | `rounded-md` | `calc(var(--radius) - 2px)` |
 | `rounded-sm` | `calc(var(--radius) - 4px)` |
 
-`Preferences` 组件的 Layout tab 提供圆角滑块。
+要在运行时调圆角，直接 `document.documentElement.style.setProperty("--radius", "0.75rem")`。
 
 ---
 
-## View-transition 变量
+## View-transition 变量（圆形展开切主题）
 
-主题切换的圆形展开动画依赖两个变量:
+切主题时想要从点击位置圆形展开的过渡动画，用 View Transitions API +
+CSS 变量做。给全局 CSS 加:
 
 ```css
-::view-transition-new(root) {
-  clip-path: circle(150% at var(--vt-origin-x, 50%) var(--vt-origin-y, 50%));
+@supports (view-transition-name: root) {
+  ::view-transition-new(root) {
+    clip-path: circle(0% at var(--vt-origin-x, 50%) var(--vt-origin-y, 50%));
+    animation: vt-circle-in 350ms ease-out forwards;
+  }
+  @keyframes vt-circle-in {
+    to { clip-path: circle(150% at var(--vt-origin-x, 50%) var(--vt-origin-y, 50%)); }
+  }
 }
 ```
 
-`Appearance` 组件 / `useViewTransition()` 钩子会在点击时设置这两个变量
-为鼠标坐标的百分比。这套已经在 atoms 里处理好了 —— 你自己要做主题切换
-按钮时**也用这两个变量名**，避免跟其他库的临时变量冲突。
+切换按钮里在点击时设置原点变量并启动 transition:
+
+```tsx
+"use client";
+import { useTheme } from "next-themes";
+import { Button } from "@opendesign/shadcn";
+
+type TransitionDocument = Document & {
+  startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+};
+
+export function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+
+  const onToggle = (e: React.MouseEvent) => {
+    const root = document.documentElement;
+    root.style.setProperty("--vt-origin-x", `${(e.clientX / window.innerWidth) * 100}%`);
+    root.style.setProperty("--vt-origin-y", `${(e.clientY / window.innerHeight) * 100}%`);
+    const next = resolvedTheme === "dark" ? "light" : "dark";
+    const doc = document as TransitionDocument;
+    if (doc.startViewTransition) {
+      doc.startViewTransition(() => setTheme(next));
+    } else {
+      setTheme(next);
+    }
+  };
+
+  return <Button variant="outline" size="icon" onClick={onToggle}>…</Button>;
+}
+```
+
+> 变量名用 `--vt-origin-x` / `--vt-origin-y` 而不是 `--x` / `--y` ——
+> 太通用的名字容易跟其他库的临时变量冲突。
 
 ---
 
@@ -178,8 +216,7 @@ tab，自动解析 + 应用。
 
 `Button` variant: `default` / `secondary` / `outline` / `ghost` /
 `destructive` / `link`。`Badge` variant: `default` / `secondary` /
-`destructive` / `outline`。其它原语的 variant 翻 `index.ts` 导出的类型
-（或者 hover 上去看 IDE 提示）。
+`destructive` / `outline`。其它原语的 variant hover 上去看 IDE 提示。
 
 ### 2. `className` 加 Tailwind 类（仅布局）
 
@@ -224,6 +261,3 @@ export function ConfirmDialog({ title, description, onConfirm, children }) {
   );
 }
 ```
-
-如果你发现 wrapper 的需求在多个项目里反复出现，应该把它推到
-`@opendesign/atoms` —— 那个包就是专门干这个的。

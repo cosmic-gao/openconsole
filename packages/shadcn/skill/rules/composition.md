@@ -1,7 +1,5 @@
 # 组件组合
 
-> 来源对比: <https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/rules/composition.md>
-
 ## 目录
 
 - Item 一定在自己的 Group 里

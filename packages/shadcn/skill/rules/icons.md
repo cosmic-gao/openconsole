@@ -3,8 +3,6 @@
 本包的图标库**固定为 `lucide-react`**。所有图标从那里导入，或者通过
 本包导出的 `Icon` 包装按名字动态渲染。
 
-> 来源对比: <https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/rules/icons.md>
-
 ---
 
 ## `Button` 里的图标用 `data-icon` 属性
