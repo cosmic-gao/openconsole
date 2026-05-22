@@ -14,7 +14,7 @@ type TransitionDocument = Document & {
  * Falls back to running the callback immediately when unsupported.
  */
 export function useViewTransition() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const transitioningRef = useRef(false);
 
   const startTransition = useCallback(
@@ -48,11 +48,14 @@ export function useViewTransition() {
 
   const toggleTheme = useCallback(
     (event: React.MouseEvent) => {
+      // Use `resolvedTheme` so the first click flips correctly when the user
+      // is on System mode.
+      const next = resolvedTheme === "dark" ? "light" : "dark";
       startTransition({ x: event.clientX, y: event.clientY }, () => {
-        setTheme(theme === "dark" ? "light" : "dark");
+        setTheme(next);
       });
     },
-    [theme, setTheme, startTransition],
+    [resolvedTheme, setTheme, startTransition],
   );
 
   return { startTransition, toggleTheme };
