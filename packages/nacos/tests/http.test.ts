@@ -5,7 +5,7 @@ import { Http, NoInstanceError, TimeoutError } from "../core/http";
 import { Plugins } from "../core/plugin";
 import { FakeRegistry, instance } from "./helpers";
 
-function mkHttp(reg: FakeRegistry, opts?: { timeout?: number }) {
+function makeHttp(reg: FakeRegistry, opts?: { timeout?: number }) {
   const discovery = new Discovery({ registry: reg });
   const plugins = new Plugins([]);
   return new Http({ discovery, plugins, timeout: opts?.timeout });
@@ -20,26 +20,26 @@ describe("Http.resolve", () => {
   });
 
   it("rewrites nacos:// to http://ip:port", async () => {
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     const url = await http.resolve("nacos://svc/users/me");
     expect(url).toBe("http://10.0.0.1:8080/users/me");
   });
 
   it("respects scheme=https query param", async () => {
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     const url = await http.resolve("nacos://svc/path?scheme=https&x=1");
     expect(url).toBe("https://10.0.0.1:8080/path?x=1");
   });
 
   it("accepts uppercase scheme value (HTTPS)", async () => {
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     const url = await http.resolve("nacos://svc/?scheme=HTTPS");
     expect(url).toBe("https://10.0.0.1:8080/");
   });
 
   it("throws NoInstanceError when no healthy instance", async () => {
     reg.setInstances("svc", [instance("svc", "10.0.0.1", 80, { healthy: false })]);
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     await expect(http.resolve("nacos://svc/x")).rejects.toBeInstanceOf(
       NoInstanceError,
     );
@@ -61,7 +61,7 @@ describe("Http.fetch", () => {
   });
 
   it("rejects retry.attempts < 1", async () => {
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     await expect(
       http.fetch("nacos://svc/x", { retry: { attempts: 0 } }),
     ).rejects.toThrow(/attempts must be a finite integer/);
@@ -76,7 +76,7 @@ describe("Http.fetch", () => {
       return new Response("ok", { status: 200 });
     }) as typeof fetch;
 
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     const res = await http.fetch("nacos://svc/x", {
       method: "POST",
       body: "payload",
@@ -87,7 +87,7 @@ describe("Http.fetch", () => {
   });
 
   it("rejects ReadableStream body when attempts > 1", async () => {
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     const stream = new ReadableStream({
       start(c) {
         c.enqueue(new TextEncoder().encode("x"));
@@ -115,7 +115,7 @@ describe("Http.fetch", () => {
         }),
     ) as typeof fetch;
 
-    const http = mkHttp(reg, { timeout: 20 });
+    const http = makeHttp(reg, { timeout: 20 });
     await expect(http.fetch("nacos://svc/x")).rejects.toBeInstanceOf(
       TimeoutError,
     );
@@ -131,7 +131,7 @@ describe("Http.fetch", () => {
         }),
     ) as typeof fetch;
 
-    const http = mkHttp(reg, { timeout: 10_000 });
+    const http = makeHttp(reg, { timeout: 10_000 });
     const ac = new AbortController();
     const userReason = new Error("user-cancelled");
     setTimeout(() => ac.abort(userReason), 10);
@@ -148,7 +148,7 @@ describe("Http.fetch", () => {
       return new Response("ok");
     }) as typeof fetch;
 
-    const http = mkHttp(reg);
+    const http = makeHttp(reg);
     await http.fetch("https://example.com/path");
     expect(seen).toEqual(["https://example.com/path"]);
   });

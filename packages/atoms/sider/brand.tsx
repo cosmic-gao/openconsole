@@ -11,8 +11,8 @@ import type { Brand as BrandData } from "./types";
 
 function BrandLogo({ name }: { name: string }) {
   return (
-    <div className="relative flex aspect-square size-8 items-center justify-center rounded-lg bg-linear-to-br from-violet-500 to-fuchsia-500 shadow-md shadow-violet-500/20">
-      <Icon name={name} className="size-4 text-white" />
+    <div className="relative flex aspect-square size-8 items-center justify-center rounded-lg bg-linear-to-br from-primary to-primary/60 shadow-md shadow-primary/20">
+      <Icon name={name} className="size-4 text-primary-foreground" />
       <div className="absolute inset-0 rounded-lg bg-linear-to-br from-white/20 to-transparent" />
     </div>
   );

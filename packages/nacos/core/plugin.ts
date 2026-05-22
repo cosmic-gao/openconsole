@@ -21,7 +21,7 @@ export class Plugins {
     this.list.push(plugin);
   }
 
-  async before(step: RequestStep): Promise<Request> {
+  async request(step: RequestStep): Promise<Request> {
     let req = step.request;
     for (const p of this.list) {
       if (!p.onRequest) continue;
@@ -31,7 +31,7 @@ export class Plugins {
     return req;
   }
 
-  async after(step: ResponseStep): Promise<Response> {
+  async response(step: ResponseStep): Promise<Response> {
     let res = step.response;
     for (const p of this.list) {
       if (!p.onResponse) continue;
@@ -45,7 +45,7 @@ export class Plugins {
     return res;
   }
 
-  async caught(step: ErrorStep): Promise<void> {
+  async error(step: ErrorStep): Promise<void> {
     for (const p of this.list) {
       if (!p.onError) continue;
       try {
@@ -93,11 +93,16 @@ export interface HeadersOptions {
 }
 
 export function headers(opts: HeadersOptions): Plugin {
+  // Snapshot at construction time so later mutation of the caller's record
+  // doesn't silently change in-flight requests.
+  const entries = Object.entries({ ...opts.headers });
   return {
     name: "headers",
     onRequest({ request }) {
-      const next = new Request(request, { headers: new Headers(request.headers) });
-      for (const [k, v] of Object.entries(opts.headers)) {
+      const next = new Request(request, {
+        headers: new Headers(request.headers),
+      });
+      for (const [k, v] of entries) {
         next.headers.set(k, v);
       }
       return next;

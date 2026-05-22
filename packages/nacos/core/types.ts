@@ -133,6 +133,8 @@ export interface FetchOptions extends RequestInit {
   timeout?: number;
   retry?: Retry;
   group?: string;
+  /** Scheme for the resolved `nacos://` URL. Preferred over `?scheme=`. */
+  scheme?: "http" | "https";
 }
 
 // -- Top-level config ------------------------------------------------------

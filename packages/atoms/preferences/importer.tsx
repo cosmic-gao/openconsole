@@ -32,12 +32,31 @@ const PLACEHOLDER = `:root {
   /* And more */
 }`;
 
-/** Pull `--var: value;` pairs out of a CSS block matched by `selector`. */
-function parseBlock(css: string, selector: RegExp): Record<string, string> {
-  const match = css.match(selector);
-  if (!match) return {};
+function body(css: string, selector: RegExp): string | null {
+  const start = css.search(selector);
+  if (start < 0) return null;
+  const open = css.indexOf("{", start);
+  if (open < 0) return null;
+  let depth = 1;
+  for (let i = open + 1; i < css.length; i++) {
+    const ch = css[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return css.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
+function declarations(
+  css: string,
+  selector: RegExp,
+): Record<string, string> {
+  const block = body(css, selector);
+  if (!block) return {};
   const vars: Record<string, string> = {};
-  for (const decl of match[1].matchAll(/--([^:]+):\s*([^;]+);/g)) {
+  for (const decl of block.matchAll(/--([\w-]+)\s*:\s*([^;]+?)\s*(?:;|$)/g)) {
     vars[decl[1].trim()] = decl[2].trim();
   }
   return vars;
@@ -48,11 +67,10 @@ export function Importer({ open, onOpenChange, onImport }: ImporterProps) {
 
   const submit = () => {
     if (!text.trim()) return;
-    // Strip comments first; `:root` and `.dark` blocks rarely contain nested braces.
     const css = text.replace(/\/\*[\s\S]*?\*\//g, "");
     onImport({
-      light: parseBlock(css, /:root\s*\{([^}]+)\}/),
-      dark: parseBlock(css, /\.dark\s*\{([^}]+)\}/),
+      light: declarations(css, /:root\s*\{/),
+      dark: declarations(css, /\.dark\s*\{/),
     });
     onOpenChange(false);
     setText("");

@@ -41,7 +41,7 @@ export class Discovery {
 
   /** Healthy+enabled instances. Cache-first; subscribes on miss. */
   async list(service: string, group?: string): Promise<Instance[]> {
-    const key = ckey(service, group);
+    const key = cacheKey(service, group);
     const now = Date.now();
     const hit = this.cache.get(key);
 
@@ -67,7 +67,7 @@ export class Discovery {
   /** Force a refresh past TTL. */
   async refresh(service: string, group?: string) {
     const fresh = await this.registry.list(service, group);
-    const key = ckey(service, group);
+    const key = cacheKey(service, group);
     this.cache.set(key, {
       instances: fresh,
       fetchedAt: Date.now(),
@@ -76,7 +76,7 @@ export class Discovery {
   }
 
   private async subscribeOnce(service: string, group?: string) {
-    const key = ckey(service, group);
+    const key = cacheKey(service, group);
     const entry = this.cache.get(key);
     if (!entry || entry.subscribed) return;
     try {
@@ -93,9 +93,7 @@ export class Discovery {
       );
       entry.subscribed = true;
     } catch (err) {
-      // Watch failed — keep subscribed=false so the next list() past TTL
-      // refetches and reattempts. A transient registry hiccup must not
-      // permanently freeze the cache.
+      // Leave `subscribed=false` so the next list() past TTL retries the watch.
       console.warn(
         `[nacos] watch failed for ${service}; falling back to TTL polling`,
         err,
@@ -104,6 +102,6 @@ export class Discovery {
   }
 }
 
-function ckey(service: string, group?: string) {
+function cacheKey(service: string, group?: string) {
   return `${group ?? "DEFAULT_GROUP"}::${service}`;
 }

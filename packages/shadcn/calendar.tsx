@@ -15,6 +15,8 @@ import {
 import { cn } from "./lib/utils"
 import { Button, buttonVariants } from "./button"
 
+const defaultClassNames = getDefaultClassNames()
+
 function Calendar({
   className,
   classNames,
@@ -27,7 +29,6 @@ function Calendar({
 }: React.ComponentProps<typeof DayPicker> & {
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
-  const defaultClassNames = getDefaultClassNames()
 
   return (
     <DayPicker
@@ -185,8 +186,6 @@ function CalendarDayButton({
   modifiers,
   ...props
 }: React.ComponentProps<typeof DayButton>) {
-  const defaultClassNames = getDefaultClassNames()
-
   const ref = React.useRef<HTMLButtonElement>(null)
   React.useEffect(() => {
     if (modifiers.focused) ref.current?.focus()

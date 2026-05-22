@@ -6,66 +6,54 @@ import { useTheme } from "next-themes";
 import { baseColors } from "./data";
 import type { ImportedTheme, ThemePreset } from "./types";
 
-const stripPrefix = (cssVar: string) => cssVar.replace(/^--/, "");
-
-/** Extract brand-color values from a style record (keys without `--`). */
 function pickBrand(styles: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const { cssVar } of baseColors) {
-    const key = stripPrefix(cssVar);
+    const key = cssVar.replace(/^--/, "");
     if (styles[key]) out[cssVar] = styles[key];
   }
   return out;
 }
 
-/** Apply a `{ key: value }` record as `--key: value` on :root. */
-function applyStyles(styles: Record<string, string>) {
-  const { style } = document.documentElement;
-  for (const [key, value] of Object.entries(styles)) {
-    style.setProperty(`--${key}`, value);
-  }
-}
-
-/** Strip every inline `--*` custom property from :root. */
-function clearProperties() {
-  const { style } = document.documentElement;
-  for (let i = style.length - 1; i >= 0; i--) {
-    const prop = style[i];
-    if (prop.startsWith("--")) style.removeProperty(prop);
-  }
-}
-
-/**
- * Manages the design tokens (CSS custom properties) applied to :root.
- *
- * - `applyPreset` resets first, then writes the preset's vars
- *   (shadcn and tweakcn share the same preset shape).
- * - `applyImported` writes additively without resetting,
- *   matching the user's expectation when pasting a partial CSS.
- */
 export function useTokens() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [brandColors, setBrandColors] = React.useState<Record<string, string>>(
     {},
   );
+  // Track only the vars we set so reset leaves third-party inline custom
+  // properties untouched.
+  const managed = React.useRef<Set<string>>(new Set());
 
-  const isDarkMode = React.useMemo(() => {
-    if (theme === "dark") return true;
-    if (theme === "light") return false;
-    return (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches
-    );
-  }, [theme]);
+  const applyStyles = React.useCallback((styles: Record<string, string>) => {
+    const { style } = document.documentElement;
+    for (const [key, value] of Object.entries(styles)) {
+      const prop = `--${key}`;
+      style.setProperty(prop, value);
+      managed.current.add(prop);
+    }
+  }, []);
+
+  const clearManaged = React.useCallback(() => {
+    const { style } = document.documentElement;
+    for (const prop of managed.current) {
+      style.removeProperty(prop);
+    }
+    managed.current.clear();
+  }, []);
+
+  // `resolvedTheme` reflects the OS scheme when `theme === "system"`.
+  const isDarkMode = resolvedTheme
+    ? resolvedTheme === "dark"
+    : theme === "dark";
 
   const applyPreset = React.useCallback(
     (preset: ThemePreset, darkMode: boolean) => {
       const styles = darkMode ? preset.styles.dark : preset.styles.light;
-      clearProperties();
+      clearManaged();
       applyStyles(styles);
       setBrandColors(pickBrand(styles));
     },
-    [],
+    [applyStyles, clearManaged],
   );
 
   const applyImported = React.useCallback(
@@ -74,21 +62,23 @@ export function useTokens() {
       applyStyles(styles);
       setBrandColors(pickBrand(styles));
     },
-    [],
+    [applyStyles],
   );
 
   const applyRadius = React.useCallback((radius: string) => {
     document.documentElement.style.setProperty("--radius", radius);
+    managed.current.add("--radius");
   }, []);
 
   const setColor = React.useCallback((cssVar: string, value: string) => {
     document.documentElement.style.setProperty(cssVar, value);
+    managed.current.add(cssVar);
   }, []);
 
   const resetTheme = React.useCallback(() => {
-    clearProperties();
+    clearManaged();
     setBrandColors({});
-  }, []);
+  }, [clearManaged]);
 
   return {
     isDarkMode,

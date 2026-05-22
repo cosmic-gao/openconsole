@@ -140,8 +140,7 @@ export class Provider {
     if (this.hooked) return;
     this.hooked = true;
     const handler = async (signal: NodeJS.Signals) => {
-      // Coalesce concurrent SIGTERM+SIGINT. Without the guard, two signals in
-      // quick succession would each run stop() in parallel.
+      // Coalesce concurrent SIGTERM+SIGINT.
       if (this.shuttingDown) return;
       this.shuttingDown = true;
       console.info(`[nacos] received ${signal}, deregistering`);

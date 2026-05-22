@@ -57,13 +57,21 @@ export class Http {
     const when = retry.when ?? DEFAULT_RETRY.when!;
     const baseInit = strip(init);
 
-    // ReadableStream bodies cannot be re-read. Reject up-front so the failure
-    // is loud and immediate rather than a corrupted second attempt.
-    if (attempts > 1 && baseInit.body && isStreaming(baseInit.body)) {
-      throw new Error(
-        "[nacos] cannot retry a request with a ReadableStream body; " +
-          "set retry.attempts=1 or buffer the body before sending",
-      );
+    // Streaming bodies can only be read once; refuse to retry instead of
+    // silently corrupting attempt 2.
+    if (attempts > 1) {
+      if (baseInit.body && isStreaming(baseInit.body)) {
+        throw new Error(
+          "[nacos] cannot retry a request with a ReadableStream body; " +
+            "set retry.attempts=1 or buffer the body before sending",
+        );
+      }
+      if (input instanceof Request && input.body !== null && !logical) {
+        throw new Error(
+          "[nacos] cannot retry a Request with a streaming body; " +
+            "set retry.attempts=1 or pass body via init instead",
+        );
+      }
     }
 
     for (let attempt = 0; attempt < attempts; attempt++) {
@@ -73,25 +81,25 @@ export class Http {
             balancer: init.balancer,
             hint: { ...init.hint, attempt },
             group: init.group,
+            scheme: init.scheme,
           })
         : raw;
 
-      // Build the per-attempt Request. When the caller passed a Request, we
-      // clone it (preserves body + signal) and layer overrides on top.
       let request: Request;
       if (input instanceof Request && !logical) {
+        // Clone preserves the body and signal across retries.
         request = new Request(input.clone(), baseInit);
       } else {
         request = new Request(url, baseInit);
       }
-      request = await this.opts.plugins.before({ request, context: ctx });
+      request = await this.opts.plugins.request({ request, context: ctx });
 
       const timeout = init.timeout ?? this.opts.timeout;
       const { signal, cleanup } = combineSignals(request.signal, timeout);
 
       try {
         const response = await fetch(request, { signal });
-        const final = await this.opts.plugins.after({
+        const final = await this.opts.plugins.response({
           request,
           response,
           context: ctx,
@@ -102,7 +110,7 @@ export class Http {
         }
         return final;
       } catch (error) {
-        await this.opts.plugins.caught({ request, error, context: ctx });
+        await this.opts.plugins.error({ request, error, context: ctx });
         if (attempt < attempts - 1 && when({ attempt, error })) {
           await sleep(retry.delays?.[attempt]);
           continue;
@@ -113,22 +121,31 @@ export class Http {
       }
     }
 
-    // Loop body always returns or throws; this is unreachable but satisfies
-    // the control-flow analysis without an `as never` cast.
     throw new Error("[nacos] fetch loop exited without resolution");
   }
 
   /** Resolve a `nacos://` URL to a concrete `http(s)://ip:port/path` once. */
   async resolve(
     url: string,
-    opts: { balancer?: Balancer; hint?: Hint; group?: string } = {},
+    opts: {
+      balancer?: Balancer;
+      hint?: Hint;
+      group?: string;
+      scheme?: "http" | "https";
+    } = {},
   ): Promise<string> {
     const parsed = new URL(url);
     const service = parsed.hostname;
-    const picked = await this.opts.discovery.pick(service, opts);
+    const picked = await this.opts.discovery.pick(service, {
+      balancer: opts.balancer,
+      hint: opts.hint,
+      group: opts.group,
+    });
     if (!picked) throw new NoInstanceError(service);
-    const schemeParam = parsed.searchParams.get("scheme")?.toLowerCase();
-    const scheme = schemeParam === "https" ? "https:" : "http:";
+    const queryScheme = parsed.searchParams.get("scheme")?.toLowerCase();
+    // Explicit `init.scheme` wins; `?scheme=` is the legacy fallback.
+    const resolved = opts.scheme ?? queryScheme;
+    const scheme = resolved === "https" ? "https:" : "http:";
     parsed.searchParams.delete("scheme");
     const search = parsed.searchParams.toString();
     const pathSearch = `${parsed.pathname}${search ? `?${search}` : ""}`;
@@ -218,12 +235,8 @@ function isStreaming(body: BodyInit | null): boolean {
 }
 
 function strip(init: FetchOptions): RequestInit {
-  const { balancer, hint, timeout, retry, group, ...rest } = init;
-  void balancer;
-  void hint;
-  void timeout;
-  void retry;
-  void group;
+  const { balancer, hint, timeout, retry, group, scheme, ...rest } = init;
+  void [balancer, hint, timeout, retry, group, scheme];
   return rest;
 }
 

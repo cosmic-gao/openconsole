@@ -200,9 +200,7 @@ function buildService(name: string, http: Http): Service {
     if (body !== undefined) {
       const prepared = prepareBody(body);
       final.body = prepared.body;
-      // Normalize the user's headers (Headers | [k,v][] | Record) into a
-      // Headers instance, then layer the default content-type only when the
-      // caller didn't set one and the body type has a meaningful default.
+      // Layer the inferred content-type only when the caller didn't set one.
       const headers = new Headers(init.headers as HeadersInit | undefined);
       if (prepared.contentType && !headers.has("content-type")) {
         headers.set("content-type", prepared.contentType);
@@ -231,8 +229,7 @@ interface PreparedBody {
 }
 
 function prepareBody(body: unknown): PreparedBody {
-  // Strings: treat as pre-serialized JSON to preserve the historical default;
-  // callers wanting text/plain can set content-type explicitly via `init.headers`.
+  // Strings default to JSON; override via `init.headers["content-type"]`.
   if (typeof body === "string") {
     return { body, contentType: "application/json" };
   }

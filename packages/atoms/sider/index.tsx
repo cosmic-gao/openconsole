@@ -24,9 +24,9 @@ import type {
 export type { Brand, MenuGroup, MenuItem, User } from "./types";
 
 /**
- * Sider props — also the data shape for `siderConfig` (only `brand`/`menu`/
- * `account` are typically populated; the rest pass through to the underlying
- * Sidebar primitive).
+ * Sider props. `brand`/`menu`/`account` shape the rendered chrome; the rest
+ * pass through to the underlying Sidebar primitive (e.g. `className`,
+ * `side`/`variant`/`collapsible` overrides).
  */
 export interface SiderProps extends React.ComponentProps<typeof Sidebar> {
   /** Top brand block. Omit to hide the header. */

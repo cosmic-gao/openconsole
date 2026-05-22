@@ -102,8 +102,7 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
   const [activeTab, setActiveTab] = React.useState("theme");
   const [importerOpen, setImporterOpen] = React.useState(false);
 
-  // Handlers only dispatch — CSS application is centralized in the effects
-  // below to keep state as the single source of truth.
+  // Handlers only dispatch; the effects below apply state to the DOM.
   const selectShadcn = (_preset: ThemePreset, value: string) =>
     dispatch({ type: "applyShadcn", value });
   const selectTweakcn = (_preset: ThemePreset, value: string) =>

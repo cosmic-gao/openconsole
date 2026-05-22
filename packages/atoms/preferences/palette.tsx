@@ -276,9 +276,10 @@ export function Palette({
           variant="outline"
           size="sm"
           className="w-full cursor-pointer"
-          onClick={() =>
-            typeof window !== "undefined" && window.open(TWEAKCN_URL, "_blank")
-          }
+          onClick={() => {
+            if (typeof window === "undefined") return;
+            window.open(TWEAKCN_URL, "_blank", "noopener,noreferrer");
+          }}
         >
           <ExternalLink className="size-3.5 mr-1.5" />
           Open Tweakcn

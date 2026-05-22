@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import * as React from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -30,12 +31,15 @@ import {
 } from "@opendesign/shadcn";
 import type { MenuGroup, MenuItem } from "./types";
 
-const ACTIVE_TEXT = "text-violet-600 dark:text-violet-400";
-const ACTIVE_PILL = cn("bg-violet-500/10", ACTIVE_TEXT);
+const ACTIVE_TEXT = "text-primary";
+const ACTIVE_PILL = cn("bg-primary/10", ACTIVE_TEXT);
 
-const isParent = (item: MenuItem) => Boolean(item.children?.length);
+type Parent = MenuItem & { children: MenuItem[] };
 
-/** Active when this item's href matches, or any child's does. */
+function isParent(item: MenuItem): item is Parent {
+  return Array.isArray(item.children) && item.children.length > 0;
+}
+
 function isActive(pathname: string, item: MenuItem): boolean {
   if (item.href && pathname === item.href) return true;
   return item.children?.some((c) => c.href === pathname) ?? false;
@@ -53,8 +57,8 @@ function NavBadge({
       className={cn(
         "ml-auto rounded-full border-0 px-2 py-0.5 text-[10px] font-medium",
         color === "green"
-          ? "bg-green-500/10 text-green-600 dark:text-green-400"
-          : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          : "bg-primary/10 text-primary",
       )}
     >
       {children}
@@ -130,9 +134,9 @@ function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
           active && ACTIVE_PILL,
         )}
       >
-        <Link href={item.href!} onClick={() => setOpenMobile(false)}>
+        <Link href={item.href ?? "#"} onClick={() => setOpenMobile(false)}>
           {active && (
-            <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-linear-to-b from-violet-500 to-fuchsia-500" />
+            <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-linear-to-b from-primary to-primary/60" />
           )}
           <ItemIcon name={item.icon} active={active} />
           <span className="font-medium">{item.label}</span>
@@ -145,18 +149,22 @@ function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
   );
 }
 
-function Submenu({
-  item,
-  pathname,
-}: {
-  item: MenuItem;
-  pathname: string;
-}) {
+function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
   const { setOpenMobile } = useSidebar();
   const active = isActive(pathname, item);
+  // Auto-expand when pathname makes this branch active (not just on mount).
+  const [open, setOpen] = React.useState(active);
+  React.useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
 
   return (
-    <Collapsible asChild defaultOpen={active} className="group/collapsible">
+    <Collapsible
+      asChild
+      open={open}
+      onOpenChange={setOpen}
+      className="group/collapsible"
+    >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
@@ -175,8 +183,8 @@ function Submenu({
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub className="border-l-2 border-violet-500/20 ml-3.5">
-            {item.children!.map((child) => {
+          <SidebarMenuSub className="border-l-2 border-primary/20 ml-3.5">
+            {item.children.map((child) => {
               const childActive = pathname === child.href;
               return (
                 <SidebarMenuSubItem key={child.label}>
@@ -189,7 +197,7 @@ function Submenu({
                     )}
                   >
                     <Link
-                      href={child.href!}
+                      href={child.href ?? "#"}
                       onClick={() => setOpenMobile(false)}
                     >
                       <Icon name={child.icon} className="size-4" />
@@ -211,13 +219,7 @@ function Submenu({
   );
 }
 
-function Flyout({
-  item,
-  pathname,
-}: {
-  item: MenuItem;
-  pathname: string;
-}) {
+function Flyout({ item, pathname }: { item: Parent; pathname: string }) {
   const active = isActive(pathname, item);
 
   return (
@@ -249,7 +251,7 @@ function Flyout({
             )}
           </DropdownMenuLabel>
           <DropdownMenuSeparator className="bg-border/50" />
-          {item.children!.map((child) => {
+          {item.children.map((child) => {
             const childActive = pathname === child.href;
             return (
               <DropdownMenuItem
@@ -258,7 +260,7 @@ function Flyout({
                 className="rounded-lg"
               >
                 <Link
-                  href={child.href!}
+                  href={child.href ?? "#"}
                   className={cn(
                     "flex items-center gap-2 px-2 py-2",
                     childActive && ACTIVE_PILL,

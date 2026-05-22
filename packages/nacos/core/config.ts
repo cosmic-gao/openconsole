@@ -39,22 +39,25 @@ export class Config {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-    for (const src of this.options.sources ?? []) {
-      const key = src.key ?? src.dataId;
-      const raw = await this.registry.read(src.dataId, src.group);
-      this.snapshot[key] = parse(raw, src.dataId);
-      const listener = async (content: string) => {
-        this.snapshot[key] = parse(content, src.dataId);
-        this.fire(key);
-        await this.revalidate();
-      };
-      this.subscriptions.push({
-        dataId: src.dataId,
-        group: src.group,
-        listener,
-      });
-      await this.registry.observe(src.dataId, listener, src.group);
-    }
+    // Fan out so boot time is the slowest source, not their sum.
+    await Promise.all(
+      (this.options.sources ?? []).map(async (src) => {
+        const key = src.key ?? src.dataId;
+        const raw = await this.registry.read(src.dataId, src.group);
+        this.snapshot[key] = parse(raw, src.dataId);
+        const listener = async (content: string) => {
+          this.snapshot[key] = parse(content, src.dataId);
+          this.fire(key);
+          await this.revalidate();
+        };
+        this.subscriptions.push({
+          dataId: src.dataId,
+          group: src.group,
+          listener,
+        });
+        await this.registry.observe(src.dataId, listener, src.group);
+      }),
+    );
   }
 
   /** Unsubscribe and drop in-process listeners. Idempotent. */
@@ -98,9 +101,8 @@ export class Config {
         | null;
       const fn = mod?.revalidateTag;
       if (typeof fn !== "function") return;
-      // Tolerate both the Next 15 signature `revalidateTag(tag)` and the Next
-      // 16 signature `revalidateTag(tag, profile)` without lying with `as
-      // unknown as string`. `{ expire: 0 }` means "expire immediately" in 16.
+      // `{ expire: 0 }` is ignored by Next 15 and means "expire immediately"
+      // in Next 16, so this call shape works on both.
       (fn as (...args: unknown[]) => void)(tag, { expire: 0 });
     } catch {
       /* not running under Next.js */
@@ -124,10 +126,8 @@ function parse(raw: string | null | undefined, dataId: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
-    // Non-JSON content (YAML, properties, raw text). Return the raw string —
-    // callers wanting a structured value should either store JSON in Nacos
-    // or post-process inside an `on()` listener. The previous URLSearchParams
-    // fallback silently converted everything into form-encoded garbage.
+    // YAML / properties / raw text are passed through unparsed; callers can
+    // post-process inside an `on()` listener.
     console.warn(
       `[nacos] config '${dataId}' is not JSON; exposing raw string`,
     );

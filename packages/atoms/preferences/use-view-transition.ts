@@ -23,8 +23,14 @@ export function useViewTransition() {
       transitioningRef.current = true;
 
       const root = document.documentElement;
-      root.style.setProperty("--x", `${(coords.x / window.innerWidth) * 100}%`);
-      root.style.setProperty("--y", `${(coords.y / window.innerHeight) * 100}%`);
+      root.style.setProperty(
+        "--vt-origin-x",
+        `${(coords.x / window.innerWidth) * 100}%`,
+      );
+      root.style.setProperty(
+        "--vt-origin-y",
+        `${(coords.y / window.innerHeight) * 100}%`,
+      );
 
       const doc = document as TransitionDocument;
       const finish = () => {
