@@ -30,9 +30,9 @@ export class Bfs {
    * @remarks
    * 公开是有意为之：BFS 的层级 / 前沿等高级查询都基于"已消费几个"。
    * `queue` 和 `visited` 一致语义 —— 用户可读，但不应自己直接修改（除非搭多起点 BFS）。
-   * 典型用法：`bfs.head === bfs.queue.length` 等价于"队列已耗尽"或"当前层 drain 完"。
+   * 典型用法：`bfs.cursor === bfs.queue.length` 等价于"队列已耗尽"或"当前层 drain 完"。
    */
-  public head: number;
+  public cursor: number;
 
   /**
    * @param start 起点节点 ID
@@ -40,7 +40,7 @@ export class Bfs {
   public constructor(start?: NodeId) {
     this.queue = [];
     this.visited = new Set();
-    this.head = 0;
+    this.cursor = 0;
     if (start !== undefined) {
       this.queue.push(start);
       this.visited.add(start);
@@ -64,8 +64,8 @@ export class Bfs {
    * @param graph 图实例
    */
   public next<G extends Neighbors>(graph: G): NodeId | undefined {
-    if (this.head >= this.queue.length) return undefined;
-    const nodeId = this.queue[this.head++]!;
+    if (this.cursor >= this.queue.length) return undefined;
+    const nodeId = this.queue[this.cursor++]!;
     for (const neighbor of graph.downstream(nodeId)) {
       if (this.visited.has(neighbor)) continue;
       this.visited.add(neighbor);
@@ -84,14 +84,14 @@ export class Bfs {
     this.visited.clear();
     this.queue.push(start);
     this.visited.add(start);
-    this.head = 0;
+    this.cursor = 0;
   }
 
   /** 清空状态。 */
   public reset(): void {
     this.queue.length = 0;
     this.visited.clear();
-    this.head = 0;
+    this.cursor = 0;
   }
 
   /**
