@@ -37,6 +37,11 @@
 
   "npm.packageManager": "pnpm",
 
+  // Nx Console — tree view scales better than the default list across 8+
+  // projects; cloud notifications muted to errors-only to reduce noise.
+  "nxConsole.projectViewingStyle": "tree",
+  "nxConsole.nxCloudNotifications": "errors",
+
   // Project-specific word list for cspell. "Add to workspace dictionary"
   // appends here.
   "cSpell.customDictionaries": {

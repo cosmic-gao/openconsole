@@ -3,7 +3,9 @@
   "defaultBase": "main",
   "namedInputs": {
     "sharedGlobals": [
-      { "runtime": "node --version" },
+      {
+        "runtime": "node --version"
+      },
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/pnpm-workspace.yaml",
       "{workspaceRoot}/.npmrc",
@@ -40,12 +42,19 @@
     "lint": {
       "cache": true,
       "inputs": ["default", "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"]
+    },
+    "nx-release-publish": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm publish --no-git-checks --access public",
+        "cwd": "{projectRoot}"
+      }
     }
   },
   "release": {
     "projects": [
-      "@openconsole/atoms",
       "@openconsole/shadcn",
+      "@openconsole/atoms",
       "@openconsole/nacos"
     ],
     "projectsRelationship": "independent",
@@ -53,20 +62,20 @@
       "pattern": "{projectName}@{version}"
     },
     "version": {
-      "conventionalCommits": true,
+      "conventionalCommits": false,
+      "specifierSource": "prompt",
       "preVersionCommand": "pnpm nx run-many -t typecheck test"
     },
     "changelog": {
       "workspaceChangelog": false,
-      "projectChangelogs": {
-        "createRelease": "github"
-      }
+      "projectChangelogs": true
     },
     "git": {
       "commit": true,
-      "commitMessage": "chore(release): publish {version} [skip ci]",
+      "commitMessage": "chore(release): publish {version}",
       "tag": true,
       "push": true
     }
-  }
+  },
+  "analytics": true
 }

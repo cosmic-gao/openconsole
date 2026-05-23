@@ -28,26 +28,16 @@
     "release:version": "nx release version",
     "release:changelog": "nx release changelog",
     "release:publish": "nx release publish",
-    "reset": "nx reset",
-    "prepare": "husky"
+    "reset": "nx reset"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.1",
-    "@commitlint/config-conventional": "^21.0.0",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@nx/js": "22.7.3",
     "@openconsole/tsconfig": "workspace:*",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.5",
     "nx": "22.7.3",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,scss,md,mdx,yml,yaml,html}": [
-      "nx format:write --uncommitted"
-    ]
   }
 }
