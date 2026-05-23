@@ -32,10 +32,10 @@ export function Brand({ brand }: { brand: BrandData }) {
           variant="ghost"
           size="icon-sm"
           onClick={toggleSidebar}
-          aria-label="Collapse sidebar"
           className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
         >
           <ChevronsLeft />
+          <span className="sr-only">Collapse sidebar</span>
         </Button>
       </SidebarMenuItem>
     </SidebarMenu>

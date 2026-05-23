@@ -226,10 +226,13 @@ desktop height. Built-in right-side actions are `<ThemeSwitch />` plus a
 Settings button that opens the `Preferences` drawer.
 
 **Notes**:
-- The sidebar collapse toggle lives inside `<Sidebar>`'s brand header,
-  not here. When using `collapsible="offcanvas"`, supply your own
-  trigger via `actions` (shadcn's `SidebarTrigger` or the keyboard
-  shortcut `Ctrl/Cmd+B`) since the brand disappears with the sidebar.
+- The sidebar toggle is split across the two components: brand carries
+  the collapse button (`ChevronsLeft`) when expanded; Header auto-renders
+  an expand button (`PanelLeftOpen`) at the leftmost edge when the
+  sidebar is collapsed. Together they cover both `icon` and `offcanvas`
+  modes — no extra trigger needed.
+- Requires `SidebarProvider` from `@openconsole/shadcn` above it (Header
+  reads `useSidebar()`).
 - The `breadcrumbs` slot accepts `ReactNode | false`. `undefined`
   (default) renders `<Breadcrumbs />`; `false` hides; anything else
   replaces.
@@ -329,8 +332,9 @@ the primitive's built-in `bg-sidebar-accent` — change the theme tokens
 and the whole sidebar follows.
 
 The brand header also carries a `ChevronsLeft` collapse button (hidden
-in `collapsible="icon"` mode); re-expand via `SidebarRail` (rendered by
-default) or `Ctrl/Cmd+B`.
+when the sidebar is collapsed). To re-expand: click the `PanelLeftOpen`
+button auto-rendered at the left edge of `<Header>`, click the
+`SidebarRail` (rendered by default), or press `Ctrl/Cmd+B`.
 
 ```tsx
 import { Sidebar } from "@openconsole/atoms";

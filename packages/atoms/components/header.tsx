@@ -1,10 +1,10 @@
 "use client";
 
-import { Settings } from "lucide-react";
+import { PanelLeftOpen, Settings } from "lucide-react";
 import * as React from "react";
 import type { ReactNode } from "react";
 
-import { Button, cn } from "@openconsole/shadcn";
+import { Button, Separator, cn, useSidebar } from "@openconsole/shadcn";
 
 import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
@@ -14,8 +14,9 @@ export interface HeaderProps extends React.ComponentProps<"header"> {
   /**
    * Left-side slot. Defaults to `<Breadcrumbs />` (auto-derived from
    * `usePathname()`). Pass a custom `ReactNode` (e.g. a page title) to
-   * override, or `false` to hide it entirely. The sidebar toggle lives
-   * inside the sidebar's brand header, not here.
+   * override, or `false` to hide it entirely. When the sidebar is
+   * collapsed, an expand button is auto-rendered at the leftmost edge
+   * before this slot.
    */
   breadcrumbs?: ReactNode | false;
   /**
@@ -59,8 +60,10 @@ export function Header({
   ...props
 }: HeaderProps) {
   const [preferencesOpen, setPreferencesOpen] = React.useState(false);
+  const { state, toggleSidebar } = useSidebar();
+  const collapsed = state === "collapsed";
 
-  const breadcrumbsContent =
+  const crumbs =
     breadcrumbs === false
       ? null
       : (breadcrumbs ?? <Breadcrumbs {...breadcrumbsProps} />);
@@ -73,7 +76,25 @@ export function Header({
       )}
       {...props}
     >
-      <div className="flex items-center gap-2 px-4">{breadcrumbsContent}</div>
+      <div className="flex items-center gap-2 px-4">
+        {collapsed && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleSidebar}
+              className="-ml-1 cursor-pointer"
+            >
+              <PanelLeftOpen />
+              <span className="sr-only">Expand sidebar</span>
+            </Button>
+            {crumbs && (
+              <Separator orientation="vertical" className="mr-2 h-4" />
+            )}
+          </>
+        )}
+        {crumbs}
+      </div>
       <div className="flex items-center gap-2 px-4">
         {actions}
         {!hideDefaultActions && (
@@ -83,7 +104,6 @@ export function Header({
               variant="ghost"
               size="icon"
               onClick={() => setPreferencesOpen(true)}
-              aria-label="Open preferences"
             >
               <Settings />
               <span className="sr-only">Open preferences</span>
