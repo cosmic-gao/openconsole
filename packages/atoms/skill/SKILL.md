@@ -226,9 +226,10 @@ desktop height. Built-in right-side actions are `<ThemeSwitch />` plus a
 Settings button that opens the `Preferences` drawer.
 
 **Notes**:
-- `<SidebarTrigger />` is always on the left edge — works even when no
-  sidebar variant is mounted (the trigger is a no-op without
-  `SidebarProvider`).
+- The sidebar collapse toggle lives inside `<Sidebar>`'s brand header,
+  not here. When using `collapsible="offcanvas"`, supply your own
+  trigger via `actions` (shadcn's `SidebarTrigger` or the keyboard
+  shortcut `Ctrl/Cmd+B`) since the brand disappears with the sidebar.
 - The `breadcrumbs` slot accepts `ReactNode | false`. `undefined`
   (default) renders `<Breadcrumbs />`; `false` hides; anything else
   replaces.
@@ -326,6 +327,10 @@ Visual styling stays close to shadcn defaults: the brand logo sits in a
 solid `bg-sidebar-primary` square; the active menu item highlights with
 the primitive's built-in `bg-sidebar-accent` — change the theme tokens
 and the whole sidebar follows.
+
+The brand header also carries a `ChevronsLeft` collapse button (hidden
+in `collapsible="icon"` mode); re-expand via `SidebarRail` (rendered by
+default) or `Ctrl/Cmd+B`.
 
 ```tsx
 import { Sidebar } from "@openconsole/atoms";

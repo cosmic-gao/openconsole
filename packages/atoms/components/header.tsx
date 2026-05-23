@@ -4,12 +4,7 @@ import { Settings } from "lucide-react";
 import * as React from "react";
 import type { ReactNode } from "react";
 
-import {
-  Button,
-  Separator,
-  SidebarTrigger,
-  cn,
-} from "@openconsole/shadcn";
+import { Button, cn } from "@openconsole/shadcn";
 
 import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
@@ -17,11 +12,10 @@ import { ThemeSwitch } from "./theme-switch";
 
 export interface HeaderProps extends React.ComponentProps<"header"> {
   /**
-   * Left-side slot rendered after the `SidebarTrigger`. Defaults to
-   * `<Breadcrumbs />` (auto-derived from `usePathname()`). Pass a custom
-   * `ReactNode` (e.g. a page title) to override, or `false` to hide it
-   * entirely. A vertical separator is auto-inserted between the trigger
-   * and this slot when content is rendered.
+   * Left-side slot. Defaults to `<Breadcrumbs />` (auto-derived from
+   * `usePathname()`). Pass a custom `ReactNode` (e.g. a page title) to
+   * override, or `false` to hide it entirely. The sidebar toggle lives
+   * inside the sidebar's brand header, not here.
    */
   breadcrumbs?: ReactNode | false;
   /**
@@ -79,15 +73,7 @@ export function Header({
       )}
       {...props}
     >
-      <div className="flex items-center gap-2 px-4">
-        <SidebarTrigger className="-ml-1" />
-        {breadcrumbsContent && (
-          <>
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            {breadcrumbsContent}
-          </>
-        )}
-      </div>
+      <div className="flex items-center gap-2 px-4">{breadcrumbsContent}</div>
       <div className="flex items-center gap-2 px-4">
         {actions}
         {!hideDefaultActions && (

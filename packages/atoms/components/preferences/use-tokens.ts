@@ -6,6 +6,40 @@ import { useTheme } from "next-themes";
 import { baseColors } from "./data";
 import type { ImportedTheme, ThemePreset } from "./types";
 
+// Sidebar tokens that should follow their base counterparts when a preset or
+// imported theme doesn't define sidebar-specific values (e.g. shadcn presets).
+const SIDEBAR_FALLBACKS: Record<string, string> = {
+  sidebar: "background",
+  "sidebar-foreground": "foreground",
+  "sidebar-primary": "primary",
+  "sidebar-primary-foreground": "primary-foreground",
+  "sidebar-accent": "accent",
+  "sidebar-accent-foreground": "accent-foreground",
+  "sidebar-border": "border",
+  "sidebar-ring": "ring",
+};
+
+// Reverse map for live ColorPicker edits: editing --primary should also flow
+// into --sidebar-primary so the sidebar's brand square / hover states track.
+const SIDEBAR_MIRRORS: Record<string, string> = Object.fromEntries(
+  Object.entries(SIDEBAR_FALLBACKS).map(([sidebar, base]) => [
+    `--${base}`,
+    `--${sidebar}`,
+  ]),
+);
+
+function withSidebarFallbacks(
+  styles: Record<string, string>,
+): Record<string, string> {
+  const out = { ...styles };
+  for (const [sidebarKey, baseKey] of Object.entries(SIDEBAR_FALLBACKS)) {
+    if (out[sidebarKey] === undefined && out[baseKey] !== undefined) {
+      out[sidebarKey] = out[baseKey];
+    }
+  }
+  return out;
+}
+
 function pickBrand(styles: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const { cssVar } of baseColors) {
@@ -26,7 +60,8 @@ export function useTokens() {
 
   const applyStyles = React.useCallback((styles: Record<string, string>) => {
     const { style } = document.documentElement;
-    for (const [key, value] of Object.entries(styles)) {
+    const filled = withSidebarFallbacks(styles);
+    for (const [key, value] of Object.entries(filled)) {
       const prop = `--${key}`;
       style.setProperty(prop, value);
       managed.current.add(prop);
@@ -71,8 +106,14 @@ export function useTokens() {
   }, []);
 
   const setColor = React.useCallback((cssVar: string, value: string) => {
-    document.documentElement.style.setProperty(cssVar, value);
+    const { style } = document.documentElement;
+    style.setProperty(cssVar, value);
     managed.current.add(cssVar);
+    const mirror = SIDEBAR_MIRRORS[cssVar];
+    if (mirror) {
+      style.setProperty(mirror, value);
+      managed.current.add(mirror);
+    }
   }, []);
 
   const resetTheme = React.useCallback(() => {
