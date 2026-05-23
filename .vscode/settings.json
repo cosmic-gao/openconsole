@@ -20,27 +20,20 @@
   "[yaml]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
   "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
 
-  // Nx perf — exclude generated/cached dirs from search and FS watcher.
+  // Exclude generated/cached dirs from search and FS watcher.
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
     "**/coverage": true,
-    "**/.nx": true,
     "**/pnpm-lock.yaml": true,
     "**/*.tsbuildinfo": true
   },
   "files.watcherExclude": {
     "**/node_modules/**": true,
-    "**/.nx/**": true,
     "**/dist/**": true
   },
 
   "npm.packageManager": "pnpm",
-
-  // Nx Console — tree view scales better than the default list across 8+
-  // projects; cloud notifications muted to errors-only to reduce noise.
-  "nxConsole.projectViewingStyle": "tree",
-  "nxConsole.nxCloudNotifications": "errors",
 
   // Project-specific word list for cspell. "Add to workspace dictionary"
   // appends here.

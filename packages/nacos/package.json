@@ -25,10 +25,5 @@
   "devDependencies": {
     "@openconsole/tsconfig": "workspace:*",
     "@types/node": "^25.4.0"
-  },
-  "nx": {
-    "targets": {
-      "nx-release-publish": { "dependsOn": [] }
-    }
   }
 }
