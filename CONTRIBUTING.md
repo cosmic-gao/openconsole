@@ -80,27 +80,40 @@
 
 ### 一次性
 
-| 工具    | 版本   | 说明                                  |
-| ------- | ------ | ------------------------------------- |
-| Node.js | ≥ 22   | LTS,见 `package.json` 的 engines / CI |
-| pnpm    | ≥ 11   | 包管理器(本仓库唯一支持)              |
-| Git     | ≥ 2.40 | 任何现代版本                          |
+| 工具    | 版本    | 说明                                                                  |
+| ------- | ------- | --------------------------------------------------------------------- |
+| Node.js | ≥ 22.11 | 见 `package.json` 的 `engines.node`;**pnpm 会自动下载到 24.16**(下条) |
+| pnpm    | ≥ 11.2  | 由 `package.json` 的 `packageManager` 字段锁定,Corepack 自动切换      |
+| Git     | ≥ 2.40  | 任何现代版本                                                          |
+
+> **不需要 `.nvmrc` / nvm / fnm**——`.npmrc` 里 `use-node-version=24.16.0`
+> 告诉 pnpm 自动下载并切到该版本,跑 `pnpm <任何命令>` 时自动生效。本机只
+> 要有任意 Node ≥ 22.11 能把 pnpm 启起来即可。
 
 ### 克隆与安装
 
 ```bash
 git clone git@github.com:cosmic-gao/openconsole.git
 cd openconsole
-pnpm install
+corepack enable           # 一次即可:启用 Corepack 让 pnpm 版本自动切换
+pnpm install              # 装依赖 + 触发 Husky + pnpm 切到 24.16.0
 ```
 
 `pnpm install` 会自动:
 
 - 装所有 workspace 依赖
 - 跑 `prepare` 脚本 → Husky 初始化 `.husky/` 目录,激活 git 钩子
+- 通过 `.npmrc` 拉取并切换 Node 24.16.0
+- 通过 `packageManager` 字段把本地 pnpm 切到 11.2.2
 
 装完之后 `git commit` 就会自动经过下面 [第 6 节](#6-git-钩子做了什么)
 的钩子检查。
+
+### 一键开发环境(可选)
+
+仓库内置 [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json),
+GitHub Codespaces / VS Code Dev Containers 可一键拉起完整环境(Node 22
+镜像 + pnpm 11 + 推荐扩展)。无需本地安装任何依赖。
 
 ---
 
@@ -256,18 +269,31 @@ git push -u origin feat/atoms-new-component
 
 钩子定义在 [`.husky/`](.husky/),由 Husky v9 在 `pnpm install` 后激活。
 
-| 钩子         | 触发时机     | 作用                              | 失败后果    |
-| ------------ | ------------ | --------------------------------- | ----------- |
-| `commit-msg` | `git commit` | commitlint 校验 message           | 拒绝 commit |
-| `pre-commit` | `git commit` | `lint-staged` → `nx format:write` | 拒绝 commit |
-| `pre-push`   | `git push`   | `nx affected -t typecheck`        | 拒绝推送    |
+| 钩子         | 触发时机     | 作用                                                              | 失败后果    |
+| ------------ | ------------ | ----------------------------------------------------------------- | ----------- |
+| `commit-msg` | `git commit` | commitlint(v21) 校验 message                                      | 拒绝 commit |
+| `pre-commit` | `git commit` | `lint-staged` → `nx format:write`(prettier + import 排序 + tw 类) | 拒绝 commit |
+| `pre-push`   | `git push`   | `nx affected -t typecheck --exclude-task-dependencies`            | 拒绝推送    |
 
 钩子的设计原则:
 
-- **快**:`pre-commit` 只动暂存文件,< 2 秒
+- **快**:`pre-commit` 只动暂存文件,prettier + 排序插件并行跑
 - **本地保险**:`pre-push` 抓的是 CI 必抓的东西,在本地提前抓出来,
-  省一轮 CI
+  省一轮 CI;`--exclude-task-dependencies` 避免被 `^typecheck`
+  拉起整张依赖图
 - **不重复**:测试不跑钩子(太慢),CI 里跑
+
+### Prettier 插件链
+
+`.prettierrc.json` 启用了两个插件,跑 `pnpm format` 自动生效:
+
+| 插件                                  | 作用                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `@ianvs/prettier-plugin-sort-imports` | 按 `<BUILTIN>` → `<THIRD_PARTY>` → `@openconsole/*` → 相对路径 顺序排 import |
+| `prettier-plugin-tailwindcss`         | 自动排序 `className` 里的 tailwind class,统一顺序                            |
+
+> 首次启用插件会一次性 reformat 大量历史文件,单独开一个 PR
+> (`style: format with new prettier plugins`)合,后续就稳定了。
 
 ---
 
@@ -290,14 +316,18 @@ gh pr create --title "feat(atoms): add Foo component" --body "..."
 
 ### CI 在 PR 上跑什么
 
-见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+| Workflow                                                                   | 触发                       | 作用                                                                      |
+| -------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------- |
+| [`ci.yml`](.github/workflows/ci.yml)                                       | PR + push to main          | `format:check` + `nx affected -t typecheck/test/lint`,带 `.nx/cache` 缓存 |
+| [`codeql.yml`](.github/workflows/codeql.yml)                               | PR + push to main + 每周一 | GitHub CodeQL `security-extended` 静态扫描,结果进 Security tab            |
+| [`release.yml`](.github/workflows/release.yml)                             | 手动 `workflow_dispatch`   | `nx release` 发版 + npm provenance + GitHub SLSA attestation              |
+| [`stale.yml`](.github/workflows/stale.yml)                                 | 每日                       | 标记/关闭长期无活动的 issue/PR                                            |
+| [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) | Dependabot PR              | patch/minor 依赖更新自动 merge                                            |
 
-1. `pnpm format:check` — 格式化检查
-2. `pnpm nx affected -t typecheck` — 受影响项目的类型检查
-3. `pnpm nx affected -t test` — 受影响项目的单测
-
-`nrwl/nx-set-shas@v4` 这个 action 会自动算出当前 PR 的 base/head SHA,
-传给 `nx affected`,所以只跑你改动影响到的项目。
+`nrwl/nx-set-shas@v5` 自动算出当前 PR 的 base/head SHA,传给
+`nx affected`,只跑你改动影响到的项目。CI 用 `actions/setup-node@v6`
+读 `package.json` 的 `engines.node`,与本地 pnpm `use-node-version`
+对齐。
 
 ---
 
@@ -519,6 +549,25 @@ protection rule**:
 
 ---
 
+### Q: 拼写检查报"openconsole / shadcn / siftDown 这种词不认识"?
+
+cspell 已经预置了项目词典 [`.cspell/project-words.txt`](.cspell/project-words.txt)。
+看到红波浪线时,在 VS Code 编辑器右键选 **Add to workspace dictionary**,
+词会自动追加到该文件,提交即可与团队共享。配置入口
+[`cspell.json`](./cspell.json)。
+
+### Q: 我能不能换 Node 版本?
+
+可以但**不要改 `.npmrc`**——那是团队共享的固定版本。要本地试新 Node:
+
+```bash
+PNPM_USE_NODE_VERSION=24.20.0 pnpm install   # 临时
+```
+
+要永久升级,改 `.npmrc` 的 `use-node-version` 提 PR 让团队评审。
+
+---
+
 ## 相关文档
 
 - [NX.md](./NX.md) — Nx 配置详解、命令速查、远程缓存
@@ -526,3 +575,5 @@ protection rule**:
 - [`packages/shadcn/skill/SKILL.md`](./packages/shadcn/skill/SKILL.md) — shadcn 包使用指南
 - [Conventional Commits 规范](https://www.conventionalcommits.org/zh-hans/v1.0.0/)
 - [Nx Release 官方文档](https://nx.dev/features/manage-releases)
+- [pnpm Settings 文档](https://pnpm.io/settings) — `use-node-version` / `engine-strict` 等
+- [CodeQL 文档](https://codeql.github.com/) — 安全扫描原理与查询包

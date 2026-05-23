@@ -1,0 +1,145 @@
+{
+  // ---- Editor ----
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "never"
+  },
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.pasteAs.preferences": ["text.updateImports.jsts"],
+
+  // ---- Files ----
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.trimFinalNewlines": true,
+  "files.autoSave": "onFocusChange",
+  "files.autoSaveWhenNoErrors": true,
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+
+  // ---- JavaScript / TypeScript (unified js/ts.* namespace — VS Code 1.110+) ----
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "js/ts.preferences.preferTypeOnlyAutoImports": true,
+  "js/ts.preferences.includePackageJsonAutoImports": "on",
+  "js/ts.updateImportsOnFileMove.enabled": "always",
+  "js/ts.preferGoToSourceDefinition": true,
+  "js/ts.workspaceSymbols.scope": "currentProject",
+  "js/ts.tsserver.watchOptions": {
+    "watchFile": "useFsEvents",
+    "watchDirectory": "useFsEvents",
+    "fallbackPolling": "dynamicPriorityPolling"
+  },
+
+  // ---- Prettier ----
+  "prettier.requireConfig": true,
+  "prettier.useEditorConfig": true,
+  "prettier.prettierPath": "./node_modules/prettier",
+
+  // ---- Per-language formatter ----
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[yaml]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+
+  // ---- Workbench / Explorer ----
+  "workbench.editor.empty.hint": "hidden",
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "package.json": "pnpm-*.yaml, .npmrc, .nvmrc, .node-version, package-lock.json, yarn.lock, bun.lockb",
+    "tsconfig.json": "tsconfig.*.json, tsconfig.tsbuildinfo",
+    "nx.json": ".nxignore, .nx, project.json",
+    ".gitignore": ".gitattributes, .editorconfig, .prettierrc*, .prettierignore, .eslintrc*, .eslintignore, commitlint.config.*",
+    "README.md": "CONTRIBUTING.md, CHANGELOG.md, NX.md, LICENSE*, CODE_OF_CONDUCT.md, SECURITY.md",
+    "vitest.config.ts": "vitest.setup.ts, vitest.workspace.ts"
+  },
+  "explorer.autoRevealExclude": {
+    "**/node_modules": true,
+    "**/.nx": true,
+    "**/dist": true
+  },
+
+  // ---- Search / watcher ----
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/.nx": true,
+    "**/.next": true,
+    "**/.output": true,
+    "**/pnpm-lock.yaml": true,
+    "**/*.tsbuildinfo": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.nx/cache/**": true,
+    "**/.nx/workspace-data/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true
+  },
+
+  // ---- Git ----
+  "git.branchProtection": ["main"],
+  "git.branchProtectionPrompt": "alwaysCommitToNewBranch",
+  "git.rebaseWhenSync": true,
+  "git.pruneOnFetch": true,
+  "git.openRepositoryInParentFolders": "always",
+  "git.useCommitInputAsStashMessage": true,
+  "git.blame.editorDecoration.enabled": true,
+
+  // ---- Terminal ----
+  // shellIntegration / stickyScroll are default-true since VS Code 1.85+ — omitted.
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "terminal.integrated.suggest.enabled": true,
+
+  // ---- npm / pnpm ----
+  "npm.packageManager": "pnpm",
+
+  // ---- Nx Console (verified against nrwl/nx-console contributes.configuration) ----
+  "nxConsole.enableCodeLens": true,
+  "nxConsole.enableLibraryImports": true,
+  "nxConsole.refreshOnBranchSwitch": true,
+  "nxConsole.projectViewingStyle": "automatic",
+
+  // ---- cspell (streetsidesoftware.code-spell-checker) ----
+  // "Add to dictionary" → drops the word into .cspell/project-words.txt.
+  // Workspace config is loaded from cspell.json at repo root.
+  "cSpell.customDictionaries": {
+    "project-words": {
+      "name": "project-words",
+      "path": "${workspaceFolder}/.cspell/project-words.txt",
+      "description": "Project-specific words",
+      "addWords": true,
+      "scope": "workspace"
+    }
+  },
+  "cSpell.diagnosticLevel": "Hint",
+  // Object form replaces the deprecated array `cSpell.enableFiletypes`.
+  // Use `"*": true` to enable all, then explicitly disable noisy types.
+  "cSpell.enabledFileTypes": {
+    "typescript": true,
+    "typescriptreact": true,
+    "javascript": true,
+    "javascriptreact": true,
+    "markdown": true,
+    "yaml": true,
+    "json": true,
+    "jsonc": true
+  },
+
+  // ---- Tailwind ----
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+    ["cx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+    ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+  ]
+}

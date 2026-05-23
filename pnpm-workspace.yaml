@@ -2,8 +2,34 @@ packages:
   - "apps/**"
   - "configs/**"
   - "packages/**"
+
+# Lifecycle scripts allow-list. Only these packages may run install hooks.
+# Anything else is silently skipped — protects against malicious postinstall.
 allowBuilds:
   esbuild: true
   msw: true
   nx: true
   sharp: true
+
+# Supply-chain hardening — reject packages published within the last 24h.
+# Slows down zero-day malicious package adoption (npm worm pattern).
+# https://pnpm.io/settings#minimumreleaseage
+minimumReleaseAge: 1440
+
+# Trusted packages exempt from the age gate — pnpm manages this list when
+# you intentionally install a fresh version.
+minimumReleaseAgeExclude:
+  - "@nx/devkit@22.7.3"
+  - "@nx/js@22.7.3"
+  - "@nx/nx-darwin-arm64@22.7.3"
+  - "@nx/nx-darwin-x64@22.7.3"
+  - "@nx/nx-freebsd-x64@22.7.3"
+  - "@nx/nx-linux-arm-gnueabihf@22.7.3"
+  - "@nx/nx-linux-arm64-gnu@22.7.3"
+  - "@nx/nx-linux-arm64-musl@22.7.3"
+  - "@nx/nx-linux-x64-gnu@22.7.3"
+  - "@nx/nx-linux-x64-musl@22.7.3"
+  - "@nx/nx-win32-arm64-msvc@22.7.3"
+  - "@nx/nx-win32-x64-msvc@22.7.3"
+  - "@nx/workspace@22.7.3"
+  - "nx@22.7.3"

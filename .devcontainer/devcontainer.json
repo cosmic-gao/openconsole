@@ -1,0 +1,82 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
+  "name": "openconsole",
+
+  // Base image — official devcontainers TypeScript/Node image. The version
+  // here is the runtime baseline; pnpm + Nx still drive actual Node via
+  // .npmrc use-node-version=24.16.0.
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+
+  "features": {
+    // Corepack-aware pnpm install. The feature respects packageManager
+    // field in package.json (locks pnpm to 11.2.2 on container build).
+    "ghcr.io/devcontainers-extra/features/pnpm:2": {},
+    // GitHub CLI for `gh pr create` / `gh run watch` inside the container.
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Persistent shell history across container rebuilds.
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true
+    }
+  },
+
+  // Runs once after container build. Installs deps using the locked pnpm.
+  "postCreateCommand": "corepack enable && pnpm install --frozen-lockfile",
+
+  // Runs each time the container starts (re-attaches).
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+
+  // Forward common dev-server ports so Codespaces exposes them automatically.
+  "forwardPorts": [3000, 4200, 5173, 8080],
+  "portsAttributes": {
+    "3000": { "label": "Next.js dev", "onAutoForward": "notify" },
+    "4200": { "label": "Nx serve", "onAutoForward": "notify" },
+    "5173": { "label": "Vite dev", "onAutoForward": "notify" },
+    "8080": { "label": "Generic HTTP", "onAutoForward": "silent" }
+  },
+
+  "customizations": {
+    "vscode": {
+      // Reuse the recommended extensions from .vscode/extensions.json —
+      // Codespaces auto-installs them, but listing the critical few here
+      // guarantees they're present even without prompting.
+      "extensions": [
+        "nrwl.angular-console",
+        "esbenp.prettier-vscode",
+        "EditorConfig.EditorConfig",
+        "vitest.explorer",
+        "bradlc.vscode-tailwindcss",
+        "streetsidesoftware.code-spell-checker",
+        "github.vscode-github-actions",
+        "github.vscode-pull-request-github",
+        "yoavbls.pretty-ts-errors",
+        "usernamehw.errorlens",
+        "eamodio.gitlens"
+      ],
+      // Devcontainer-specific overrides on top of .vscode/settings.json.
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.defaultProfile.windows": null,
+        "git.autofetch": true
+      }
+    }
+  },
+
+  // Mount the pnpm store as a named volume so deps persist across container
+  // rebuilds — first install is slow, every subsequent rebuild is fast.
+  "mounts": [
+    "source=openconsole-pnpm-store,target=/home/node/.local/share/pnpm/store,type=volume"
+  ],
+
+  // Run as the non-root user that ships in the base image.
+  "remoteUser": "node",
+  "containerUser": "node",
+
+  // Resource hints for Codespaces. Larger machines do `pnpm install` in
+  // seconds; 4-core / 8 GB is the sweet spot for this monorepo size.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

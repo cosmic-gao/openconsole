@@ -8,7 +8,12 @@ Thumbs.db
 .pnpm-debug.log*
 pnpm-store
 
-.vscode
+# Commit shared workspace settings under .vscode/, ignore user-specific files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea
 *.suo
 *.ntvs*

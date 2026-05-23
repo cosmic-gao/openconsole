@@ -9,6 +9,12 @@ pnpm-lock.yaml
 .output
 .nuxt
 
+# Non-prettier-parseable formats
+.npmrc
+.nvmrc
+.node-version
+.editorconfig
+
 # Skill markdown is hand-formatted — keep prose untouched
 packages/*/skill
 packages/*/skill/**

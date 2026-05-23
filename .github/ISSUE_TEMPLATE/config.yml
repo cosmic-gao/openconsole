@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 提问 / Question
+    url: https://github.com/cosmic-gao/openconsole/discussions
+    about: 使用上的问题、用法咨询 — 请在 Discussions 发起，避免占用 issue。
+  - name: 安全漏洞 / Security vulnerability
+    url: https://github.com/cosmic-gao/openconsole/security/advisories/new
+    about: 安全相关请走 private security advisory，不要开公开 issue。

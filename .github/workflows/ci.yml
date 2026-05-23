@@ -8,36 +8,66 @@ on:
 
 # Cancel in-progress runs of the same workflow on the same ref.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Read-only by default. Individual jobs widen as needed.
+permissions:
+  contents: read
+
+env:
+  # Color output in CI
+  FORCE_COLOR: "1"
+  # Skip pnpm telemetry / update notifier
+  PNPM_HOME: ${{ github.workspace }}/.pnpm
+  NX_REJECT_UNKNOWN_LOCAL_CACHE: "0"
 
 jobs:
   affected:
-    name: Affected typecheck + test
+    name: Affected typecheck + test + lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       actions: read
+      pull-requests: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # `nx affected` needs the full history to compute the diff.
           fetch-depth: 0
 
       - name: Set base / head SHAs for nx affected
-        uses: nrwl/nx-set-shas@v4
+        uses: nrwl/nx-set-shas@v5
 
+      # pnpm reads the `packageManager` field from package.json — no version
+      # arg needed. Sets up Corepack-compatible pnpm.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: pnpm/action-setup@v6
         with:
-          node-version: 22
+          run_install: false
+
+      # Reads `engines.node` from package.json (resolves volta.node →
+      # devEngines.runtime → engines.node). Pairs with the `use-node-version`
+      # pin in .npmrc for local dev.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
           cache: pnpm
+
+      - name: Cache Nx
+        uses: actions/cache@v5
+        with:
+          path: |
+            .nx/cache
+            .nx/workspace-data
+          key: ${{ runner.os }}-nx-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nx-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nx-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -46,7 +76,11 @@ jobs:
         run: pnpm format:check
 
       - name: Affected typecheck
-        run: pnpm nx affected -t typecheck --parallel=4
+        run: pnpm nx affected -t typecheck --parallel=3
 
       - name: Affected tests
-        run: pnpm nx affected -t test --parallel=4
+        run: pnpm nx affected -t test --parallel=3
+
+      - name: Affected lint (non-blocking until ESLint is wired up)
+        run: pnpm nx affected -t lint --parallel=3 || echo "::notice::No lint target configured for affected projects"
+        continue-on-error: true

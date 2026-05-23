@@ -17,6 +17,9 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   release:
     name: Release public packages
@@ -24,16 +27,19 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # push commits, tags, GitHub release
-      id-token: write # for npm provenance (optional)
+      id-token: write # npm provenance (Sigstore OIDC)
+      attestations: write # GitHub-side SLSA build provenance
+      pull-requests: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # PAT or default token — default token can push to protected branches
           # when "Allow specified actors to bypass required pull requests" is on.
           token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
       - name: Configure git identity
         run: |
@@ -41,12 +47,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: package.json
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
@@ -54,12 +62,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Final pre-release check
-        run: pnpm nx run-many -t typecheck test --parallel=4
+        run: pnpm nx run-many -t typecheck test --parallel=3
 
       - name: Release (dry-run)
         if: ${{ inputs.dry-run }}
         env:
-          NPM_CONFIG_PROVENANCE: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
         run: |
           pnpm release \
             --dry-run \
@@ -68,9 +77,22 @@ jobs:
       - name: Release
         if: ${{ !inputs.dry-run }}
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+          NPM_CONFIG_PROVENANCE: "true"
         run: |
           pnpm release \
             --yes \
             ${{ inputs.first-release && '--first-release' || '' }}
+
+      # SLSA L2 build provenance attestation — complements npm provenance with
+      # a GitHub-signed attestation discoverable via the GitHub UI.
+      # https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations
+      - name: Attest build provenance
+        if: ${{ !inputs.dry-run }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            packages/atoms/package.json
+            packages/shadcn/package.json
+            packages/nacos/package.json

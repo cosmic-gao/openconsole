@@ -1,0 +1,62 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Monday 04:17 UTC — staggered to avoid GitHub-wide queue spikes.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+# Allow only one CodeQL run per ref at a time. Push to main wins over older runs.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # upload SARIF to Security tab
+      packages: read # private package registry access during build (no-op for OSS)
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `javascript-typescript` covers both. Splitting them only matters if
+          # you want two separate Security alerts streams.
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # CodeQL needs its own pnpm/Node only when build-mode is `manual` or
+      # `autobuild`. For pure JS/TS in `none` mode it walks the source tree
+      # directly — no install required, which keeps this workflow fast.
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Use the curated `security-extended` query suite — broader than the
+          # default but still tuned for low false-positive rate. Drop to
+          # `security-and-quality` if you want lint-style findings too.
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
