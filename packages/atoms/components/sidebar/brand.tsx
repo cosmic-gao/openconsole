@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsLeft } from "lucide-react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 
 import {
   Button,
@@ -9,10 +9,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@openconsole/shadcn";
+
+import { useLayout } from "../../providers/layout-provider";
+
 import type { Brand as BrandData } from "./types";
 
 export function Brand({ brand }: { brand: BrandData }) {
   const { toggleSidebar } = useSidebar();
+  const { config } = useLayout();
 
   return (
     <SidebarMenu>
@@ -28,15 +32,17 @@ export function Brand({ brand }: { brand: BrandData }) {
             </span>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={toggleSidebar}
-          className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
-        >
-          <ChevronsLeft />
-          <span className="sr-only">Collapse sidebar</span>
-        </Button>
+        {config.collapsible !== "none" && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={toggleSidebar}
+            className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
+          >
+            {config.side === "right" ? <ChevronsRight /> : <ChevronsLeft />}
+            <span className="sr-only">Collapse sidebar</span>
+          </Button>
+        )}
       </SidebarMenuItem>
     </SidebarMenu>
   );

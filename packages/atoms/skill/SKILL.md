@@ -227,10 +227,14 @@ Settings button that opens the `Preferences` drawer.
 
 **Notes**:
 - The sidebar toggle is split across the two components: brand carries
-  the collapse button (`ChevronsLeft`) when expanded; Header auto-renders
-  an expand button (`PanelLeftOpen`) at the leftmost edge when the
-  sidebar is collapsed. Together they cover both `icon` and `offcanvas`
-  modes — no extra trigger needed.
+  the collapse button when expanded; Header auto-renders an expand
+  button at the header edge nearest the sidebar (left edge for
+  `side="left"`, right edge for `side="right"`) when the sidebar is
+  collapsed. Icons mirror the sidebar position — `ChevronsLeft` /
+  `PanelLeftOpen` for left sidebars, `ChevronsRight` / `PanelRightOpen`
+  for right sidebars. Together they cover both `icon` and `offcanvas`
+  modes — no extra trigger needed. Both buttons are suppressed when
+  `collapsible="none"` (sidebar always visible, nothing to toggle).
 - Requires `SidebarProvider` from `@openconsole/shadcn` above it (Header
   reads `useSidebar()`).
 - The `breadcrumbs` slot accepts `ReactNode | false`. `undefined`
@@ -331,10 +335,12 @@ solid `bg-sidebar-primary` square; the active menu item highlights with
 the primitive's built-in `bg-sidebar-accent` — change the theme tokens
 and the whole sidebar follows.
 
-The brand header also carries a `ChevronsLeft` collapse button (hidden
-when the sidebar is collapsed). To re-expand: click the `PanelLeftOpen`
-button auto-rendered at the left edge of `<Header>`, click the
-`SidebarRail` (rendered by default), or press `Ctrl/Cmd+B`.
+The brand header also carries a collapse button (hidden when the
+sidebar is collapsed). The icon flips with `side` —
+`ChevronsLeft` / `ChevronsRight`. To re-expand: click the matching
+`PanelLeftOpen` / `PanelRightOpen` button auto-rendered at the
+corresponding edge of `<Header>`, click the `SidebarRail` (rendered by
+default), or press `Ctrl/Cmd+B`.
 
 ```tsx
 import { Sidebar } from "@openconsole/atoms";

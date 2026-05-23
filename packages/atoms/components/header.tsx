@@ -1,10 +1,12 @@
 "use client";
 
-import { PanelLeftOpen, Settings } from "lucide-react";
+import { PanelLeftOpen, PanelRightOpen, Settings } from "lucide-react";
 import * as React from "react";
 import type { ReactNode } from "react";
 
 import { Button, Separator, cn, useSidebar } from "@openconsole/shadcn";
+
+import { useLayout } from "../providers/layout-provider";
 
 import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
@@ -15,8 +17,9 @@ export interface HeaderProps extends React.ComponentProps<"header"> {
    * Left-side slot. Defaults to `<Breadcrumbs />` (auto-derived from
    * `usePathname()`). Pass a custom `ReactNode` (e.g. a page title) to
    * override, or `false` to hide it entirely. When the sidebar is
-   * collapsed, an expand button is auto-rendered at the leftmost edge
-   * before this slot.
+   * collapsed, an expand button is auto-rendered on whichever side the
+   * sidebar lives (leftmost for `side="left"`, rightmost for
+   * `side="right"`).
    */
   breadcrumbs?: ReactNode | false;
   /**
@@ -61,12 +64,26 @@ export function Header({
 }: HeaderProps) {
   const [preferencesOpen, setPreferencesOpen] = React.useState(false);
   const { state, toggleSidebar } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { config } = useLayout();
+  const { side } = config;
+  const collapsed = config.collapsible !== "none" && state === "collapsed";
 
   const crumbs =
     breadcrumbs === false
       ? null
       : (breadcrumbs ?? <Breadcrumbs {...breadcrumbsProps} />);
+
+  const trigger = collapsed ? (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      onClick={toggleSidebar}
+      className={cn("cursor-pointer", side === "right" ? "-mr-1" : "-ml-1")}
+    >
+      {side === "right" ? <PanelRightOpen /> : <PanelLeftOpen />}
+      <span className="sr-only">Expand sidebar</span>
+    </Button>
+  ) : null;
 
   return (
     <header
@@ -77,17 +94,9 @@ export function Header({
       {...props}
     >
       <div className="flex items-center gap-2 px-4">
-        {collapsed && (
+        {side !== "right" && trigger && (
           <>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={toggleSidebar}
-              className="-ml-1 cursor-pointer"
-            >
-              <PanelLeftOpen />
-              <span className="sr-only">Expand sidebar</span>
-            </Button>
+            {trigger}
             {crumbs && (
               <Separator orientation="vertical" className="mr-2 h-4" />
             )}
@@ -112,6 +121,14 @@ export function Header({
               open={preferencesOpen}
               onOpenChange={setPreferencesOpen}
             />
+          </>
+        )}
+        {side === "right" && trigger && (
+          <>
+            {(actions || !hideDefaultActions) && (
+              <Separator orientation="vertical" className="ml-2 h-4" />
+            )}
+            {trigger}
           </>
         )}
       </div>
