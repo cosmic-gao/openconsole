@@ -20,3 +20,19 @@
       "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   }
 }
+
+/*
+ * shadcn's Sidebar puts the in-flow `sidebar-gap` div on the LEFT of
+ * SidebarInset regardless of `side`, only the fixed-positioned visible
+ * container moves to `right-0`. Result with `side="right"`: 16rem of
+ * empty space on the left + sidebar overlapping content on the right.
+ *
+ * Flip the wrapper's flex direction when any descendant Sidebar is on
+ * the right — DOM order stays the same so `peer-data-*` selectors keep
+ * working, only the visual order swaps.
+ */
+@layer components {
+  [data-slot="sidebar-wrapper"]:has([data-slot="sidebar"][data-side="right"]) {
+    flex-direction: row-reverse;
+  }
+}

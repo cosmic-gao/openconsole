@@ -220,10 +220,13 @@ import { Header } from "@openconsole/atoms";
 <Header hideDefaultActions actions={<MyOwnActions />} />
 ```
 
-Layout: two segments (`left` / `right`) with `justify-between`, a soft
+Layout: two segments (`nav` / `tools`) with `justify-between`, a soft
 `bg-background/60 backdrop-blur-md` backdrop, and a compact `md:h-14`
-desktop height. Built-in right-side actions are `<ThemeSwitch />` plus a
-Settings button that opens the `Preferences` drawer.
+desktop height. The `nav` segment (breadcrumbs + expand trigger when
+collapsed) sits on the sidebar side; `tools` (caller `actions` plus the
+built-in `<ThemeSwitch />` and Settings button that opens `Preferences`)
+sits on the opposite side. When `LayoutProvider`'s `side` is `"right"`,
+both segments swap automatically alongside the sidebar itself.
 
 **Notes**:
 - The sidebar toggle is split across the two components: brand carries
