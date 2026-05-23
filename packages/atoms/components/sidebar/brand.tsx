@@ -7,6 +7,9 @@ import {
   Icon,
   SidebarMenu,
   SidebarMenuItem,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   useSidebar,
 } from "@openconsole/shadcn";
 
@@ -33,15 +36,21 @@ export function Brand({ brand }: { brand: BrandData }) {
           )}
         </div>
         {config.collapsible !== "none" && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleSidebar}
-            className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
-          >
-            {config.side === "right" ? <ChevronsRight /> : <ChevronsLeft />}
-            <span className="sr-only">Collapse sidebar</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={toggleSidebar}
+                aria-keyshortcuts="Control+B Meta+B"
+                className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
+              >
+                {config.side === "right" ? <ChevronsRight /> : <ChevronsLeft />}
+                <span className="sr-only">Collapse sidebar</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
+          </Tooltip>
         )}
       </SidebarMenuItem>
     </SidebarMenu>

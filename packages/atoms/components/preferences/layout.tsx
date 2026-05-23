@@ -47,20 +47,23 @@ function OptionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "relative p-4 border rounded-md cursor-pointer transition-colors",
+        "relative w-full p-4 border rounded-md cursor-pointer transition-colors text-left",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "border-primary bg-primary/10"
           : "border-border hover:border-border/60",
       )}
-      onClick={onClick}
     >
       <div className="space-y-2">
         <div className="text-xs font-semibold text-center">{label}</div>
         {children}
       </div>
-    </div>
+    </button>
   );
 }
 

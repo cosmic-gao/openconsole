@@ -173,20 +173,23 @@ export function Palette({
         <Label className="text-sm font-medium">Radius</Label>
         <div className="grid grid-cols-5 gap-2">
           {radiusOptions.map((option) => (
-            <div
+            <button
               key={option.value}
+              type="button"
+              onClick={() => onRadius(option.value)}
+              aria-pressed={radius === option.value}
               className={cn(
-                "relative cursor-pointer rounded-md p-3 border transition-colors",
+                "relative w-full cursor-pointer rounded-md p-3 border transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 radius === option.value
                   ? "border-primary"
                   : "border-border hover:border-border/60",
               )}
-              onClick={() => onRadius(option.value)}
             >
               <div className="text-center text-xs font-medium">
                 {option.name}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

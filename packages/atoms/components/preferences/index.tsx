@@ -20,6 +20,9 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@openconsole/shadcn";
 
 import { useLayout } from "../../providers/layout-provider";
@@ -67,9 +70,10 @@ const INITIAL_STATE: State = {
   radius: DEFAULT_RADIUS,
 };
 
+// Mirrors `LayoutProvider`'s `DEFAULT_CONFIG`. Keep in sync.
 const DEFAULT_SIDEBAR = {
   variant: "inset",
-  collapsible: "offcanvas",
+  collapsible: "icon",
   side: "left",
 } as const;
 
@@ -189,22 +193,34 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
                 Preferences
               </SheetTitle>
               <div className="ml-auto flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={reset}
-                  className="size-8 cursor-pointer"
-                >
-                  <RotateCcw className="size-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => onOpenChange(false)}
-                  className="size-8 cursor-pointer"
-                >
-                  <X className="size-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={reset}
+                      className="size-8 cursor-pointer"
+                    >
+                      <RotateCcw className="size-4" />
+                      <span className="sr-only">Reset preferences</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Reset</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => onOpenChange(false)}
+                      className="size-8 cursor-pointer"
+                    >
+                      <X className="size-4" />
+                      <span className="sr-only">Close preferences</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Close</TooltipContent>
+                </Tooltip>
               </div>
             </div>
             <SheetDescription className="sr-only">

@@ -4,7 +4,15 @@ import { PanelLeftOpen, PanelRightOpen, Settings } from "lucide-react";
 import * as React from "react";
 import type { ReactNode } from "react";
 
-import { Button, Separator, cn, useSidebar } from "@openconsole/shadcn";
+import {
+  Button,
+  Separator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  cn,
+  useSidebar,
+} from "@openconsole/shadcn";
 
 import { useLayout } from "../providers/layout-provider";
 
@@ -75,15 +83,21 @@ export function Header({
       : (breadcrumbs ?? <Breadcrumbs {...breadcrumbsProps} />);
 
   const trigger = collapsed ? (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      onClick={toggleSidebar}
-      className={cn("cursor-pointer", side === "right" ? "-mr-1" : "-ml-1")}
-    >
-      {side === "right" ? <PanelRightOpen /> : <PanelLeftOpen />}
-      <span className="sr-only">Expand sidebar</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={toggleSidebar}
+          aria-keyshortcuts="Control+B Meta+B"
+          className={cn("cursor-pointer", side === "right" ? "-mr-1" : "-ml-1")}
+        >
+          {side === "right" ? <PanelRightOpen /> : <PanelLeftOpen />}
+          <span className="sr-only">Expand sidebar</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Expand sidebar</TooltipContent>
+    </Tooltip>
   ) : null;
 
   // The nav segment (crumbs + trigger) lives on the sidebar side; the
@@ -113,14 +127,21 @@ export function Header({
       {!hideDefaultActions && (
         <>
           <ThemeSwitch />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setPreferencesOpen(true)}
-          >
-            <Settings />
-            <span className="sr-only">Open preferences</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setPreferencesOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={preferencesOpen}
+              >
+                <Settings />
+                <span className="sr-only">Open preferences</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Preferences</TooltipContent>
+          </Tooltip>
           <Preferences
             open={preferencesOpen}
             onOpenChange={setPreferencesOpen}
