@@ -1,11 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": [
-    "@openconsole/tsconfig/lib",
-    "@openconsole/tsconfig/esm"
-  ],
-  "include": [
-    "index.ts",
-    "index.test.ts"
-  ]
+  "extends": ["@openconsole/tsconfig/lib", "@openconsole/tsconfig/esm"],
+  "include": ["index.ts", "index.test.ts"]
 }
