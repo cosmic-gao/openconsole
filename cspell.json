@@ -1,34 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/packages/cspell-types/cspell.schema.json",
   "version": "0.2",
-  "language": "en",
-  "allowCompoundWords": true,
-  "caseSensitive": false,
-  // Speed up repeat runs in CI/large repos. "metadata" hashes only mtime+size
-  // (skip content read). "content" is safer but slower.
-  "cacheStrategy": "metadata",
-
-  // Bundled dictionaries we want active across the repo. Each one ships with
-  // the VS Code extension; no install needed.
-  "dictionaries": [
-    "typescript",
-    "node",
-    "npm",
-    "html",
-    "css",
-    "softwareTerms",
-    "companies",
-    "filetypes",
-    "fonts",
-    "misc",
-    "bash",
-    "powershell",
-    "fullstack",
-    "lorem-ipsum"
-  ],
-
-  // Project-specific words live in a separate file so contributors can append
-  // to it with a single editor "Add to workspace dictionary" action.
+  "useGitignore": true,
   "dictionaryDefinitions": [
     {
       "name": "project-words",
@@ -36,59 +9,17 @@
       "addWords": true
     }
   ],
-
-  // Skip paths where false positives are noisy and review value is low.
+  "dictionaries": ["project-words"],
   "ignorePaths": [
-    "node_modules/**",
-    "**/node_modules/**",
-    "dist/**",
-    "build/**",
-    "coverage/**",
     ".nx/**",
-    ".next/**",
-    ".output/**",
     ".husky/_/**",
-    "pnpm-lock.yaml",
-    "package-lock.json",
-    "yarn.lock",
-    "bun.lockb",
     "*.tsbuildinfo",
-    "**/*.svg",
-    "**/*.png",
-    "**/*.jpg",
-    "**/*.jpeg",
-    "**/*.gif",
-    "**/*.ico",
-    "**/*.woff",
-    "**/*.woff2",
     "CHANGELOG.md",
-    "packages/*/CHANGELOG.md",
-    "configs/**"
+    "packages/*/CHANGELOG.md"
   ],
-
-  // CJK ranges — cspell skips non-Latin glyphs by default, but listing them
-  // here silences "unknown word" noise on Chinese docs (CONTRIBUTING.md / NX.md).
   "ignoreRegExpList": [
     "/[\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef]+/g",
     "/`[^`]+`/g",
-    "/https?:\\/\\/[^\\s)]+/g",
-    "/\\b[0-9a-fA-F]{7,40}\\b/g",
-    "/\\b[A-Z][A-Z0-9_]{2,}\\b/g"
-  ],
-
-  // Strict word list (always lowercase entries via `addWords`). Anything
-  // genuinely industry-wide goes in project-words.txt; reserve this for
-  // domain-specific spellings we never want to allow elsewhere (rare).
-  "words": [],
-
-  // Words explicitly ignored everywhere — won't be suggested but also
-  // never flagged. Use sparingly; prefer adding to project-words.txt.
-  "ignoreWords": [],
-
-  // Disable spell-checking these workspace globs entirely (e.g. CHANGELOG
-  // sections come from generated changelog renderers).
-  "useGitignore": true,
-
-  // `minWordLength: 4` is the cspell-10 default — omitted.
-  "maxNumberOfProblems": 200
+    "/https?:\\/\\/\\S+/g"
+  ]
 }

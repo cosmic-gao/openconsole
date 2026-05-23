@@ -1,13 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/prettierrc.json",
-  "semi": true,
-  "trailingComma": "all",
-  "singleQuote": false,
-  "printWidth": 80,
-  "tabWidth": 2,
-  "arrowParens": "always",
-  "endOfLine": "lf",
-  "experimentalOperatorPosition": "start",
   "plugins": [
     "@ianvs/prettier-plugin-sort-imports",
     "prettier-plugin-tailwindcss"
@@ -20,15 +12,5 @@
     "",
     "^[./]"
   ],
-  "importOrderParserPlugins": ["typescript", "jsx", "decorators-legacy"],
-  "importOrderTypeScriptVersion": "5.0.0",
-  "importOrderCaseSensitive": false,
-  "tailwindFunctions": ["cn", "cva", "cx", "clsx", "tw"],
-  "tailwindAttributes": ["className", "tw"],
-  "overrides": [
-    {
-      "files": ["*.md", "*.mdx"],
-      "options": { "proseWrap": "preserve", "printWidth": 80 }
-    }
-  ]
+  "tailwindFunctions": ["cn", "cva", "cx", "clsx", "tw"]
 }

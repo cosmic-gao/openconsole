@@ -1,73 +1,22 @@
 version: 2
 
 updates:
-  # GitHub Actions
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "08:00"
-      timezone: Asia/Shanghai
     commit-message:
       prefix: "ci"
-      include: scope
-    labels:
-      - dependencies
-      - github-actions
-    groups:
-      actions:
-        patterns:
-          - "*"
 
-  # pnpm workspace root
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "08:00"
-      timezone: Asia/Shanghai
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore"
-      prefix-development: "chore"
-      include: scope
-    labels:
-      - dependencies
-    versioning-strategy: increase
     groups:
       nx:
-        patterns:
-          - "nx"
-          - "@nx/*"
-          - "@nrwl/*"
-      typescript:
-        patterns:
-          - "typescript"
-          - "@types/*"
-      lint-and-format:
-        patterns:
-          - "prettier"
-          - "eslint*"
-          - "@commitlint/*"
-          - "lint-staged"
-          - "husky"
-      test:
-        patterns:
-          - "vitest"
-          - "@vitest/*"
-      react:
-        patterns:
-          - "react"
-          - "react-dom"
-          - "@types/react"
-          - "@types/react-dom"
-    ignore:
-      # Major bumps for major frameworks are reviewed manually
-      - dependency-name: "react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "next"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "tailwindcss"
-        update-types: ["version-update:semver-major"]
+        patterns: ["nx", "@nx/*"]
+      types:
+        patterns: ["@types/*"]

@@ -109,12 +109,6 @@ pnpm install              # 装依赖 + 触发 Husky + pnpm 切到 24.16.0
 装完之后 `git commit` 就会自动经过下面 [第 6 节](#6-git-钩子做了什么)
 的钩子检查。
 
-### 一键开发环境(可选)
-
-仓库内置 [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json),
-GitHub Codespaces / VS Code Dev Containers 可一键拉起完整环境(Node 22
-镜像 + pnpm 11 + 推荐扩展)。无需本地安装任何依赖。
-
 ---
 
 ## 3. 分支策略
@@ -282,6 +276,9 @@ git push -u origin feat/atoms-new-component
   省一轮 CI;`--exclude-task-dependencies` 避免被 `^typecheck`
   拉起整张依赖图
 - **不重复**:测试不跑钩子(太慢),CI 里跑
+- **跨平台**:钩子里所有命令统一加 `pnpm exec` 前缀。Husky 9.1+
+  虽然声称会自动注入 `node_modules/.bin` 到 PATH,但在 Git for
+  Windows 的非交互 sh.exe 下不可靠——`pnpm exec` 是最稳的写法
 
 ### Prettier 插件链
 

@@ -5,19 +5,10 @@
     "EditorConfig.EditorConfig",
     "vitest.explorer",
     "bradlc.vscode-tailwindcss",
-    "streetsidesoftware.code-spell-checker",
-    "github.vscode-github-actions",
-    "github.vscode-pull-request-github",
-    "redhat.vscode-yaml",
-    "tamasfe.even-better-toml",
-    "yoavbls.pretty-ts-errors",
-    "usernamehw.errorlens"
+    "streetsidesoftware.code-spell-checker"
   ],
   "unwantedRecommendations": [
     "ms-vscode.vscode-typescript-tslint-plugin",
-    "hookyqr.beautify",
-    "pflannery.vscode-versionlens",
-    "wix.vscode-import-cost",
-    "ms-vscode.vscode-typescript-next"
+    "hookyqr.beautify"
   ]
 }

@@ -1,19 +1,13 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "main",
-  "parallel": 3,
   "namedInputs": {
     "sharedGlobals": [
-      {
-        "runtime": "node --version"
-      },
+      { "runtime": "node --version" },
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/pnpm-workspace.yaml",
       "{workspaceRoot}/.npmrc",
-      "{workspaceRoot}/configs/tsconfig/**/*",
-      "{workspaceRoot}/.prettierrc.json",
-      "{workspaceRoot}/.prettierignore",
-      "{workspaceRoot}/.editorconfig"
+      "{workspaceRoot}/configs/tsconfig/**/*"
     ],
     "default": ["{projectRoot}/**/*", "sharedGlobals"],
     "production": [
@@ -21,8 +15,7 @@
       "!{projectRoot}/**/*.{spec,test}.{ts,tsx}",
       "!{projectRoot}/tests/**/*",
       "!{projectRoot}/vitest.config.{ts,js,mjs}",
-      "!{projectRoot}/tsconfig.tsbuildinfo",
-      "!{projectRoot}/**/*.md"
+      "!{projectRoot}/tsconfig.tsbuildinfo"
     ]
   },
   "targetDefaults": {
@@ -38,17 +31,6 @@
       "outputs": ["{workspaceRoot}/coverage/{projectName}"],
       "dependsOn": ["^typecheck"]
     },
-    "test:coverage": {
-      "cache": true,
-      "inputs": ["default", "^production"],
-      "outputs": ["{workspaceRoot}/coverage/{projectName}"],
-      "dependsOn": ["^typecheck"]
-    },
-    "check": {
-      "cache": true,
-      "inputs": ["default", "^production"],
-      "dependsOn": ["^typecheck"]
-    },
     "build": {
       "cache": true,
       "inputs": ["production", "^production"],
@@ -57,11 +39,7 @@
     },
     "lint": {
       "cache": true,
-      "inputs": [
-        "default",
-        "^production",
-        "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"
-      ]
+      "inputs": ["default", "{workspaceRoot}/eslint.config.{js,cjs,mjs,ts}"]
     }
   },
   "release": {
@@ -76,81 +54,12 @@
     },
     "version": {
       "conventionalCommits": true,
-      "preVersionCommand": "pnpm nx run-many -t typecheck test --parallel=3"
+      "preVersionCommand": "pnpm nx run-many -t typecheck test"
     },
     "changelog": {
       "workspaceChangelog": false,
       "projectChangelogs": {
-        "createRelease": "github",
-        "renderOptions": {
-          "authors": true,
-          "commitReferences": true,
-          "versionTitleDate": true
-        }
-      }
-    },
-    "conventionalCommits": {
-      "types": {
-        "feat": {
-          "semverBump": "minor",
-          "changelog": {
-            "title": "Features"
-          }
-        },
-        "fix": {
-          "semverBump": "patch",
-          "changelog": {
-            "title": "Bug Fixes"
-          }
-        },
-        "perf": {
-          "semverBump": "patch",
-          "changelog": {
-            "title": "Performance"
-          }
-        },
-        "refactor": {
-          "semverBump": "none",
-          "changelog": {
-            "title": "Refactors"
-          }
-        },
-        "docs": {
-          "semverBump": "none",
-          "changelog": {
-            "title": "Documentation"
-          }
-        },
-        "build": {
-          "semverBump": "none",
-          "changelog": {
-            "title": "Build"
-          }
-        },
-        "ci": {
-          "semverBump": "none",
-          "changelog": {
-            "hidden": true
-          }
-        },
-        "chore": {
-          "semverBump": "none",
-          "changelog": {
-            "hidden": true
-          }
-        },
-        "test": {
-          "semverBump": "none",
-          "changelog": {
-            "hidden": true
-          }
-        },
-        "style": {
-          "semverBump": "none",
-          "changelog": {
-            "hidden": true
-          }
-        }
+        "createRelease": "github"
       }
     },
     "git": {
@@ -159,10 +68,5 @@
       "tag": true,
       "push": true
     }
-  },
-  "tui": {
-    "enabled": true,
-    "autoExit": true
-  },
-  "analytics": true
+  }
 }
