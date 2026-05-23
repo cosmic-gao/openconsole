@@ -3,8 +3,7 @@
     "esbenp.prettier-vscode",
     "EditorConfig.EditorConfig",
     "vitest.explorer",
-    "bradlc.vscode-tailwindcss",
-    "streetsidesoftware.code-spell-checker"
+    "bradlc.vscode-tailwindcss"
   ],
   "unwantedRecommendations": [
     "ms-vscode.vscode-typescript-tslint-plugin",
