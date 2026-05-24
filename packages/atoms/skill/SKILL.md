@@ -107,6 +107,7 @@ Dialog, Card, etc.), reach for shadcn directly.
 | "Sticky header / dashboard header / top bar with breadcrumbs" | `Header` | `<Header />` auto-renders `<Breadcrumbs />`; pass `actions` for right-side controls |
 | "Breadcrumb navigation / auto crumbs from URL" | `Breadcrumbs` (or `useBreadcrumbs` for headless) | `<Breadcrumbs />` for default UI; `useBreadcrumbs({ labels })` for custom rendering |
 | "Color input / palette field" | `ColorPicker` | Bind to a `cssVar`, write the value back via `document.documentElement.style.setProperty` in the callback |
+| "Error page / 404 / 500 / access denied / maintenance" | `Unauthorized` / `Forbidden` / `NotFound` / `ServerError` / `Maintenance` | Drop into Next.js `not-found.tsx` / `error.tsx`; override `actions` for context-specific buttons (e.g. `reset` callback) |
 | "Font switching (business writes its own button)" | `useFont()` hook + your own toggle | `FontProvider` must wrap the call site |
 | "Layout variant switching (floating / inset, left/right, collapsible mode)" | `useLayout()` hook | `LayoutProvider` must wrap the call site; manipulates `config.variant` / `collapsible` / `side` |
 
@@ -443,6 +444,42 @@ Accepts hex / oklch / hsl / rgb / named colors. The round swatch opens
 the native `<input type="color">` — any non-hex value is normalized via
 a hidden canvas before being shown there. The user's original string is
 preserved in `value`.
+
+### `Unauthorized` / `Forbidden` / `NotFound` / `ServerError` / `Maintenance`
+
+Five drop-in error pages covering the common HTTP statuses (401 / 403 /
+404 / 500 / 503). Each renders a centered layout — icon, status code,
+title, description, action row — pre-wired with sensible defaults plus
+"Go back" + "Go home" buttons.
+
+```tsx
+// app/not-found.tsx (Next.js app router)
+import { NotFound } from "@openconsole/atoms";
+
+export default function NotFoundPage() {
+  return <NotFound />;
+}
+```
+
+```tsx
+// app/error.tsx
+"use client";
+import { ServerError } from "@openconsole/atoms";
+
+export default function ErrorPage({ reset }: { reset: () => void }) {
+  return (
+    <ServerError
+      description="An unexpected error occurred. Try refreshing the page."
+      actions={<Button onClick={reset}>Try again</Button>}
+    />
+  );
+}
+```
+
+Every default — `status` / `title` / `description` / `icon` / `actions`
+/ `className` — is overridable through props (typed as `ErrorPageProps`).
+Pass `className` to embed inside a smaller container (the default
+wrapper uses `min-h-svh`).
 
 ---
 
