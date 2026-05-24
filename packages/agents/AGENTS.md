@@ -102,17 +102,18 @@ features/<domain>/api/
 └── index.ts      # barrel
 ```
 
-详细规范见 [`packages/agents/tanstack-query/SKILL.md`](./tanstack-query/SKILL.md)。
+详细规范见 `skill:tanstack-query`。
 
 ---
 
-## Skill 索引
+## Skill 引用
 
-| 场景                | Skill                   | 路径                               |
-| ------------------- | ----------------------- | ---------------------------------- |
-| 登录/鉴权/会话      | `nextjs-auth-callback`  | `./nextjs-auth-callback/SKILL.md`  |
-| Next.js 代码规范    | `nextjs-best-practices` | `./nextjs-best-practices/SKILL.md` |
-| TanStack Query 规范 | `tanstack-query`        | `./tanstack-query/SKILL.md`        |
+| 场景 | Skill |
+| --- | --- |
+| 登录/鉴权/会话 | `skill:nextjs-auth-callback` |
+| Next.js 代码规范 | `skill:nextjs-best-practices` |
+| TanStack Query 规范 | `skill:tanstack-query` |
+| UI 组件规范 | `skill:shadcn` |
 
 ---
 
@@ -141,21 +142,22 @@ pnpm format     # Prettier
 
 1. 进入项目首先阅读本文档
 2. 严格遵循上述目录结构
-3. 登录/鉴权 → 调用 `nextjs-auth-callback` skill
-4. 代码规范 → 调用 `nextjs-best-practices` skill
-5. 客户端数据获取 → 调用 `tanstack-query` skill
-6. 只有 `date-fns` 是可选依赖，其他都是必选
-7. 传给 client 组件的 props 必须 JSON-serializable
-8. 图片使用 `next/image`；外部域名添加到 `next.config.ts`
-9. 仅使用 `lucide-react` 作为图标
-10. **禁止**：SWR、`getServerSession()`、手动拼接 `Bearer` header
+3. 登录/鉴权 → 调用 `skill:nextjs-auth-callback`
+4. 代码规范 → 调用 `skill:nextjs-best-practices`
+5. 客户端数据获取 → 调用 `skill:tanstack-query`
+6. UI 组件 → 调用 `skill:shadcn`
+7. 只有 `date-fns` 是可选依赖，其他都是必选
+8. 传给 client 组件的 props 必须 JSON-serializable
+9. 图片使用 `next/image`；外部域名添加到 `next.config.ts`
+10. 仅使用 `lucide-react` 作为图标
+11. **禁止**：SWR、`getServerSession()`、手动拼接 `Bearer` header
+12. **禁止**使用其他 UI 库，只使用 `@openconsole/shadcn` + `@openconsole/atoms`
 
 ---
 
 ## 外部参考
 
 - [Next.js App Router](https://nextjs.org/docs/app)
-- [shadcn/ui](https://ui.shadcn.com/docs)
 - [Tailwind CSS v4](https://tailwindcss.com/docs)
 - [TanStack Query v5](https://tanstack.com/query/latest)
 - [ofetch](https://github.com/unjs/ofetch)

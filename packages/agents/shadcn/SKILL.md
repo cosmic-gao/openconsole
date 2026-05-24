@@ -1,242 +1,269 @@
 ---
 name: shadcn
-description: Manages shadcn components and projects — adding, searching, fixing, debugging, styling, and composing UI. Provides project context, component docs, and usage examples. Applies when working with shadcn/ui, component registries, presets, --preset codes, or any project with a components.json file. Also triggers for "shadcn init", "create an app with --preset", or "switch to --preset".
-user-invocable: false
-allowed-tools: Bash(npx shadcn@latest *), Bash(pnpm dlx shadcn@latest *), Bash(bunx --bun shadcn@latest *)
+description: >
+  @openconsole/shadcn + @openconsole/atoms 使用规范。基础 UI 组件（primitives）来自
+  @openconsole/shadcn（Button, Card, Dialog, Sidebar 等），高阶组件来自 @openconsole/atoms
+  （ThemeSwitch, Preferences, Sidebar, Header, Breadcrumbs 等）。触发场景：使用 UI 组件、表单布局、
+  主题适配、布局组合。
 ---
 
-# shadcn/ui
+# UI 组件规范
 
-A framework for building ui, components and design systems. Components are added as source code to the user's project via the CLI.
+本项目使用双包架构：
 
-> **IMPORTANT:** Run all CLI commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest` — based on the project's `packageManager`. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
+| 包                    | 职责                       | 导入                                           |
+| --------------------- | -------------------------- | ---------------------------------------------- |
+| `@openconsole/shadcn` | 基础 UI 组件（primitives） | `import { Button } from '@openconsole/shadcn'` |
+| `@openconsole/atoms`  | 高阶业务组件               | `import { Header } from '@openconsole/atoms'`  |
 
-## Current Project Context
+---
 
-```json
-!`npx shadcn@latest info --json`
+## 组件选择原则
+
+1. **优先使用 atoms 高阶组件**：Settings drawer → `Preferences`；带 logo 的侧边栏 → `Sidebar`；主题切换按钮 → `ThemeSwitch`。
+2. **基础组件用于原子化需求**：shadcn 组件用于构建业务组件，不直接暴露给页面。
+3. **禁止混用其他 UI 库**：只使用 `@openconsole/shadcn` + `@openconsole/atoms`，禁止引入其他 UI 库。
+
+---
+
+## 目录结构
+
+```
+features/<domain>/
+├── components/     # 业务 UI 组件（组合 shadcn + atoms）
+├── api/           # TanStack Query API 层
+├── hooks/         # 自定义 hooks
+└── schemas.ts    # Zod schemas
+
+app/
+├── layout.tsx     # Root layout（Providers 组合）
+└── page.tsx       # 页面
 ```
 
-The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
+---
 
-## Principles
+## Providers 组合
 
-1. **Use existing components first.** Use `npx shadcn@latest search` to check registries before writing custom UI. Check community registries too.
-2. **Compose, don't reinvent.** Settings page = Tabs + Card + form controls. Dashboard = Sidebar + Card + Chart + Table.
-3. **Use built-in variants before custom styles.** `variant="outline"`, `size="sm"`, etc.
-4. **Use semantic colors.** `bg-primary`, `text-muted-foreground` — never raw values like `bg-blue-500`.
+### 1. 字体配置（app/fonts.ts）
+
+```ts
+// app/fonts.ts
+import { Inter, Manrope } from "next/font/google";
+
+export const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
+```
+
+### 2. 根 Layout（app/layout.tsx）
+
+根 Layout 只放 `ThemeProvider` + `FontProvider`。
+
+```tsx
+// app/layout.tsx
+import "./globals.css";
+import { inter, manrope } from "./fonts";
+import { ThemeProvider, FontProvider } from "@openconsole/atoms";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className="font-inter" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var font = localStorage.getItem('openconsole-font')
+                  if (font && ['inter', 'manrope', 'system'].includes(font)) {
+                    document.documentElement.classList.remove('font-inter')
+                    document.documentElement.classList.add('font-' + font)
+                  }
+                } catch (e) {}
+              })()
+            `,
+          }}
+        />
+      </head>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${manrope.variable} antialiased`}>
+        <NuqsAdapter>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <FontProvider>
+              <NextToploader color="var(--primary)" showSpinner={false} />
+              {children}
+              <Toaster />
+            </FontProvider>
+          </ThemeProvider>
+        </NuqsAdapter>
+      </body>
+    </html>
+  );
+}
+```
+
+### 3. 业务 Layout（如 app/dashboard/layout.tsx）
+
+业务 Layout 放 `LayoutProvider` + `SidebarProvider` + `Sidebar` + `Header`。
+
+```tsx
+// app/dashboard/layout.tsx
+import { Header, LayoutProvider, Sidebar } from "@openconsole/atoms";
+import { SidebarInset, SidebarProvider } from "@openconsole/shadcn";
+import { Suspense } from "react";
+import { siderConfig } from "@/config/sidebar";
+import { auth } from "@/lib/auth/session";
+
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  const account = session ? { name: session.user?.name ?? "User", email: session.user?.email ?? "", avatar: "" } : { name: "Guest", email: "guest@example.com", avatar: "" };
+
+  return (
+    <LayoutProvider>
+      <SidebarProvider>
+        <Sidebar brand={siderConfig.brand} menu={siderConfig.menu} account={account} />
+        <SidebarInset>
+          <Suspense>
+            <Header />
+          </Suspense>
+          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">{children}</div>
+        </SidebarInset>
+      </SidebarProvider>
+    </LayoutProvider>
+  );
+}
+```
+
+**关键点**：
+
+- `<html>` 需要 `className="font-inter"` 和 `suppressHydrationWarning`
+- 内联脚本防止字体闪烁
+- `ThemeProvider` → `FontProvider` 在根 Layout
+- `LayoutProvider` → `SidebarProvider` → `Sidebar` + `Header` 在业务 Layout
+
+---
+
+## atoms 高阶组件
+
+详见 [atoms-usage.md](./rules/atoms-usage.md)。
+
+---
 
 ## Critical Rules
 
-These rules are **always enforced**. Each links to a file with Incorrect/Correct code pairs.
+这些规则**强制执行**。
 
-### Styling & Tailwind → [styling.md](./rules/styling.md)
+### 样式与 Tailwind → [styling.md](./rules/styling.md)
 
-- **`className` for layout, not styling.** Never override component colors or typography.
-- **No `space-x-*` or `space-y-*`.** Use `flex` with `gap-*`. For vertical stacks, `flex flex-col gap-*`.
-- **Use `size-*` when width and height are equal.** `size-10` not `w-10 h-10`.
-- **Use `truncate` shorthand.** Not `overflow-hidden text-ellipsis whitespace-nowrap`.
-- **No manual `dark:` color overrides.** Use semantic tokens (`bg-background`, `text-muted-foreground`).
-- **Use `cn()` for conditional classes.** Don't write manual template literal ternaries.
-- **No manual `z-index` on overlay components.** Dialog, Sheet, Popover, etc. handle their own stacking.
+- **`className` 用于布局，不用于样式**：不要覆盖组件颜色或字体。
+- **禁止 `space-x-*` / `space-y-*`**：使用 `flex gap-*` 代替。
+- **等宽高用 `size-*`**：`size-10` 而不是 `w-10 h-10`。
+- **使用 `truncate` 简写**：不是 `overflow-hidden text-ellipsis whitespace-nowrap`。
+- **禁止手动 `dark:` 颜色覆盖**：使用语义 token（`bg-background`、`text-muted-foreground`）。
+- **条件类用 `cn()`**：不要写手动模板字符串三元表达式。
+- **覆盖组件禁止手动 `z-index`**：Dialog、Sheet、Popover 等自行处理层叠。
 
-### Forms & Inputs → [forms.md](./rules/forms.md)
+### 表单与输入 → [forms.md](./rules/forms.md)
 
-- **Forms use `FieldGroup` + `Field`.** Never use raw `div` with `space-y-*` or `grid gap-*` for form layout.
-- **`InputGroup` uses `InputGroupInput`/`InputGroupTextarea`.** Never raw `Input`/`Textarea` inside `InputGroup`.
-- **Buttons inside inputs use `InputGroup` + `InputGroupAddon`.**
-- **Option sets (2–7 choices) use `ToggleGroup`.** Don't loop `Button` with manual active state.
-- **`FieldSet` + `FieldLegend` for grouping related checkboxes/radios.** Don't use a `div` with a heading.
-- **Field validation uses `data-invalid` + `aria-invalid`.** `data-invalid` on `Field`, `aria-invalid` on the control. For disabled: `data-disabled` on `Field`, `disabled` on the control.
+- **表单使用 `FieldGroup` + `Field`**：不要用原始 `div` + `space-y-*` 做表单布局。
+- **`InputGroup` 使用 `InputGroupInput` / `InputGroupTextarea`**：不要在 `InputGroup` 内直接用 `Input` / `Textarea`。
+- **输入框内的按钮使用 `InputGroup` + `InputGroupAddon`**。
+- **2-7 个选项用 `ToggleGroup`**：不要手动循环 `Button`。
+- **相关复选框 / 单选分组用 `FieldSet` + `FieldLegend`**。
+- **字段验证使用 `data-invalid` + `aria-invalid`**：`data-invalid` 在 `Field` 上，`aria-invalid` 在控件上。
 
-### Component Structure → [composition.md](./rules/composition.md)
+### 组件结构 → [composition.md](./rules/composition.md)
 
-- **Items always inside their Group.** `SelectItem` → `SelectGroup`. `DropdownMenuItem` → `DropdownMenuGroup`. `CommandItem` → `CommandGroup`.
-- **Use `asChild` (radix) or `render` (base) for custom triggers.** Check `base` field from `npx shadcn@latest info`. → [base-vs-radix.md](./rules/base-vs-radix.md)
-- **Dialog, Sheet, and Drawer always need a Title.** `DialogTitle`, `SheetTitle`, `DrawerTitle` required for accessibility. Use `className="sr-only"` if visually hidden.
-- **Use full Card composition.** `CardHeader`/`CardTitle`/`CardDescription`/`CardContent`/`CardFooter`. Don't dump everything in `CardContent`.
-- **Button has no `isPending`/`isLoading`.** Compose with `Spinner` + `data-icon` + `disabled`.
-- **`TabsTrigger` must be inside `TabsList`.** Never render triggers directly in `Tabs`.
-- **`Avatar` always needs `AvatarFallback`.** For when the image fails to load.
+- **项必须在 Group 内**：`SelectItem` → `SelectGroup`、`DropdownMenuItem` → `DropdownMenuGroup`。
+- **Dialog、Sheet、Drawer 必须有 Title**：`DialogTitle`、`SheetTitle`、`DrawerTitle` 是可访问性必需。
+- **使用完整 Card 组合**：`CardHeader` / `CardTitle` / `CardDescription` / `CardContent` / `CardFooter`。
+- **Button 没有 `isPending` / `isLoading` 属性**：组合 `Spinner` + `data-icon` + `disabled`。
+- **`TabsTrigger` 必须在 `TabsList` 内**。
+- **`Avatar` 必须有 `AvatarFallback`**。
 
-### Use Components, Not Custom Markup → [composition.md](./rules/composition.md)
+### 使用组件而非自定义标记 → [composition.md](./rules/composition.md)
 
-- **Use existing components before custom markup.** Check if a component exists before writing a styled `div`.
-- **Callouts use `Alert`.** Don't build custom styled divs.
-- **Empty states use `Empty`.** Don't build custom empty state markup.
-- **Toast via `sonner`.** Use `toast()` from `sonner`.
-- **Use `Separator`** instead of `<hr>` or `<div className="border-t">`.
-- **Use `Skeleton`** for loading placeholders. No custom `animate-pulse` divs.
-- **Use `Badge`** instead of custom styled spans.
+- **使用现有组件**：Callout 用 `Alert`；空状态用 `Empty`；Toast 用 `sonner`。
+- **`Separator`** 代替 `<hr>` 或 `<div className="border-t">`。
+- **`Skeleton`** 代替自定义 `animate-pulse` div。
+- **`Badge`** 代替自定义样式 span。
 
-### Icons → [icons.md](./rules/icons.md)
+### 图标 → [icons.md](./rules/icons.md)
 
-- **Icons in `Button` use `data-icon`.** `data-icon="inline-start"` or `data-icon="inline-end"` on the icon.
-- **No sizing classes on icons inside components.** Components handle icon sizing via CSS. No `size-4` or `w-4 h-4`.
-- **Pass icons as objects, not string keys.** `icon={CheckIcon}`, not a string lookup.
+- **Button 内图标使用 `data-icon`**：`data-icon="inline-start"` 或 `data-icon="inline-end"`。
+- **组件内图标不加尺寸类**：组件通过 CSS 处理图标尺寸。
+- **图标作为对象传递**：不是字符串键的查找表。
 
-### CLI
+---
 
-- **Never decode or fetch preset codes manually.** Pass them directly to `npx shadcn@latest init --preset <code>`.
-
-## Key Patterns
-
-These are the most common patterns that differentiate correct shadcn/ui code. For edge cases, see the linked rule files above.
+## 关键模式
 
 ```tsx
-// Form layout: FieldGroup + Field, not div + Label.
+// 表单布局：FieldGroup + Field，不用 div + Label
 <FieldGroup>
   <Field>
-    <FieldLabel htmlFor="email">Email</FieldLabel>
+    <FieldLabel htmlFor="email">邮箱</FieldLabel>
     <Input id="email" />
   </Field>
 </FieldGroup>
 
-// Validation: data-invalid on Field, aria-invalid on the control.
+// 验证：data-invalid 在 Field，aria-invalid 在控件
 <Field data-invalid>
-  <FieldLabel>Email</FieldLabel>
+  <FieldLabel>邮箱</FieldLabel>
   <Input aria-invalid />
-  <FieldDescription>Invalid email.</FieldDescription>
+  <FieldDescription>无效的邮箱地址。</FieldDescription>
 </Field>
 
-// Icons in buttons: data-icon, no sizing classes.
+// Button 图标：data-icon，不加尺寸类
 <Button>
   <SearchIcon data-icon="inline-start" />
-  Search
+  搜索
 </Button>
 
-// Spacing: gap-*, not space-y-*.
-<div className="flex flex-col gap-4">  // correct
-<div className="space-y-4">           // wrong
+// 间距：gap-*，不是 space-y-*
+<div className="flex flex-col gap-4">  // 正确
+<div className="space-y-4">           // 错误
 
-// Equal dimensions: size-*, not w-* h-*.
-<Avatar className="size-10">   // correct
-<Avatar className="w-10 h-10"> // wrong
+// 等宽高：size-*，不是 w-* h-*
+<Avatar className="size-10">   // 正确
+<Avatar className="w-10 h-10"> // 错误
 
-// Status colors: Badge variants or semantic tokens, not raw colors.
-<Badge variant="secondary">+20.1%</Badge>    // correct
-<span className="text-emerald-600">+20.1%</span> // wrong
+// 状态颜色：Badge variants 或语义 token，不用原始颜色
+<Badge variant="secondary">+20.1%</Badge>    // 正确
+<span className="text-emerald-600">+20.1%</span> // 错误
 ```
 
-## Component Selection
+---
 
-| Need                       | Use                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| Button/action              | `Button` with appropriate variant                                                                   |
-| Form inputs                | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
-| Toggle between 2–5 options | `ToggleGroup` + `ToggleGroupItem`                                                                   |
-| Data display               | `Table`, `Card`, `Badge`, `Avatar`                                                                  |
-| Navigation                 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`                                     |
-| Overlays                   | `Dialog` (modal), `Sheet` (side panel), `Drawer` (bottom sheet), `AlertDialog` (confirmation)       |
-| Feedback                   | `sonner` (toast), `Alert`, `Progress`, `Skeleton`, `Spinner`                                        |
-| Command palette            | `Command` inside `Dialog`                                                                           |
-| Charts                     | `Chart` (wraps Recharts)                                                                            |
-| Layout                     | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible`                          |
-| Empty states               | `Empty`                                                                                             |
-| Menus                      | `DropdownMenu`, `ContextMenu`, `Menubar`                                                            |
-| Tooltips/info              | `Tooltip`, `HoverCard`, `Popover`                                                                   |
+## 组件选择表
 
-## Key Fields
+| 需求           | 使用                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| 按钮 / 操作    | `Button` + 适当 variant                                                                             |
+| 表单输入       | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
+| 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem`                                                                   |
+| 数据展示       | `Table`, `Card`, `Badge`, `Avatar`                                                                  |
+| 导航           | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`                                     |
+| 覆盖层         | `Dialog`（模态框）, `Sheet`（侧边面板）, `Drawer`（底部面板）, `AlertDialog`（确认框）              |
+| 反馈           | `sonner`（Toast）, `Alert`, `Progress`, `Skeleton`, `Spinner`                                       |
+| 命令面板       | `Command` + `Dialog`                                                                                |
+| 图表           | `Chart`（Recharts 封装）                                                                            |
+| 布局           | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible`                          |
+| 空状态         | `Empty`                                                                                             |
+| 菜单           | `DropdownMenu`, `ContextMenu`, `Menubar`                                                            |
+| 提示 / 信息    | `Tooltip`, `HoverCard`, `Popover`                                                                   |
 
-The injected project context contains these key fields:
+---
 
-- **`aliases`** → use the actual alias prefix for imports (e.g. `@/`, `~/`), never hardcode.
-- **`isRSC`** → when `true`, components using `useState`, `useEffect`, event handlers, or browser APIs need `"use client"` at the top of the file. Always reference this field when advising on the directive.
-- **`tailwindVersion`** → `"v4"` uses `@theme inline` blocks; `"v3"` uses `tailwind.config.js`.
-- **`tailwindCssFile`** → the global CSS file where custom CSS variables are defined. Always edit this file, never create a new one.
-- **`style`** → component visual treatment (e.g. `nova`, `vega`).
-- **`base`** → primitive library (`radix` or `base`). Affects component APIs and available props.
-- **`iconLibrary`** → determines icon imports. Use `lucide-react` for `lucide`, `@tabler/icons-react` for `tabler`, etc. Never assume `lucide-react`.
-- **`resolvedPaths`** → exact file-system destinations for components, utils, hooks, etc.
-- **`framework`** → routing and file conventions (e.g. Next.js App Router vs Vite SPA).
-- **`packageManager`** → use this for any non-shadcn dependency installs (e.g. `pnpm add date-fns` vs `npm install date-fns`).
+## 主题适配
 
-See [cli.md — `info` command](./cli.md) for the full field reference.
+详见 [customization.md](./customization.md)。
 
-## Component Docs, Examples, and Usage
+---
 
-Run `npx shadcn@latest docs <component>` to get the URLs for a component's documentation, examples, and API reference. Fetch these URLs to get the actual content.
+## 详细参考
 
-```bash
-npx shadcn@latest docs button dialog select
-```
-
-**When creating, fixing, debugging, or using a component, always run `npx shadcn@latest docs` and fetch the URLs first.** This ensures you're working with the correct API and usage patterns rather than guessing.
-
-## Workflow
-
-1. **Get project context** — already injected above. Run `npx shadcn@latest info` again if you need to refresh.
-2. **Check installed components first** — before running `add`, always check the `components` list from project context or list the `resolvedPaths.ui` directory. Don't import components that haven't been added, and don't re-add ones already installed.
-3. **Find components** — `npx shadcn@latest search`.
-4. **Get docs and examples** — run `npx shadcn@latest docs <component>` to get URLs, then fetch them. Use `npx shadcn@latest view` to browse registry items you haven't installed. To preview changes to installed components, use `npx shadcn@latest add --diff`.
-5. **Install or update** — `npx shadcn@latest add`. When updating existing components, use `--dry-run` and `--diff` to preview changes first (see [Updating Components](#updating-components) below).
-6. **Fix imports in third-party components** — After adding components from community registries (e.g. `@bundui`, `@magicui`), check the added non-UI files for hardcoded import paths like `@/components/ui/...`. These won't match the project's actual aliases. Use `npx shadcn@latest info` to get the correct `ui` alias (e.g. `@workspace/ui/components`) and rewrite the imports accordingly. The CLI rewrites imports for its own UI files, but third-party registry components may use default paths that don't match the project.
-7. **Review added components** — After adding a component or block from any registry, **always read the added files and verify they are correct**. Check for missing sub-components (e.g. `SelectItem` without `SelectGroup`), missing imports, incorrect composition, or violations of the [Critical Rules](#critical-rules). Also replace any icon imports with the project's `iconLibrary` from the project context (e.g. if the registry item uses `lucide-react` but the project uses `hugeicons`, swap the imports and icon names accordingly). Fix all issues before moving on.
-8. **Registry must be explicit** — When the user asks to add a block or component, **do not guess the registry**. If no registry is specified (e.g. user says "add a login block" without specifying `@shadcn`, `@tailark`, etc.), ask which registry to use. Never default to a registry on behalf of the user.
-9. **Switching presets** — Ask the user first: **reinstall**, **merge**, or **skip**?
-   - **Reinstall**: `npx shadcn@latest init --preset <code> --force --reinstall`. Overwrites all components.
-   - **Merge**: `npx shadcn@latest init --preset <code> --force --no-reinstall`, then run `npx shadcn@latest info` to list installed components, then for each installed component use `--dry-run` and `--diff` to [smart merge](#updating-components) it individually.
-   - **Skip**: `npx shadcn@latest init --preset <code> --force --no-reinstall`. Only updates config and CSS, leaves components as-is.
-   - **Important**: Always run preset commands inside the user's project directory. The CLI automatically preserves the current base (`base` vs `radix`) from `components.json`. If you must use a scratch/temp directory (e.g. for `--dry-run` comparisons), pass `--base <current-base>` explicitly — preset codes do not encode the base.
-
-## Updating Components
-
-When the user asks to update a component from upstream while keeping their local changes, use `--dry-run` and `--diff` to intelligently merge. **NEVER fetch raw files from GitHub manually — always use the CLI.**
-
-1. Run `npx shadcn@latest add <component> --dry-run` to see all files that would be affected.
-2. For each file, run `npx shadcn@latest add <component> --diff <file>` to see what changed upstream vs local.
-3. Decide per file based on the diff:
-   - No local changes → safe to overwrite.
-   - Has local changes → read the local file, analyze the diff, and apply upstream updates while preserving local modifications.
-   - User says "just update everything" → use `--overwrite`, but confirm first.
-4. **Never use `--overwrite` without the user's explicit approval.**
-
-## Quick Reference
-
-```bash
-# Create a new project.
-npx shadcn@latest init --name my-app --preset base-nova
-npx shadcn@latest init --name my-app --preset a2r6bw --template vite
-
-# Create a monorepo project.
-npx shadcn@latest init --name my-app --preset base-nova --monorepo
-npx shadcn@latest init --name my-app --preset base-nova --template next --monorepo
-
-# Initialize existing project.
-npx shadcn@latest init --preset base-nova
-npx shadcn@latest init --defaults  # shortcut: --template=next --preset=base-nova
-
-# Add components.
-npx shadcn@latest add button card dialog
-npx shadcn@latest add @magicui/shimmer-button
-npx shadcn@latest add --all
-
-# Preview changes before adding/updating.
-npx shadcn@latest add button --dry-run
-npx shadcn@latest add button --diff button.tsx
-npx shadcn@latest add @acme/form --view button.tsx
-
-# Search registries.
-npx shadcn@latest search @shadcn -q "sidebar"
-npx shadcn@latest search @tailark -q "stats"
-
-# Get component docs and example URLs.
-npx shadcn@latest docs button dialog select
-
-# View registry item details (for items not yet installed).
-npx shadcn@latest view @shadcn/button
-```
-
-**Named presets:** `base-nova`, `radix-nova`
-**Templates:** `next`, `vite`, `start`, `react-router`, `astro` (all support `--monorepo`) and `laravel` (not supported for monorepo)
-**Preset codes:** Base62 strings starting with `a` (e.g. `a2r6bw`), from [ui.shadcn.com](https://ui.shadcn.com).
-
-## Detailed References
-
-- [rules/forms.md](./rules/forms.md) — FieldGroup, Field, InputGroup, ToggleGroup, FieldSet, validation states
-- [rules/composition.md](./rules/composition.md) — Groups, overlays, Card, Tabs, Avatar, Alert, Empty, Toast, Separator, Skeleton, Badge, Button loading
-- [rules/icons.md](./rules/icons.md) — data-icon, icon sizing, passing icons as objects
-- [rules/styling.md](./rules/styling.md) — Semantic colors, variants, className, spacing, size, truncate, dark mode, cn(), z-index
-- [rules/base-vs-radix.md](./rules/base-vs-radix.md) — asChild vs render, Select, ToggleGroup, Slider, Accordion
-- [cli.md](./cli.md) — Commands, flags, presets, templates
-- [customization.md](./customization.md) — Theming, CSS variables, extending components
+- [rules/styling.md](./rules/styling.md) — 语义颜色、variants、className、间距、size、truncate、dark mode、cn()、z-index
+- [rules/forms.md](./rules/forms.md) — FieldGroup、Field、InputGroup、ToggleGroup、FieldSet、验证状态
+- [rules/composition.md](./rules/composition.md) — Groups、覆盖层、Card、Avatar、Alert、Empty、Toast、Separator、Skeleton、Badge、Button 加载状态、atoms vs primitives 边界
+- [rules/icons.md](./rules/icons.md) — data-icon、图标尺寸、图标作为对象传递
+- [rules/atoms-usage.md](./rules/atoms-usage.md) — atoms 高阶组件使用规范
+- [customization.md](./customization.md) — 主题适配、语义 token、CSS 变量

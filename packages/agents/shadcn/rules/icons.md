@@ -1,101 +1,118 @@
-# Icons
+# 图标
 
-**Always use the project's configured `iconLibrary` for imports.** Check the `iconLibrary` field from project context: `lucide` → `lucide-react`, `tabler` → `@tabler/icons-react`, etc. Never assume `lucide-react`.
+## Button 内图标使用 data-icon 属性
 
----
+在图标上添加 `data-icon="inline-start"`（前缀）或 `data-icon="inline-end"`（后缀）。图标不加尺寸类。
 
-## Icons in Button use data-icon attribute
-
-Add `data-icon="inline-start"` (prefix) or `data-icon="inline-end"` (suffix) to the icon. No sizing classes on the icon.
-
-**Incorrect:**
+**错误：**
 
 ```tsx
 <Button>
-  <SearchIcon className='mr-2 size-4' />
-  Search
+  <SearchIcon className="mr-2 size-4" />
+  搜索
 </Button>
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
 <Button>
   <SearchIcon data-icon="inline-start"/>
-  Search
+  搜索
 </Button>
 
 <Button>
-  Next
+  下一步
   <ArrowRightIcon data-icon="inline-end"/>
 </Button>
 ```
 
 ---
 
-## No sizing classes on icons inside components
+## 组件内图标不加尺寸类
 
-Components handle icon sizing via CSS. Don't add `size-4`, `w-4 h-4`, or other sizing classes to icons inside `Button`, `DropdownMenuItem`, `Alert`, `Sidebar*`, or other shadcn components. Unless the user explicitly asks for custom icon sizes.
+组件通过 CSS 处理图标尺寸。不要在 `Button`、`DropdownMenuItem`、`Alert`、`Sidebar*` 等内部的图标添加 `size-4`、`w-4 h-4` 或其他尺寸类。
 
-**Incorrect:**
+**错误：**
 
 ```tsx
 <Button>
   <SearchIcon className="size-4" data-icon="inline-start" />
-  Search
+  搜索
 </Button>
 
 <DropdownMenuItem>
   <SettingsIcon className="mr-2 size-4" />
-  Settings
+  设置
 </DropdownMenuItem>
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
 <Button>
   <SearchIcon data-icon="inline-start" />
-  Search
+  搜索
 </Button>
 
 <DropdownMenuItem>
   <SettingsIcon />
-  Settings
+  设置
 </DropdownMenuItem>
 ```
 
 ---
 
-## Pass icons as component objects, not string keys
+## 图标作为组件对象传递
 
-Use `icon={CheckIcon}`, not a string key to a lookup map.
+使用 `icon={CheckIcon}`，不是字符串键的查找表。
 
-**Incorrect:**
+**错误：**
 
 ```tsx
 const iconMap = {
   check: CheckIcon,
   alert: AlertIcon
-};
+}
 
 function StatusBadge({ icon }: { icon: string }) {
-  const Icon = iconMap[icon];
-  return <Icon />;
+  const Icon = iconMap[icon]
+  return <Icon />
 }
 
-<StatusBadge icon='check' />;
+<StatusBadge icon="check" />
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
-// Import from the project's configured iconLibrary (e.g. lucide-react, @tabler/icons-react).
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon } from 'lucide-react'
 
 function StatusBadge({ icon: Icon }: { icon: React.ComponentType }) {
-  return <Icon />;
+  return <Icon />
 }
 
-<StatusBadge icon={CheckIcon} />;
+<StatusBadge icon={CheckIcon} />
+```
+
+---
+
+## Sidebar 图标
+
+`Sidebar` 的 `brand.logo` 和 `menu.items[].icon` 使用字符串名称，不是导入的组件：
+
+```tsx
+const data = {
+  brand: {
+    name: "Acme",
+    logo: "Command",  // lucide 图标名称
+  },
+  menu: [
+    {
+      label: "仪表盘",
+      icon: "LayoutDashboard",  // 字符串名称
+      href: "/",
+    },
+  ],
+}
 ```

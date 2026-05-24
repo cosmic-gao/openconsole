@@ -1,203 +1,188 @@
-# Customization & Theming
+# 主题适配
 
-Components reference semantic CSS variable tokens. Change the variables to change every component.
+组件通过语义 CSS 变量 token 引用样式。更改变量即更改所有引用组件。
 
-## Contents
+## 目录
 
-- How it works (CSS variables → Tailwind utilities → components)
-- Color variables and OKLCH format
-- Dark mode setup
-- Changing the theme (presets, CSS variables)
-- Adding custom colors (Tailwind v3 and v4)
-- Border radius
-- Customizing components (variants, className, wrappers)
-- Checking for updates
+- 工作原理（CSS 变量 → Tailwind utilities → 组件）
+- Color Token
+- 亮色 / 深色模式
+- 语义 Color Token 的使用
+- 适配主题的正确方式
 
 ---
 
-## How It Works
+## 工作原理
 
-1. CSS variables defined in `:root` (light) and `.dark` (dark mode).
-2. Tailwind maps them to utilities: `bg-primary`, `text-muted-foreground`, etc.
-3. Components use these utilities — changing a variable changes all components that reference it.
-
----
-
-## Color Variables
-
-Every color follows the `name` / `name-foreground` convention. The base variable is for backgrounds, `-foreground` is for text/icons on that background.
-
-| Variable                                     | Purpose                          |
-| -------------------------------------------- | -------------------------------- |
-| `--background` / `--foreground`              | Page background and default text |
-| `--card` / `--card-foreground`               | Card surfaces                    |
-| `--primary` / `--primary-foreground`         | Primary buttons and actions      |
-| `--secondary` / `--secondary-foreground`     | Secondary actions                |
-| `--muted` / `--muted-foreground`             | Muted/disabled states            |
-| `--accent` / `--accent-foreground`           | Hover and accent states          |
-| `--destructive` / `--destructive-foreground` | Error and destructive actions    |
-| `--border`                                   | Default border color             |
-| `--input`                                    | Form input borders               |
-| `--ring`                                     | Focus ring color                 |
-| `--chart-1` through `--chart-5`              | Chart/data visualization         |
-| `--sidebar-*`                                | Sidebar-specific colors          |
-| `--surface` / `--surface-foreground`         | Secondary surface                |
-
-Colors use OKLCH: `--primary: oklch(0.205 0 0)` where values are lightness (0–1), chroma (0 = gray), and hue (0–360).
+1. CSS 变量在 `:root`（浅色）和 `.dark`（深色模式）中定义
+2. Tailwind 将它们映射到 utilities：`bg-primary`、`text-muted-foreground` 等
+3. 组件使用这些 utilities — 更改变量会更改所有引用它的组件
 
 ---
 
-## Dark Mode
+## Color Token
 
-Class-based toggle via `.dark` on the root element. In Next.js, use `next-themes`:
+每个颜色遵循 `name` / `name-foreground` 约定。基础变量用于背景，`-foreground` 用于该背景上的文本/图标。
+
+| Token | 用途 |
+| --- | --- |
+| `--background` / `--foreground` | 页面背景和默认文本 |
+| `--card` / `--card-foreground` | Card 表面 |
+| `--primary` / `--primary-foreground` | 主要按钮和操作 |
+| `--secondary` / `--secondary-foreground` | 次要操作 |
+| `--muted` / `--muted-foreground` | 静音/禁用状态 |
+| `--accent` / `--accent-foreground` | 悬停和强调状态 |
+| `--destructive` / `--destructive-foreground` | 错误和破坏性操作 |
+| `--border` | 默认边框颜色 |
+| `--input` | 表单输入边框 |
+| `--ring` | 焦点环颜色 |
+| `--chart-1` 到 `--chart-5` | 图表/数据可视化 |
+| `--sidebar-*` | 侧边栏专用颜色 |
+| `--surface` / `--surface-foreground` | 次要表面 |
+
+颜色使用 OKLCH：`--primary: oklch(0.205 0 0)`，值是 lightness（0-1）、chroma（0 = 灰色）和 hue（0-360）。
+
+---
+
+## 亮色 / 深色模式
+
+亮色/深色切换通过根元素上的 `.dark` class 实现。在 Next.js 中使用 `ThemeProvider`：
 
 ```tsx
-import { ThemeProvider } from 'next-themes';
+import { ThemeProvider } from '@openconsole/atoms'
 
-<ThemeProvider attribute='class' defaultTheme='system' enableSystem>
-  {children}
-</ThemeProvider>;
+<ThemeProvider>{children}</ThemeProvider>
+```
+
+`ThemeProvider` 是 `next-themes` `ThemeProvider` 的薄封装。
+
+---
+
+## 语义 Color Token 的使用
+
+### 使用语义 token，不使用原始颜色
+
+**错误：**
+
+```tsx
+<div className="bg-blue-500 text-white">
+  <p className="text-gray-600">次要文本</p>
+</div>
+```
+
+**正确：**
+
+```tsx
+<div className="bg-primary text-primary-foreground">
+  <p className="text-muted-foreground">次要文本</p>
+</div>
+```
+
+### 状态颜色使用 Badge 或语义 token
+
+**错误：**
+
+```tsx
+<span className="text-emerald-600">+20.1%</span>
+<span className="text-green-500">活跃</span>
+<span className="text-red-600">-3.2%</span>
+```
+
+**正确：**
+
+```tsx
+<Badge variant="secondary">+20.1%</Badge>
+<Badge>活跃</Badge>
+<span className="text-destructive">-3.2%</span>
+```
+
+### 深色模式覆盖
+
+使用语义 token，它们通过 CSS 变量自动处理亮色/深色切换。
+
+**错误：**
+
+```tsx
+<div className="bg-white dark:bg-gray-950">
+  <p className="text-gray-600 dark:text-gray-400">文本</p>
+</div>
+```
+
+**正确：**
+
+```tsx
+<div className="bg-background">
+  <p className="text-muted-foreground">文本</p>
+</div>
 ```
 
 ---
 
-## Changing the Theme
+## 适配主题的正确方式
 
-```bash
-# Apply a preset code from ui.shadcn.com.
-npx shadcn@latest init --preset a2r6bw --force
+### 1. 使用内置 Variants
 
-# Switch to a named preset.
-npx shadcn@latest init --preset radix-nova --force
-npx shadcn@latest init --reinstall  # update existing components to match
-
-# Use a custom theme URL.
-npx shadcn@latest init --preset "https://ui.shadcn.com/init?base=radix&style=nova&theme=blue&..." --force
+```tsx
+<Button variant="outline" size="sm">点击</Button>
 ```
 
-Or edit CSS variables directly in `globals.css`.
+### 2. 通过 className 添加布局样式
 
----
+```tsx
+<Card className="max-w-md mx-auto">...</Card>
+```
 
-## Adding Custom Colors
-
-Add variables to the file at `tailwindCssFile` from `npx shadcn@latest info` (typically `globals.css`). Never create a new CSS file for this.
+### 3. 全局 CSS 变量（在 app/globals.css 中定义）
 
 ```css
-/* 1. Define in the global CSS file. */
 :root {
-  --warning: oklch(0.84 0.16 84);
-  --warning-foreground: oklch(0.28 0.07 46);
+  --primary: oklch(0.55 0.18 235);
+  --background: oklch(0.98 0.01 235);
 }
 .dark {
-  --warning: oklch(0.41 0.11 46);
-  --warning-foreground: oklch(0.99 0.02 95);
+  --primary: oklch(0.55 0.18 235);
+  --background: oklch(0.15 0.01 235);
 }
 ```
 
-```css
-/* 2a. Register with Tailwind v4 (@theme inline). */
-@theme inline {
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-}
-```
+### 4. 组件特定的 CSS 变量
 
-When `tailwindVersion` is `"v3"` (check via `npx shadcn@latest info`), register in `tailwind.config.js` instead:
-
-```js
-// 2b. Register with Tailwind v3 (tailwind.config.js).
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        warning: 'oklch(var(--warning) / <alpha-value>)',
-        'warning-foreground': 'oklch(var(--warning-foreground) / <alpha-value>)'
-      }
-    }
-  }
-};
-```
+某些组件支持 CSS 变量来自定义：
 
 ```tsx
-// 3. Use in components.
-<div className='bg-warning text-warning-foreground'>Warning</div>
+<Card style={{ '--card-bg': 'var(--primary)' }}>...</Card>
 ```
 
 ---
 
-## Border Radius
+## 常见错误
 
-`--radius` controls border radius globally. Components derive values from it (`rounded-lg` = `var(--radius)`, `rounded-md` = `calc(var(--radius) - 2px)`).
-
----
-
-## Customizing Components
-
-See also: [rules/styling.md](./rules/styling.md) for Incorrect/Correct examples.
-
-Prefer these approaches in order:
-
-### 1. Built-in variants
+### 错误 1：使用原始颜色值
 
 ```tsx
-<Button variant='outline' size='sm'>
-  Click
-</Button>
+// 错误
+<div className="bg-blue-500 text-white">内容</div>
+
+// 正确
+<div className="bg-primary text-primary-foreground">内容</div>
 ```
 
-### 2. Tailwind classes via `className`
+### 错误 2：手动 dark: 覆盖
 
 ```tsx
-<Card className='max-w-md mx-auto'>...</Card>
+// 错误
+<div className="bg-white dark:bg-gray-900">内容</div>
+
+// 正确
+<div className="bg-background">内容</div>
 ```
 
-### 3. Add a new variant
-
-Edit the component source to add a variant via `cva`:
+### 错误 3：在 className 中硬编码颜色逻辑
 
 ```tsx
-// components/ui/button.tsx
-warning: "bg-warning text-warning-foreground hover:bg-warning/90",
+// 错误
+<div className={isActive ? "bg-blue-100" : "bg-gray-100"}>
+
+// 正确
+<div className={isActive ? "bg-accent" : "bg-muted"}>
 ```
-
-### 4. Wrapper components
-
-Compose shadcn/ui primitives into higher-level components:
-
-```tsx
-export function ConfirmDialog({ title, description, onConfirm, children }) {
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-```
-
----
-
-## Checking for Updates
-
-```bash
-npx shadcn@latest add button --diff
-```
-
-To preview exactly what would change before updating, use `--dry-run` and `--diff`:
-
-```bash
-npx shadcn@latest add button --dry-run        # see all affected files
-npx shadcn@latest add button --diff button.tsx # see the diff for a specific file
-```
-
-See [Updating Components in SKILL.md](./SKILL.md#updating-components) for the full smart merge workflow.

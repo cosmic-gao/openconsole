@@ -1,110 +1,110 @@
-# Forms & Inputs
+# 表单与输入
 
-## Contents
+## 目录
 
-- Forms use FieldGroup + Field
-- InputGroup requires InputGroupInput/InputGroupTextarea
-- Buttons inside inputs use InputGroup + InputGroupAddon
-- Option sets (2–7 choices) use ToggleGroup
-- FieldSet + FieldLegend for grouping related fields
-- Field validation and disabled states
+- 表单使用 FieldGroup + Field
+- InputGroup 需使用 InputGroupInput/InputGroupTextarea
+- 输入框内的按钮使用 InputGroup + InputGroupAddon
+- 选项集（2-7 个）使用 ToggleGroup
+- 相关字段分组使用 FieldSet + FieldLegend
+- 字段验证和禁用状态
 
 ---
 
-## Forms use FieldGroup + Field
+## 表单使用 FieldGroup + Field
 
-Always use `FieldGroup` + `Field` — never raw `div` with `space-y-*`:
+始终使用 `FieldGroup` + `Field`，不要用原始 `div` + `space-y-*`：
 
 ```tsx
 <FieldGroup>
   <Field>
-    <FieldLabel htmlFor='email'>Email</FieldLabel>
-    <Input id='email' type='email' />
+    <FieldLabel htmlFor="email">邮箱</FieldLabel>
+    <Input id="email" type="email" />
   </Field>
   <Field>
-    <FieldLabel htmlFor='password'>Password</FieldLabel>
-    <Input id='password' type='password' />
+    <FieldLabel htmlFor="password">密码</FieldLabel>
+    <Input id="password" type="password" />
   </Field>
 </FieldGroup>
 ```
 
-Use `Field orientation="horizontal"` for settings pages. Use `FieldLabel className="sr-only"` for visually hidden labels.
+设置页使用 `Field orientation="horizontal"`。视觉隐藏标签使用 `FieldLabel className="sr-only"`。
 
-**Choosing form controls:**
+**选择表单控件：**
 
-- Simple text input → `Input`
-- Dropdown with predefined options → `Select`
-- Searchable dropdown → `Combobox`
-- Native HTML select (no JS) → `native-select`
-- Boolean toggle → `Switch` (for settings) or `Checkbox` (for forms)
-- Single choice from few options → `RadioGroup`
-- Toggle between 2–5 options → `ToggleGroup` + `ToggleGroupItem`
-- OTP/verification code → `InputOTP`
-- Multi-line text → `Textarea`
+- 简单文本输入 → `Input`
+- 预定义选项下拉 → `Select`
+- 可搜索下拉 → `Combobox`
+- 原生 HTML select（无 JS）→ `native-select`
+- 布尔切换 → `Switch`（设置页）或 `Checkbox`（表单）
+- 少数选项单选 → `RadioGroup`
+- 2-5 个选项切换 → `ToggleGroup` + `ToggleGroupItem`
+- OTP/验证码 → `InputOTP`
+- 多行文本 → `Textarea`
 
 ---
 
-## InputGroup requires InputGroupInput/InputGroupTextarea
+## InputGroup 需使用 InputGroupInput/InputGroupTextarea
 
-Never use raw `Input` or `Textarea` inside an `InputGroup`.
+不要在 `InputGroup` 内直接使用原始 `Input` 或 `Textarea`。
 
-**Incorrect:**
+**错误：**
 
 ```tsx
 <InputGroup>
-  <Input placeholder='Search...' />
+  <Input placeholder="搜索..." />
 </InputGroup>
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
-import { InputGroup, InputGroupInput } from '@/components/ui/input-group';
+import { InputGroup, InputGroupInput } from '@openconsole/shadcn'
 
 <InputGroup>
-  <InputGroupInput placeholder='Search...' />
-</InputGroup>;
+  <InputGroupInput placeholder="搜索..." />
+</InputGroup>
 ```
 
 ---
 
-## Buttons inside inputs use InputGroup + InputGroupAddon
+## 输入框内的按钮使用 InputGroup + InputGroupAddon
 
-Never place a `Button` directly inside or adjacent to an `Input` with custom positioning.
+不要将 `Button` 直接放在输入框内或用自定义定位。
 
-**Incorrect:**
+**错误：**
 
 ```tsx
-<div className='relative'>
-  <Input placeholder='Search...' className='pr-10' />
-  <Button className='absolute right-0 top-0' size='icon'>
+<div className="relative">
+  <Input placeholder="搜索..." className="pr-10" />
+  <Button className="absolute right-0 top-0" size="icon">
     <SearchIcon />
   </Button>
 </div>
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
-import { InputGroup, InputGroupInput, InputGroupAddon } from '@/components/ui/input-group';
+import { InputGroup, InputGroupInput, InputGroupAddon } from '@openconsole/shadcn'
 
 <InputGroup>
-  <InputGroupInput placeholder='Search...' />
+  <InputGroupInput placeholder="搜索..." />
   <InputGroupAddon>
-    <Button size='icon'>
-      <SearchIcon data-icon='inline-start' />
+    <Button size="icon">
+      <SearchIcon data-icon="inline-start" />
     </Button>
   </InputGroupAddon>
-</InputGroup>;
+</InputGroup>
 ```
 
 ---
 
-## Option sets (2–7 choices) use ToggleGroup
+## 选项集（2-7 个）使用 ToggleGroup
 
-Don't manually loop `Button` components with active state.
+不要手动循环 `Button` 组件实现 active 状态。
 
-**Incorrect:**
+**错误：**
 
 ```tsx
 const [selected, setSelected] = useState("daily")
@@ -122,48 +122,46 @@ const [selected, setSelected] = useState("daily")
 </div>
 ```
 
-**Correct:**
+**正确：**
 
 ```tsx
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ToggleGroup, ToggleGroupItem } from '@openconsole/shadcn'
 
 <ToggleGroup spacing={2}>
-  <ToggleGroupItem value='daily'>Daily</ToggleGroupItem>
-  <ToggleGroupItem value='weekly'>Weekly</ToggleGroupItem>
-  <ToggleGroupItem value='monthly'>Monthly</ToggleGroupItem>
-</ToggleGroup>;
+  <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
+  <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
+  <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
+</ToggleGroup>
 ```
 
-Combine with `Field` for labelled toggle groups:
+配合 `Field` 使用有标签的 ToggleGroup：
 
 ```tsx
-<Field orientation='horizontal'>
-  <FieldTitle id='theme-label'>Theme</FieldTitle>
-  <ToggleGroup aria-labelledby='theme-label' spacing={2}>
-    <ToggleGroupItem value='light'>Light</ToggleGroupItem>
-    <ToggleGroupItem value='dark'>Dark</ToggleGroupItem>
-    <ToggleGroupItem value='system'>System</ToggleGroupItem>
+<Field orientation="horizontal">
+  <FieldTitle id="theme-label">主题</FieldTitle>
+  <ToggleGroup aria-labelledby="theme-label" spacing={2}>
+    <ToggleGroupItem value="light">浅色</ToggleGroupItem>
+    <ToggleGroupItem value="dark">深色</ToggleGroupItem>
+    <ToggleGroupItem value="system">系统</ToggleGroupItem>
   </ToggleGroup>
 </Field>
 ```
 
-> **Note:** `defaultValue` and `type`/`multiple` props differ between base and radix. See [base-vs-radix.md](./base-vs-radix.md#togglegroup).
-
 ---
 
-## FieldSet + FieldLegend for grouping related fields
+## 相关字段分组使用 FieldSet + FieldLegend
 
-Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — not `div` with a heading:
+相关复选框、单选或开关使用 `FieldSet` + `FieldLegend`，不要用带标题的 `div`：
 
 ```tsx
 <FieldSet>
-  <FieldLegend variant='label'>Preferences</FieldLegend>
-  <FieldDescription>Select all that apply.</FieldDescription>
-  <FieldGroup className='gap-3'>
-    <Field orientation='horizontal'>
-      <Checkbox id='dark' />
-      <FieldLabel htmlFor='dark' className='font-normal'>
-        Dark mode
+  <FieldLegend variant="label">偏好设置</FieldLegend>
+  <FieldDescription>选择所有适用的选项。</FieldDescription>
+  <FieldGroup className="gap-3">
+    <Field orientation="horizontal">
+      <Checkbox id="dark" />
+      <FieldLabel htmlFor="dark" className="font-normal">
+        深色模式
       </FieldLabel>
     </Field>
   </FieldGroup>
@@ -172,23 +170,23 @@ Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — n
 
 ---
 
-## Field validation and disabled states
+## 字段验证和禁用状态
 
-Both attributes are needed — `data-invalid`/`data-disabled` styles the field (label, description), while `aria-invalid`/`disabled` styles the control.
+两个属性都需要 — `data-invalid`/`data-disabled` 样式化字段（标签、描述），而 `aria-invalid`/`disabled` 样式化控件。
 
 ```tsx
-// Invalid.
+// 无效
 <Field data-invalid>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
+  <FieldLabel htmlFor="email">邮箱</FieldLabel>
   <Input id="email" aria-invalid />
-  <FieldDescription>Invalid email address.</FieldDescription>
+  <FieldDescription>无效的邮箱地址。</FieldDescription>
 </Field>
 
-// Disabled.
+// 禁用
 <Field data-disabled>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
+  <FieldLabel htmlFor="email">邮箱</FieldLabel>
   <Input id="email" disabled />
 </Field>
 ```
 
-Works for all controls: `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroupItem`, `Switch`, `Slider`, `NativeSelect`, `InputOTP`.
+适用于所有控件：`Input`、`Textarea`、`Select`、`Checkbox`、`RadioGroupItem`、`Switch`、`Slider`、`NativeSelect`、`InputOTP`。
