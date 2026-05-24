@@ -1,27 +1,27 @@
-# Advanced Data Fetching Patterns with TanStack Query
+# TanStack Query 高级数据获取模式
 
-## Dependent Queries
+## 依赖查询
 
-Queries that depend on data from other queries:
+依赖于其他查询结果的查询：
 
 ```typescript
-// First query - Get user ID
+// 第一个查询 - 获取用户 ID
 const { data: user } = useQuery({
   queryKey: ['user'],
   queryFn: fetchCurrentUser
 });
 
-// Second query - Depends on user ID
+// 第二个查询 - 依赖于用户 ID
 const { data: posts } = useQuery({
   queryKey: ['posts', user?.id],
   queryFn: () => fetchUserPosts(user!.id),
-  enabled: !!user // Only run when user is available
+  enabled: !!user // 仅当 user 可用时执行
 });
 ```
 
-## Parallel Queries
+## 并行查询
 
-Fetch multiple independent queries simultaneously:
+同时获取多个独立的查询：
 
 ```typescript
 function Dashboard() {
@@ -45,9 +45,9 @@ function Dashboard() {
 }
 ```
 
-## Infinite Queries
+## 无限查询
 
-For pagination and infinite scroll:
+用于分页和无限滚动：
 
 ```typescript
 const {
@@ -62,7 +62,7 @@ const {
   initialPageParam: 1
 });
 
-// Flatten pages
+// 扁平化 pages
 const allPosts = data?.pages.flatMap(page => page.posts) ?? [];
 
 return (
@@ -70,16 +70,16 @@ return (
     {allPosts.map(post => <PostCard key={post.id} post={post} />)}
     {hasNextPage && (
       <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
-        {isFetchingNextPage ? 'Loading...' : 'Load More'}
+        {isFetchingNextPage ? '加载中...' : '加载更多'}
       </button>
     )}
   </div>
 );
 ```
 
-## Prefetching
+## 预获取
 
-Preload data before it's needed:
+在需要之前预加载数据：
 
 ```typescript
 import { useQueryClient } from '@tanstack/react-query';
@@ -96,21 +96,21 @@ function PostLink({ postId }: { postId: string }) {
 
   return (
     <Link to={`/posts/${postId}`} onMouseEnter={handleMouseEnter}>
-      View Post
+      查看帖子
     </Link>
   );
 }
 ```
 
-## Suspense Mode
+## Suspense 模式
 
-Use with React Suspense:
+配合 React Suspense 使用：
 
 ```typescript
 import { useSuspenseQuery } from '@tanstack/react-query';
 
 function PostDetails({ postId }: { postId: string }) {
-  // Throws promise on loading, error on error
+  // 加载时抛出 promise，错误时抛出错误
   const { data: post } = useSuspenseQuery({
     queryKey: ['post', postId],
     queryFn: () => fetchPost(postId)
@@ -119,15 +119,15 @@ function PostDetails({ postId }: { postId: string }) {
   return <div>{post.title}</div>;
 }
 
-// Wrap with Suspense
+// 用 Suspense 包裹
 <Suspense fallback={<Loading />}>
   <PostDetails postId="123" />
 </Suspense>
 ```
 
-## Query Cancellation
+## 查询取消
 
-Cancel queries when component unmounts:
+组件卸载时取消查询：
 
 ```typescript
 const { data, isLoading } = useQuery({
@@ -139,39 +139,39 @@ const { data, isLoading } = useQuery({
 });
 ```
 
-## Initial Data
+## 初始数据
 
-Provide initial data to avoid loading state:
+提供初始数据以避免加载状态：
 
 ```typescript
 const { data } = useQuery({
   queryKey: ['post', postId],
   queryFn: () => fetchPost(postId),
   initialData: () => {
-    // Get from cache or other source
+    // 从缓存或其他来源获取
     return queryClient.getQueryData(['posts'])?.find((post) => post.id === postId);
   }
 });
 ```
 
-## Placeholder Data
+## 占位数据
 
-Show placeholder while loading:
+加载时显示占位符：
 
 ```typescript
 const { data, isPlaceholderData } = useQuery({
   queryKey: ['posts', page],
   queryFn: () => fetchPosts(page),
-  placeholderData: (previousData) => previousData  // Keep previous page while loading
+  placeholderData: (previousData) => previousData  // 加载时保持上一页数据
 });
 
-// Or provide static placeholder
+// 或提供静态占位符
 placeholderData: { posts: [], total: 0 }
 ```
 
-## Optimistic Updates with Queries
+## 带查询的乐观更新
 
-Update UI immediately, rollback on error:
+立即更新 UI，错误时回滚：
 
 ```typescript
 const queryClient = useQueryClient();
@@ -179,50 +179,50 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: updatePost,
   onMutate: async (newPost) => {
-    // Cancel outgoing queries
+    // 取消进行中的 queries
     await queryClient.cancelQueries({ queryKey: ['post', newPost.id] });
 
-    // Snapshot current value
+    // 快照当前值
     const previousPost = queryClient.getQueryData(['post', newPost.id]);
 
-    // Optimistically update
+    // 乐观更新
     queryClient.setQueryData(['post', newPost.id], newPost);
 
     return { previousPost };
   },
   onError: (err, newPost, context) => {
-    // Rollback on error
+    // 错误时回滚
     queryClient.setQueryData(['post', newPost.id], context?.previousPost);
   },
   onSettled: (newPost) => {
-    // Refetch after success or error
+    // 成功或错误后重新获取
     queryClient.invalidateQueries({ queryKey: ['post', newPost.id] });
   }
 });
 ```
 
-## Query Retries
+## 查询重试
 
-Configure retry behavior:
+配置重试行为：
 
 ```typescript
 const { data } = useQuery({
   queryKey: ['post', postId],
   queryFn: () => fetchPost(postId),
-  retry: 3, // Retry 3 times
-  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // Exponential backoff
+  retry: 3, // 重试 3 次
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // 指数退避
 });
 ```
 
-## Error Handling
+## 错误处理
 
-Handle query errors:
+处理查询错误：
 
 ```typescript
 const { data, error, isError } = useQuery({
   queryKey: ['post', postId],
   queryFn: () => fetchPost(postId),
-  throwOnError: false  // Don't throw, just set error
+  throwOnError: false  // 不抛出错误，只设置 error
 });
 
 if (isError) {
@@ -230,11 +230,11 @@ if (isError) {
 }
 ```
 
-## Best Practices
+## 最佳实践
 
-1. **Use Suspense** - Better loading UX with React Suspense
-2. **Prefetch on Intent** - Preload data on hover/focus
-3. **Enable Queries Conditionally** - Use `enabled` option
-4. **Cancel on Unmount** - Use abort signals
-5. **Handle Errors Gracefully** - Show error states
-6. **Optimize with Placeholders** - Show previous data while loading
+1. **使用 Suspense** - 配合 React Suspense 获得更好的加载 UX
+2. **意图时预获取** - 悬停/聚焦时预加载数据
+3. **条件启用查询** - 使用 `enabled` 选项
+4. **卸载时取消** - 使用 abort signals
+5. **优雅处理错误** - 显示错误状态
+6. **使用占位符优化** - 加载时显示之前的数据

@@ -98,13 +98,13 @@ export default function RootLayout({ children }) {
 
 ## API 服务层（强制）
 
-### lib/http/api-fetch.ts（HTTP 客户端）
+### lib/http/request.ts（HTTP 客户端）
 
 ```typescript
-// lib/http/api-fetch.ts
+// lib/http/request.ts
 import { ofetch } from 'ofetch'
 
-export const apiFetch = ofetch.create({
+export const request = ofetch.create({
   baseURL: '/api',
   timeout: 5000,
   retry: 1,
@@ -125,24 +125,24 @@ export const apiFetch = ofetch.create({
 
 ```typescript
 // features/posts/api/postsApi.ts
-import { apiFetch } from '@/lib/http/api-fetch'
+import { request } from '@/lib/http/request'
 import type { Post, CreatePostDto, UpdatePostDto } from '../schemas'
 
 export const postsApi = {
   getAll: (): Promise<Post[]> =>
-    apiFetch('/posts'),
+    request('/posts'),
 
   get: (id: string): Promise<Post> =>
-    apiFetch(`/posts/${id}`),
+    request(`/posts/${id}`),
 
   create: (data: CreatePostDto): Promise<Post> =>
-    apiFetch('/posts', { method: 'POST', body: data }),
+    request('/posts', { method: 'POST', body: data }),
 
   update: (id: string, data: UpdatePostDto): Promise<Post> =>
-    apiFetch(`/posts/${id}`, { method: 'PUT', body: data }),
+    request(`/posts/${id}`, { method: 'PUT', body: data }),
 
   delete: (id: string): Promise<void> =>
-    apiFetch(`/posts/${id}`, { method: 'DELETE' }),
+    request(`/posts/${id}`, { method: 'DELETE' }),
 }
 ```
 

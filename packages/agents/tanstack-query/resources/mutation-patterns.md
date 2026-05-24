@@ -1,74 +1,74 @@
-# Complex Mutation Patterns
+# 复杂 Mutation 模式
 
-## Basic Mutations
+## 基础 Mutations
 
 ```typescript
 const { mutate, isPending, isError, error } = useMutation({
   mutationFn: (newPost: CreatePostDto) => createPost(newPost),
   onSuccess: (data) => {
-    console.log('Post created:', data);
+    console.log('帖子已创建:', data);
   },
   onError: (error) => {
-    console.error('Failed to create post:', error);
+    console.error('创建帖子失败:', error);
   }
 });
 
-// Trigger mutation
-mutate({ title: 'New Post', content: '...' });
+// 触发 mutation
+mutate({ title: '新帖子', content: '...' });
 ```
 
-## Optimistic Updates
+## 乐观更新
 
-Update UI immediately, rollback on error:
+立即更新 UI，错误时回滚：
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: updatePost,
   onMutate: async (newPost) => {
-    // Cancel outgoing refetches
+    // 取消进行中的 refetch
     await queryClient.cancelQueries({ queryKey: ['posts'] });
 
-    // Snapshot previous value
+    // 快照之前的值
     const previousPosts = queryClient.getQueryData(['posts']);
 
-    // Optimistically update to the new value
+    // 乐观更新为新值
     queryClient.setQueryData(['posts'], (old) =>
       old.map((post) => (post.id === newPost.id ? newPost : post))
     );
 
-    // Return context with snapshot
+    // 返回包含快照的 context
     return { previousPosts };
   },
   onError: (err, newPost, context) => {
-    // Rollback to previous value
+    // 回滚到之前的值
     queryClient.setQueryData(['posts'], context.previousPosts);
   },
   onSettled: () => {
-    // Always refetch after error or success
+    // 无论成功或错误都重新 fetch
     queryClient.invalidateQueries({ queryKey: ['posts'] });
   }
 });
 ```
 
-## Sequential Mutations
+## 顺序 Mutations
 
-Run mutations in sequence:
+按顺序执行 mutations：
 
 ```typescript
 const createAndPublish = async (postData) => {
-  // Create post
+  // 创建帖子
   const post = await createPostMutation.mutateAsync(postData);
 
-  // Publish post
+  // 发布帖子
   const published = await publishPostMutation.mutateAsync(post.id);
 
   return published;
 };
 ```
 
-## Parallel Mutations
+## 并行 Mutations
 
-Run multiple mutations simultaneously:
+同时执行多个 mutations：
 
 ```typescript
 const { mutate } = useMutation({
@@ -83,40 +83,40 @@ const { mutate } = useMutation({
 });
 ```
 
-## Mutation with Invalidation
+## 带失效的 Mutation
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: createPost,
   onSuccess: () => {
-    // Invalidate and refetch
+    // 失效并重新获取
     queryClient.invalidateQueries({ queryKey: ['posts'] });
 
-    // Or update cache directly
+    // 或直接更新缓存
     queryClient.setQueryData(['posts'], (old) => [newPost, ...old]);
   }
 });
 ```
 
-## Mutation with Multiple Cache Updates
+## 多缓存更新
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: deletePost,
   onSuccess: (_, deletedPostId) => {
-    // Update posts list
+    // 更新帖子列表
     queryClient.setQueryData(['posts'], (old) => old.filter((post) => post.id !== deletedPostId));
 
-    // Update post count
+    // 更新帖子计数
     queryClient.setQueryData(['postsCount'], (old) => old - 1);
 
-    // Invalidate related queries
+    // 失效相关 queries
     queryClient.invalidateQueries({ queryKey: ['user', 'stats'] });
   }
 });
 ```
 
-## Error Handling
+## 错误处理
 
 ```typescript
 const { mutate, isError, error, reset } = useMutation({
@@ -132,21 +132,21 @@ const { mutate, isError, error, reset } = useMutation({
   }
 });
 
-// Clear error state
+// 清除错误状态
 reset();
 ```
 
-## Retry Failed Mutations
+## 重试失败的 Mutations
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: createPost,
-  retry: 3, // Retry 3 times on failure
-  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // Exponential backoff
+  retry: 3, // 失败重试 3 次
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // 指数退避
 });
 ```
 
-## Mutation with Loading State
+## 带加载状态的 Mutation
 
 ```typescript
 function CreatePostForm() {
@@ -163,47 +163,47 @@ function CreatePostForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* form fields */}
+      {/* 表单字段 */}
       <button type="submit" disabled={isPending}>
-        {isPending ? 'Creating...' : 'Create Post'}
+        {isPending ? '创建中...' : '创建帖子'}
       </button>
     </form>
   );
 }
 ```
 
-## Mutation with Variables
+## 带变量的 Mutation
 
 ```typescript
 const { mutate, variables } = useMutation({
   mutationFn: updatePost
 });
 
-// Access last mutation variables
-console.log('Last updated post:', variables);
+// 获取上一次 mutation 的变量
+console.log('上次更新的帖子:', variables);
 ```
 
-## Mutation Callbacks
+## Mutation 回调
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: createPost,
   onMutate: (variables) => {
-    console.log('Starting mutation with:', variables);
+    console.log('开始 mutation:', variables);
   },
   onSuccess: (data, variables, context) => {
-    console.log('Success!', data);
+    console.log('成功!', data);
   },
   onError: (error, variables, context) => {
-    console.error('Error!', error);
+    console.error('错误!', error);
   },
   onSettled: (data, error, variables, context) => {
-    console.log('Mutation finished (success or error)');
+    console.log('Mutation 完成（成功或错误）');
   }
 });
 ```
 
-## Mutation with Form Integration
+## 带表单集成的 Mutation
 
 ```typescript
 import { useForm } from 'react-hook-form';
@@ -214,8 +214,8 @@ function CreatePostForm() {
   const { mutate, isPending, isError, error } = useMutation({
     mutationFn: createPost,
     onSuccess: () => {
-      reset();  // Clear form
-      toast.success('Post created!');
+      reset();  // 清空表单
+      toast.success('帖子已创建!');
     },
     onError: (error) => {
       toast.error(error.message);
@@ -231,7 +231,7 @@ function CreatePostForm() {
       <input {...register('title')} />
       <textarea {...register('content')} />
       <button type="submit" disabled={isPending}>
-        Submit
+        提交
       </button>
       {isError && <ErrorMessage error={error} />}
     </form>
@@ -239,20 +239,20 @@ function CreatePostForm() {
 }
 ```
 
-## Mutation State Reset
+## Mutation 状态重置
 
 ```typescript
 const { mutate, data, error, reset } = useMutation({
   mutationFn: createPost
 });
 
-// Clear mutation state
+// 清除 mutation 状态
 const handleReset = () => {
-  reset(); // Clears data, error, status, etc.
+  reset(); // 清除 data、error、status 等
 };
 ```
 
-## Global Mutation Configuration
+## 全局 Mutation 配置
 
 ```typescript
 const queryClient = new QueryClient({
@@ -261,15 +261,15 @@ const queryClient = new QueryClient({
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       onError: (error) => {
-        // Global error handler
-        console.error('Mutation error:', error);
+        // 全局错误处理器
+        console.error('Mutation 错误:', error);
       }
     }
   }
 });
 ```
 
-## Mutation Lifecycle
+## Mutation 生命周期
 
 ```
 ┌─────────────┐
@@ -289,20 +289,20 @@ const queryClient = new QueryClient({
                               onSettled()
 ```
 
-## Best Practices
+## 最佳实践
 
-1. **Use Optimistic Updates** - Better UX for fast operations
-2. **Always Handle Errors** - Show clear error messages
-3. **Invalidate Related Queries** - Keep cache in sync
-4. **Use onSettled** - For cleanup that runs regardless of success/error
-5. **Reset on Unmount** - Clear mutation state when component unmounts
-6. **Retry Network Errors** - Configure retry for transient failures
-7. **Show Loading States** - Disable buttons during mutation
-8. **Rollback on Error** - Revert optimistic updates if mutation fails
+1. **使用乐观更新** - 快速操作获得更好的 UX
+2. **始终处理错误** - 显示清晰的错误信息
+3. **失效相关 Queries** - 保持缓存同步
+4. **使用 onSettled** - 无论成功/错误都执行清理
+5. **卸载时重置** - 组件卸载时清除 mutation 状态
+6. **网络错误重试** - 配置重试以处理临时故障
+7. **显示加载状态** - mutation 期间禁用按钮
+8. **错误时回滚** - mutation 失败时恢复乐观更新
 
-## Common Patterns
+## 常见模式
 
-### Create with Redirect
+### 创建后跳转
 
 ```typescript
 const { mutate } = useMutation({
@@ -313,31 +313,31 @@ const { mutate } = useMutation({
 });
 ```
 
-### Update with Toast
+### 更新后 Toast
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: updatePost,
   onSuccess: () => {
-    toast.success('Post updated!');
+    toast.success('帖子已更新!');
   },
   onError: () => {
-    toast.error('Failed to update post');
+    toast.error('更新帖子失败');
   }
 });
 ```
 
-### Delete with Confirmation
+### 删除前确认
 
 ```typescript
 const { mutate } = useMutation({
   mutationFn: deletePost,
   onMutate: async () => {
-    const confirmed = await confirm('Are you sure?');
-    if (!confirmed) throw new Error('Cancelled');
+    const confirmed = await confirm('确定要删除吗？');
+    if (!confirmed) throw new Error('已取消');
   },
   onSuccess: () => {
-    toast.success('Post deleted');
+    toast.success('帖子已删除');
     navigate('/posts');
   }
 });
