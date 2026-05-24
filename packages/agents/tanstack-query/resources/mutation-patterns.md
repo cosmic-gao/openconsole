@@ -3,18 +3,20 @@
 ## 基础 Mutations
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate, isPending, isError, error } = useMutation({
-  mutationFn: (newPost: CreatePostDto) => createPost(newPost),
+  mutationFn: post.create,
   onSuccess: (data) => {
-    console.log('帖子已创建:', data);
+    console.log('帖子已创建:', data)
   },
   onError: (error) => {
-    console.error('创建帖子失败:', error);
+    console.error('创建帖子失败:', error)
   }
-});
+})
 
-// 触发 mutation
-mutate({ title: '新帖子', content: '...' });
+mutate({ title: '新帖子', content: '...' })
 ```
 
 ## 乐观更新
@@ -22,32 +24,26 @@ mutate({ title: '新帖子', content: '...' });
 立即更新 UI，错误时回滚：
 
 ```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate } = useMutation({
-  mutationFn: updatePost,
+  mutationFn: post.update,
   onMutate: async (newPost) => {
-    // 取消进行中的 refetch
-    await queryClient.cancelQueries({ queryKey: ['posts'] });
-
-    // 快照之前的值
-    const previousPosts = queryClient.getQueryData(['posts']);
-
-    // 乐观更新为新值
-    queryClient.setQueryData(['posts'], (old) =>
-      old.map((post) => (post.id === newPost.id ? newPost : post))
-    );
-
-    // 返回包含快照的 context
-    return { previousPosts };
+    await queryClient.cancelQueries({ queryKey: ['post'] })
+    const previousPosts = queryClient.getQueryData(['post', 'list'])
+    queryClient.setQueryData(['post', 'list'], (old) =>
+      old.map((p) => (p.id === newPost.id ? newPost : p))
+    )
+    return { previousPosts }
   },
   onError: (err, newPost, context) => {
-    // 回滚到之前的值
-    queryClient.setQueryData(['posts'], context.previousPosts);
+    queryClient.setQueryData(['post', 'list'], context.previousPosts)
   },
   onSettled: () => {
-    // 无论成功或错误都重新 fetch
-    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    queryClient.invalidateQueries({ queryKey: ['post'] })
   }
-});
+})
 ```
 
 ## 顺序 Mutations
@@ -56,14 +52,10 @@ const { mutate } = useMutation({
 
 ```typescript
 const createAndPublish = async (postData) => {
-  // 创建帖子
-  const post = await createPostMutation.mutateAsync(postData);
-
-  // 发布帖子
-  const published = await publishPostMutation.mutateAsync(post.id);
-
-  return published;
-};
+  const newPost = await createPostMutation.mutateAsync(postData)
+  const published = await publishPostMutation.mutateAsync(newPost.id)
+  return published
+}
 ```
 
 ## 并行 Mutations
@@ -71,185 +63,181 @@ const createAndPublish = async (postData) => {
 同时执行多个 mutations：
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { user, settings } from '@/features/settings/api'
+
 const { mutate } = useMutation({
   mutationFn: async (updates) => {
     const results = await Promise.all([
-      updateProfile(updates.profile),
-      updateSettings(updates.settings),
-      updatePreferences(updates.preferences)
-    ]);
-    return results;
+      user.updateProfile(updates.profile),
+      settings.update(updates.settings),
+    ])
+    return results
   }
-});
+})
 ```
 
 ## 带失效的 Mutation
 
 ```typescript
-const { mutate } = useMutation({
-  mutationFn: createPost,
-  onSuccess: () => {
-    // 失效并重新获取
-    queryClient.invalidateQueries({ queryKey: ['posts'] });
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
 
-    // 或直接更新缓存
-    queryClient.setQueryData(['posts'], (old) => [newPost, ...old]);
+const { mutate } = useMutation({
+  mutationFn: post.create,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['post'] })
+    queryClient.setQueryData(['post', 'list'], (old = []) => [newPost, ...old])
   }
-});
+})
 ```
 
 ## 多缓存更新
 
 ```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate } = useMutation({
-  mutationFn: deletePost,
-  onSuccess: (_, deletedPostId) => {
-    // 更新帖子列表
-    queryClient.setQueryData(['posts'], (old) => old.filter((post) => post.id !== deletedPostId));
-
-    // 更新帖子计数
-    queryClient.setQueryData(['postsCount'], (old) => old - 1);
-
-    // 失效相关 queries
-    queryClient.invalidateQueries({ queryKey: ['user', 'stats'] });
+  mutationFn: post.delete,
+  onSuccess: (_, deletedId) => {
+    queryClient.setQueryData(['post', 'list'], (old) => old.filter((p) => p.id !== deletedId))
+    queryClient.invalidateQueries({ queryKey: ['stats'] })
   }
-});
+})
 ```
 
 ## 错误处理
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate, isError, error, reset } = useMutation({
-  mutationFn: createPost,
+  mutationFn: post.create,
   onError: (error) => {
     if (error.code === 'VALIDATION_ERROR') {
-      setFormErrors(error.fields);
+      setFormErrors(error.fields)
     } else if (error.code === 'NETWORK_ERROR') {
-      showRetryDialog();
+      showRetryDialog()
     } else {
-      showGenericError();
+      showGenericError()
     }
   }
-});
+})
 
-// 清除错误状态
-reset();
+reset()
 ```
 
 ## 重试失败的 Mutations
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate } = useMutation({
-  mutationFn: createPost,
-  retry: 3, // 失败重试 3 次
-  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // 指数退避
-});
+  mutationFn: post.create,
+  retry: 3,
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000)
+})
 ```
 
 ## 带加载状态的 Mutation
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 function CreatePostForm() {
   const { mutate, isPending } = useMutation({
-    mutationFn: createPost,
-    onSuccess: () => {
-      navigate('/posts');
-    }
-  });
+    mutationFn: post.create,
+    onSuccess: () => navigate('/post')
+  })
 
-  const handleSubmit = (data) => {
-    mutate(data);
-  };
+  const handleSubmit = (data) => mutate(data)
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* 表单字段 */}
       <button type="submit" disabled={isPending}>
         {isPending ? '创建中...' : '创建帖子'}
       </button>
     </form>
-  );
+  )
 }
 ```
 
 ## 带变量的 Mutation
 
 ```typescript
-const { mutate, variables } = useMutation({
-  mutationFn: updatePost
-});
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
 
-// 获取上一次 mutation 的变量
-console.log('上次更新的帖子:', variables);
+const { mutate, variables } = useMutation({
+  mutationFn: post.update
+})
+
+console.log('上次更新的帖子:', variables)
 ```
 
 ## Mutation 回调
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate } = useMutation({
-  mutationFn: createPost,
-  onMutate: (variables) => {
-    console.log('开始 mutation:', variables);
-  },
-  onSuccess: (data, variables, context) => {
-    console.log('成功!', data);
-  },
-  onError: (error, variables, context) => {
-    console.error('错误!', error);
-  },
-  onSettled: (data, error, variables, context) => {
-    console.log('Mutation 完成（成功或错误）');
-  }
-});
+  mutationFn: post.create,
+  onMutate: (variables) => console.log('开始 mutation:', variables),
+  onSuccess: (data) => console.log('成功!', data),
+  onError: (error) => console.error('错误!', error),
+  onSettled: () => console.log('Mutation 完成')
+})
 ```
 
 ## 带表单集成的 Mutation
 
 ```typescript
-import { useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form'
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+import { toast } from 'sonner'
 
 function CreatePostForm() {
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset } = useForm()
 
   const { mutate, isPending, isError, error } = useMutation({
-    mutationFn: createPost,
+    mutationFn: post.create,
     onSuccess: () => {
-      reset();  // 清空表单
-      toast.success('帖子已创建!');
+      reset()
+      toast.success('帖子已创建!')
     },
-    onError: (error) => {
-      toast.error(error.message);
-    }
-  });
+    onError: (error) => toast.error(error.message)
+  })
 
-  const onSubmit = (data) => {
-    mutate(data);
-  };
+  const onSubmit = (data) => mutate(data)
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
       <input {...register('title')} />
       <textarea {...register('content')} />
-      <button type="submit" disabled={isPending}>
-        提交
-      </button>
+      <button type="submit" disabled={isPending}>提交</button>
       {isError && <ErrorMessage error={error} />}
     </form>
-  );
+  )
 }
 ```
 
 ## Mutation 状态重置
 
 ```typescript
-const { mutate, data, error, reset } = useMutation({
-  mutationFn: createPost
-});
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
 
-// 清除 mutation 状态
-const handleReset = () => {
-  reset(); // 清除 data、error、status 等
-};
+const { mutate, data, error, reset } = useMutation({
+  mutationFn: post.create
+})
+
+const handleReset = () => reset()
 ```
 
 ## 全局 Mutation 配置
@@ -260,13 +248,10 @@ const queryClient = new QueryClient({
     mutations: {
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      onError: (error) => {
-        // 全局错误处理器
-        console.error('Mutation 错误:', error);
-      }
+      onError: (error) => console.error('Mutation 错误:', error)
     }
   }
-});
+})
 ```
 
 ## Mutation 生命周期
@@ -305,40 +290,48 @@ const queryClient = new QueryClient({
 ### 创建后跳转
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+import { useNavigate } from 'next/navigation'
+
+const navigate = useNavigate()
+
 const { mutate } = useMutation({
-  mutationFn: createPost,
-  onSuccess: (newPost) => {
-    navigate(`/posts/${newPost.id}`);
-  }
-});
+  mutationFn: post.create,
+  onSuccess: (newPost) => navigate(`/post/${newPost.id}`)
+})
 ```
 
 ### 更新后 Toast
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+import { toast } from 'sonner'
+
 const { mutate } = useMutation({
-  mutationFn: updatePost,
-  onSuccess: () => {
-    toast.success('帖子已更新!');
-  },
-  onError: () => {
-    toast.error('更新帖子失败');
-  }
-});
+  mutationFn: post.update,
+  onSuccess: () => toast.success('帖子已更新!'),
+  onError: () => toast.error('更新帖子失败')
+})
 ```
 
 ### 删除前确认
 
 ```typescript
+import { useMutation } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+import { toast } from 'sonner'
+
 const { mutate } = useMutation({
-  mutationFn: deletePost,
+  mutationFn: post.delete,
   onMutate: async () => {
-    const confirmed = await confirm('确定要删除吗？');
-    if (!confirmed) throw new Error('已取消');
+    const confirmed = await confirm('确定要删除吗？')
+    if (!confirmed) throw new Error('已取消')
   },
   onSuccess: () => {
-    toast.success('帖子已删除');
-    navigate('/posts');
+    toast.success('帖子已删除')
+    navigate('/post')
   }
-});
+})
 ```

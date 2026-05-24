@@ -1,6 +1,6 @@
 ---
 name: tanstack-query
-description: TanStack Query v5 最佳工程实践。包括目录结构、Provider 设置、API 服务层模式、Query Keys 工厂、useSuspenseQuery、useMutation、缓存管理等。触发场景：客户端数据获取、缓存管理、乐观更新、useSuspenseQuery、useMutation、Query Keys 配置。
+description: TanStack Query v5 最佳工程实践。包括目录结构、Provider 设置、queryOptions 模式、API + query 内聚、useSuspenseQuery、useMutation、缓存管理等。触发场景：客户端数据获取、缓存管理、乐观更新、useSuspenseQuery、useMutation、queryOptions 配置。
 ---
 
 # TanStack Query v5 最佳工程实践
@@ -12,20 +12,20 @@ description: TanStack Query v5 最佳工程实践。包括目录结构、Provide
 ```
 lib/
 └── query/
-    ├── get-query-client.ts    # per-request QueryClient
+    ├── get-query-client.ts    # Per-request QueryClient
     └── provider.tsx           # QueryClientProvider
 ```
 
 ### 业务 API 层（features/<domain>/api/）
 
 ```
-features/posts/
+features/post/
 ├── api/
-│   ├── postsApi.ts           # API 方法封装
-│   └── postsKeys.ts         # Query Keys 工厂
+│   ├── post.ts     # API 方法 + queryOptions（内聚）
+│   ├── schemas.ts  # Zod schemas
+│   └── index.ts    # barrel
 ├── components/
 ├── server/
-├── schemas.ts
 └── index.ts
 ```
 
@@ -34,7 +34,7 @@ features/posts/
 | 目录 | 内容 | 为什么 |
 | --- | --- | --- |
 | `lib/query/` | QueryClient 初始化 + Provider | 基础设施，所有业务共用 |
-| `features/<domain>/api/` | API 方法 + Query Keys | 业务相关，跟随 domain |
+| `features/<domain>/api/` | API 方法 + queryOptions | 业务相关，跟随 domain |
 
 ---
 
@@ -121,41 +121,37 @@ export const request = ofetch.create({
 })
 ```
 
-### features/posts/api/postsApi.ts
+### features/post/api/post.ts（API + queryOptions 内聚）
 
 ```typescript
-// features/posts/api/postsApi.ts
+// features/post/api/post.ts
+import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/lib/http/request'
-import type { Post, CreatePostDto, UpdatePostDto } from '../schemas'
+import type { Post, CreatePostDto, UpdatePostDto } from './schemas'
 
-export const postsApi = {
-  getAll: (): Promise<Post[]> =>
-    request('/posts'),
-
-  get: (id: string): Promise<Post> =>
-    request(`/posts/${id}`),
-
-  create: (data: CreatePostDto): Promise<Post> =>
-    request('/posts', { method: 'POST', body: data }),
-
-  update: (id: string, data: UpdatePostDto): Promise<Post> =>
-    request(`/posts/${id}`, { method: 'PUT', body: data }),
-
-  delete: (id: string): Promise<void> =>
-    request(`/posts/${id}`, { method: 'DELETE' }),
+// API 方法
+export const post = {
+  list: () => request<Post[]>('/posts'),
+  get: (id: string) => request<Post>(`/posts/${id}`),
+  create: (data: CreatePostDto) => request<Post>('/posts', { method: 'POST', body: data }),
+  update: (id: string, data: UpdatePostDto) => request<Post>(`/posts/${id}`, { method: 'PUT', body: data }),
+  delete: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
 }
-```
 
-### features/posts/api/postsKeys.ts
-
-```typescript
-// features/posts/api/postsKeys.ts
-export const postsKeys = {
-  all: ['posts'] as const,
-  lists: () => [...postsKeys.all, 'list'] as const,
-  list: (filters: string) => [...postsKeys.lists(), { filters }] as const,
-  details: () => [...postsKeys.all, 'detail'] as const,
-  detail: (id: string) => [...postsKeys.details(), id] as const,
+// queryOptions（queryKey + queryFn 内聚）
+export const postQuery = {
+  all: () => queryOptions({
+    queryKey: ['post'],
+    queryFn: post.list,
+  }),
+  list: (filters?: string) => queryOptions({
+    queryKey: ['post', 'list', { filters }],
+    queryFn: () => post.list(),
+  }),
+  detail: (id: string) => queryOptions({
+    queryKey: ['post', 'detail', id],
+    queryFn: () => post.get(id),
+  }),
 }
 ```
 
@@ -166,24 +162,18 @@ export const postsKeys = {
 ### useSuspenseQuery（默认）
 
 ```tsx
-// features/posts/components/post-list.tsx
+// features/post/components/post-list.tsx
 'use client'
 
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { postsApi } from '@/features/posts/api/postsApi'
-import { postsKeys } from '@/features/posts/api/postsKeys'
+import { postQuery } from '@/features/post/api/post'
 
 function PostList() {
-  const { data: posts } = useSuspenseQuery({
-    queryKey: postsKeys.lists(),
-    queryFn: postsApi.getAll,
-  })
+  const { data: posts } = useSuspenseQuery(postQuery.all())
 
   return (
     <div>
-      {posts.map(post => (
-        <PostCard key={post.id} post={post} />
-      ))}
+      {posts.map(p => <PostCard key={p.id} post={p} />)}
     </div>
   )
 }
@@ -197,21 +187,20 @@ function PostList() {
 ### useMutation
 
 ```tsx
-// features/posts/components/post-form.tsx
+// features/post/components/post-form.tsx
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { postsApi } from '@/features/posts/api/postsApi'
-import { postsKeys } from '@/features/posts/api/postsKeys'
+import { post, postQuery } from '@/features/post/api/post'
 import { toast } from 'sonner'
 
 export function CreatePostForm() {
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
-    mutationFn: postsApi.create,
+    mutationFn: post.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: postsKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: ['post'] })
       toast.success('创建成功')
     },
     onError: () => {
@@ -240,15 +229,12 @@ export function CreatePostForm() {
 
 ```tsx
 function PostList() {
-  const { data, isPending, error } = useQuery({
-    queryKey: postsKeys.lists(),
-    queryFn: postsApi.getAll,
-  })
+  const { data, isPending, error } = useQuery(postQuery.all())
 
   if (isPending) return <Skeleton />
   if (error) return <Error error={error} />
 
-  return <div>{data.map(post => <PostCard key={post.id} post={post} />)}</div>
+  return <div>{data.map(p => <PostCard key={p.id} post={p} />)}</div>
 }
 ```
 
@@ -258,21 +244,18 @@ function PostList() {
 
 ```tsx
 const mutation = useMutation({
-  mutationFn: postsApi.update,
-  onMutate: async (updatedPost) => {
-    await queryClient.cancelQueries({ queryKey: postsKeys.detail(updatedPost.id) })
-
-    const previousPost = queryClient.getQueryData(postsKeys.detail(updatedPost.id))
-
-    queryClient.setQueryData(postsKeys.detail(updatedPost.id), updatedPost)
-
-    return { previousPost }
+  mutationFn: ({ id, data }: { id: string; data: UpdatePostDto }) => post.update(id, data),
+  onMutate: async ({ id, data }) => {
+    await queryClient.cancelQueries({ queryKey: ['post', 'detail', id] })
+    const previous = queryClient.getQueryData(['post', 'detail', id])
+    queryClient.setQueryData(['post', 'detail', id], data)
+    return { previous }
   },
-  onError: (err, updatedPost, context) => {
-    queryClient.setQueryData(postsKeys.detail(updatedPost.id), context?.previousPost)
+  onError: (err, { id }, context) => {
+    queryClient.setQueryData(['post', 'detail', id], context?.previous)
   },
-  onSettled: (data, error, variables) => {
-    queryClient.invalidateQueries({ queryKey: postsKeys.detail(variables.id) })
+  onSettled: ({ id }) => {
+    queryClient.invalidateQueries({ queryKey: ['post', 'detail', id] })
   },
 })
 ```
@@ -284,32 +267,26 @@ const mutation = useMutation({
 ### Invalidation
 
 ```typescript
-// 单个 query
-queryClient.invalidateQueries({ queryKey: postsKeys.lists() })
+// 所有 post 相关
+queryClient.invalidateQueries({ queryKey: ['post'] })
 
-// 特定 id
-queryClient.invalidateQueries({ queryKey: postsKeys.detail(postId) })
+// 特定详情
+queryClient.invalidateQueries({ queryKey: ['post', 'detail', postId] })
 
-// 所有 queries
-queryClient.invalidateQueries()
+// 列表
+queryClient.invalidateQueries({ queryKey: ['post', 'list'] })
 ```
 
 ### Prefetching
 
 ```typescript
 // 鼠标悬停预取
-const prefetchPost = (postId: string) => {
-  queryClient.prefetchQuery({
-    queryKey: postsKeys.detail(postId),
-    queryFn: () => postsApi.get(postId),
-  })
+const prefetch = (id: string) => {
+  queryClient.prefetchQuery(postQuery.detail(id))
 }
 
-<Link
-  to={`/posts/${post.id}`}
-  onMouseEnter={() => prefetchPost(post.id)}
->
-  {post.title}
+<Link to={`/post/${p.id}`} onMouseEnter={() => prefetch(p.id)}>
+  {p.title}
 </Link>
 ```
 
@@ -317,10 +294,7 @@ const prefetchPost = (postId: string) => {
 
 ```typescript
 // 数据不存在时才 fetch
-await queryClient.ensureQueryData({
-  queryKey: postsKeys.detail(id),
-  queryFn: () => postsApi.get(id),
-})
+await queryClient.ensureQueryData(postQuery.detail(id))
 ```
 
 ---
@@ -345,20 +319,17 @@ function Component() {
 </Suspense>
 ```
 
-### 2. Query Key 不一致
+### 2. 使用 queryOptions 保持 key 一致
 
 ```tsx
-// ❌ 错误：key 格式不统一
+// ❌ 错误：手动拼 key 容易不一致
 const { data } = useQuery({
-  queryKey: ['post', id],      // 格式 1
-  queryFn: () => postsApi.get(id),
+  queryKey: ['post', 'detail', id],
+  queryFn: () => post.get(id),
 })
 
-// ✅ 正确：使用工厂函数
-const { data } = useQuery({
-  queryKey: postsKeys.detail(id),  // 格式统一
-  queryFn: () => postsApi.get(id),
-})
+// ✅ 正确：使用 queryOptions
+const { data } = useQuery(postQuery.detail(id))
 ```
 
 ### 3. 在 Server Component 使用 useQuery
@@ -366,13 +337,13 @@ const { data } = useQuery({
 ```tsx
 // ❌ 错误：Server Component 不能用 useQuery
 export default async function Page() {
-  const { data } = useQuery({...})  // 不支持！
+  const { data } = useQuery(...)  // 不支持！
   return <div>{data}</div>
 }
 
 // ✅ 正确：Server Component 直接 await
 export default async function Page() {
-  const posts = await postsApi.getAll()
+  const posts = await post.list()
   return <PostList posts={posts} />
 }
 ```
@@ -393,7 +364,7 @@ export default async function Page() {
 ## 禁止事项
 
 - **不要**在 Server Component 使用 useQuery/useSuspenseQuery
-- **不要**在 queryFn 外部直接调用 fetch，用工厂函数
+- **不要**手动拼 queryKey，使用 queryOptions 工厂函数
 - **不要**混用 SWR 和 TanStack Query
 - **不要**在 client 组件里用 async function（用 useEffect 或 React 19 use()）
 

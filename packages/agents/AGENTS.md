@@ -96,9 +96,10 @@ lib/
     ├── get-query-client.ts   # Per-request QueryClient
     └── provider.tsx          # QueryClientProvider
 
-features/[domain]/api/
-├── [domain]Api.ts           # API 方法（ofetch）
-└── [domain]Keys.ts         # Query Keys 工厂
+features/<domain>/api/
+├── <domain>.ts    # API 方法 + queryOptions（queryKey + queryFn 内聚）
+├── schemas.ts     # Zod schemas
+└── index.ts      # barrel
 ```
 
 详细规范见 [`packages/agents/tanstack-query/SKILL.md`](./tanstack-query/SKILL.md)。

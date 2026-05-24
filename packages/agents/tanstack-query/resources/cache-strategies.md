@@ -3,12 +3,14 @@
 ## 缓存时间配置
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data } = useQuery({
-  queryKey: ['posts'],
-  queryFn: fetchPosts,
-  staleTime: 5 * 60 * 1000, // 5 分钟内视为新鲜
-  gcTime: 10 * 60 * 1000     // 在缓存中保留 10 分钟（原来是 cacheTime）
-});
+  ...postQuery.list(),
+  staleTime: 5 * 60 * 1000,
+  gcTime: 10 * 60 * 1000
+})
 ```
 
 ## 缓存失效
@@ -16,31 +18,27 @@ const { data } = useQuery({
 ### 失效特定查询
 
 ```typescript
-const queryClient = useQueryClient();
+import { useQueryClient } from '@tanstack/react-query'
 
-// 失效所有帖子查询
-queryClient.invalidateQueries({ queryKey: ['posts'] });
+const queryClient = useQueryClient()
 
-// 失效特定帖子
-queryClient.invalidateQueries({ queryKey: ['post', postId] });
-
-// 精确匹配失效
-queryClient.invalidateQueries({
-  queryKey: ['posts'],
-  exact: true // 只匹配 ['posts']，不匹配 ['posts', 'list']
-});
+queryClient.invalidateQueries({ queryKey: ['post'] })
+queryClient.invalidateQueries({ queryKey: ['post', 'detail', postId] })
+queryClient.invalidateQueries({ queryKey: ['post'], exact: true })
 ```
 
 ### Mutation 时失效
 
 ```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { post } from '@/features/post/api/post'
+
 const { mutate } = useMutation({
-  mutationFn: createPost,
+  mutationFn: post.create,
   onSuccess: () => {
-    // 失效并重新获取
-    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    queryClient.invalidateQueries({ queryKey: ['post'] })
   }
-});
+})
 ```
 
 ## 手动缓存更新
@@ -48,28 +46,31 @@ const { mutate } = useMutation({
 ### 设置查询数据
 
 ```typescript
-// 直接更新缓存
-queryClient.setQueryData(['post', postId], (oldData) => ({
+import { useQueryClient } from '@tanstack/react-query'
+
+queryClient.setQueryData(['post', 'detail', id], (oldData) => ({
   ...oldData,
   title: '新标题'
-}));
+}))
 
-// 设置新数据
-queryClient.setQueryData(['post', postId], newPost);
+queryClient.setQueryData(['post', 'detail', id], newPost)
 ```
 
 ### 获取查询数据
 
 ```typescript
-// 从缓存读取
-const cachedPost = queryClient.getQueryData(['post', postId]);
+import { useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
 
-// 用于 initialData
+const queryClient = useQueryClient()
+
+const cachedPost = queryClient.getQueryData(['post', 'detail', id])
+
 const { data } = useQuery({
-  queryKey: ['post', postId],
-  queryFn: () => fetchPost(postId),
-  initialData: () => queryClient.getQueryData(['posts'])?.find((p) => p.id === postId)
-});
+  ...postQuery.detail(id),
+  initialData: () => queryClient.getQueryData(['post', 'list'])?.find(p => p.id === id)
+})
 ```
 
 ## 重新获取策略
@@ -77,32 +78,38 @@ const { data } = useQuery({
 ### 窗口焦点时重新获取
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data } = useQuery({
-  queryKey: ['posts'],
-  queryFn: fetchPosts,
-  refetchOnWindowFocus: true // 标签页重新获得焦点时重新获取
-});
+  ...postQuery.list(),
+  refetchOnWindowFocus: true
+})
 ```
 
 ### 重新连接时重新获取
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data } = useQuery({
-  queryKey: ['posts'],
-  queryFn: fetchPosts,
-  refetchOnReconnect: true // 网络重新连接时重新获取
-});
+  ...postQuery.list(),
+  refetchOnReconnect: true
+})
 ```
 
 ### 定时重新获取
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { liveQuery } from '@/features/live/api'
+
 const { data } = useQuery({
-  queryKey: ['live-data'],
-  queryFn: fetchLiveData,
-  refetchInterval: 5000, // 每 5 秒重新获取
-  refetchIntervalInBackground: false // 标签页不活跃时暂停
-});
+  ...liveQuery.prices(),
+  refetchInterval: 5000,
+  refetchIntervalInBackground: false
+})
 ```
 
 ## 缓存持久化
@@ -110,26 +117,22 @@ const { data } = useQuery({
 ### 持久化到 localStorage
 
 ```typescript
-import { QueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { QueryClient, PersistQueryClientProvider } from '@tanstack/react-query'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      gcTime: 1000 * 60 * 60 * 24  // 24 小时
+      gcTime: 1000 * 60 * 60 * 24
     }
   }
-});
+})
 
 const persister = createSyncStoragePersister({
   storage: window.localStorage
-});
+})
 
-<PersistQueryClientProvider
-  client={queryClient}
-  persister={persister}
->
+<PersistQueryClientProvider client={queryClient} persister={persister}>
   <App />
 </PersistQueryClientProvider>
 ```
@@ -139,19 +142,12 @@ const persister = createSyncStoragePersister({
 ### 自动请求去重
 
 ```typescript
-// 两个组件共享同一请求
 function Component1() {
-  const { data } = useQuery({
-    queryKey: ['posts'],
-    queryFn: fetchPosts
-  });
+  const { data } = useQuery(postQuery.list())
 }
 
 function Component2() {
-  const { data } = useQuery({
-    queryKey: ['posts'], // 相同 key = 相同请求
-    queryFn: fetchPosts
-  });
+  const { data } = useQuery(postQuery.list())
 }
 ```
 
@@ -160,34 +156,29 @@ function Component2() {
 ### 预获取查询
 
 ```typescript
-const queryClient = useQueryClient();
+import { useQueryClient } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
 
-// 导航前预获取
+const queryClient = useQueryClient()
+
 const handleMouseEnter = () => {
-  queryClient.prefetchQuery({
-    queryKey: ['post', postId],
-    queryFn: () => fetchPost(postId)
-  });
-};
+  queryClient.prefetchQuery(postQuery.detail(id))
+}
 
-// 在 loader 中预获取
-router.beforeEach(async (to, from, next) => {
-  await queryClient.prefetchQuery({
-    queryKey: ['user', to.params.userId],
-    queryFn: () => fetchUser(to.params.userId)
-  });
-  next();
-});
+router.beforeEach(async (to) => {
+  await queryClient.prefetchQuery(postQuery.detail(to.params.id))
+})
 ```
 
 ### 确保查询数据
 
 ```typescript
-// 如果缓存中没有则获取，否则使用缓存
-await queryClient.ensureQueryData({
-  queryKey: ['post', postId],
-  queryFn: () => fetchPost(postId)
-});
+import { useQueryClient } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
+const queryClient = useQueryClient()
+
+await queryClient.ensureQueryData(postQuery.detail(id))
 ```
 
 ## 选择性缓存更新
@@ -195,27 +186,25 @@ await queryClient.ensureQueryData({
 ### 更新嵌套数据
 
 ```typescript
-queryClient.setQueryData(['posts'], (oldPosts) => {
-  return oldPosts.map((post) => (post.id === updatedPost.id ? updatedPost : post));
-});
+queryClient.setQueryData(['post', 'list'], (oldPosts) => {
+  return oldPosts.map((p) => (p.id === updatedPost.id ? updatedPost : p))
+})
 ```
 
 ### 添加到列表缓存
 
 ```typescript
-// 创建帖子后
-queryClient.setQueryData(['posts'], (oldPosts = []) => {
-  return [newPost, ...oldPosts];
-});
+queryClient.setQueryData(['post', 'list'], (oldPosts = []) => {
+  return [newPost, ...oldPosts]
+})
 ```
 
 ### 从列表缓存删除
 
 ```typescript
-// 删除帖子后
-queryClient.setQueryData(['posts'], (oldPosts) => {
-  return oldPosts.filter((post) => post.id !== deletedPostId);
-});
+queryClient.setQueryData(['post', 'list'], (oldPosts) => {
+  return oldPosts.filter((p) => p.id !== deletedPostId)
+})
 ```
 
 ## 缓存调试
@@ -223,7 +212,7 @@ queryClient.setQueryData(['posts'], (oldPosts) => {
 ### React Query Devtools
 
 ```typescript
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 <QueryClientProvider client={queryClient}>
   <App />
@@ -234,11 +223,11 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 ### 查询缓存事件
 
 ```typescript
-const queryCache = queryClient.getQueryCache();
+const queryCache = queryClient.getQueryCache()
 
 queryCache.subscribe((event) => {
-  console.log('查询缓存事件:', event.type, event.query.queryKey);
-});
+  console.log('查询缓存事件:', event.type, event.query.queryKey)
+})
 ```
 
 ## 最佳实践

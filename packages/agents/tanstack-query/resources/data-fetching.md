@@ -5,18 +5,18 @@
 依赖于其他查询结果的查询：
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { userQuery } from '@/features/user/api/user'
+
 // 第一个查询 - 获取用户 ID
-const { data: user } = useQuery({
-  queryKey: ['user'],
-  queryFn: fetchCurrentUser
-});
+const { data: user } = useQuery(userQuery.me())
 
 // 第二个查询 - 依赖于用户 ID
 const { data: posts } = useQuery({
-  queryKey: ['posts', user?.id],
-  queryFn: () => fetchUserPosts(user!.id),
-  enabled: !!user // 仅当 user 可用时执行
-});
+  queryKey: ['post', 'user', user?.id],
+  queryFn: () => post.listByUser(user!.id),
+  enabled: !!user
+})
 ```
 
 ## 并行查询
@@ -24,24 +24,25 @@ const { data: posts } = useQuery({
 同时获取多个独立的查询：
 
 ```typescript
+import { useQueries } from '@tanstack/react-query'
+import { postQuery, statsQuery, notificationQuery } from '@/features/dashboard/api'
+
 function Dashboard() {
-  const queries = useQueries({
+  const [postsResult, statsResult, notificationsResult] = useQueries({
     queries: [
-      { queryKey: ['stats'], queryFn: fetchStats },
-      { queryKey: ['recentPosts'], queryFn: fetchRecentPosts },
-      { queryKey: ['notifications'], queryFn: fetchNotifications }
+      postQuery.recent(),
+      statsQuery.summary(),
+      notificationQuery.all(),
     ]
-  });
+  })
 
-  const [statsQuery, postsQuery, notificationsQuery] = queries;
-
-  if (queries.some(q => q.isLoading)) return <Loading />;
+  if (postsResult.isPending) return <Loading />
 
   return <Dashboard
-    stats={statsQuery.data}
-    posts={postsQuery.data}
-    notifications={notificationsQuery.data}
-  />;
+    stats={statsResult.data}
+    posts={postsResult.data}
+    notifications={notificationsResult.data}
+  />
 }
 ```
 
@@ -50,20 +51,20 @@ function Dashboard() {
 用于分页和无限滚动：
 
 ```typescript
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const {
   data,
   fetchNextPage,
   hasNextPage,
   isFetchingNextPage
 } = useInfiniteQuery({
-  queryKey: ['posts'],
-  queryFn: ({ pageParam = 1 }) => fetchPosts(pageParam),
-  getNextPageParam: (lastPage, pages) => lastPage.nextCursor,
-  initialPageParam: 1
-});
+  ...postQuery.paginated(1),
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
 
-// 扁平化 pages
-const allPosts = data?.pages.flatMap(page => page.posts) ?? [];
+const allPosts = data?.pages.flatMap(page => page.list) ?? []
 
 return (
   <div>
@@ -74,7 +75,7 @@ return (
       </button>
     )}
   </div>
-);
+)
 ```
 
 ## 预获取
@@ -82,23 +83,21 @@ return (
 在需要之前预加载数据：
 
 ```typescript
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
 
-function PostLink({ postId }: { postId: string }) {
-  const queryClient = useQueryClient();
+function PostLink({ id }: { id: string }) {
+  const queryClient = useQueryClient()
 
   const handleMouseEnter = () => {
-    queryClient.prefetchQuery({
-      queryKey: ['post', postId],
-      queryFn: () => fetchPost(postId)
-    });
-  };
+    queryClient.prefetchQuery(postQuery.detail(id))
+  }
 
   return (
-    <Link to={`/posts/${postId}`} onMouseEnter={handleMouseEnter}>
+    <Link to={`/post/${id}`} onMouseEnter={handleMouseEnter}>
       查看帖子
     </Link>
-  );
+  )
 }
 ```
 
@@ -107,21 +106,18 @@ function PostLink({ postId }: { postId: string }) {
 配合 React Suspense 使用：
 
 ```typescript
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
 
-function PostDetails({ postId }: { postId: string }) {
-  // 加载时抛出 promise，错误时抛出错误
-  const { data: post } = useSuspenseQuery({
-    queryKey: ['post', postId],
-    queryFn: () => fetchPost(postId)
-  });
+function PostDetails({ id }: { id: string }) {
+  const { data: post } = useSuspenseQuery(postQuery.detail(id))
 
-  return <div>{post.title}</div>;
+  return <div>{post.title}</div>
 }
 
 // 用 Suspense 包裹
 <Suspense fallback={<Loading />}>
-  <PostDetails postId="123" />
+  <PostDetails id="123" />
 </Suspense>
 ```
 
@@ -130,13 +126,13 @@ function PostDetails({ postId }: { postId: string }) {
 组件卸载时取消查询：
 
 ```typescript
-const { data, isLoading } = useQuery({
-  queryKey: ['search', searchTerm],
-  queryFn: async ({ signal }) => {
-    const response = await fetch(`/api/search?q=${searchTerm}`, { signal });
-    return response.json();
-  }
-});
+import { useQuery } from '@tanstack/react-query'
+import { searchQuery } from '@/features/search/api'
+
+const { data } = useQuery({
+  ...searchQuery.byTerm(searchTerm),
+  cancelToken: new AbortController().signal
+})
 ```
 
 ## 初始数据
@@ -144,14 +140,13 @@ const { data, isLoading } = useQuery({
 提供初始数据以避免加载状态：
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data } = useQuery({
-  queryKey: ['post', postId],
-  queryFn: () => fetchPost(postId),
-  initialData: () => {
-    // 从缓存或其他来源获取
-    return queryClient.getQueryData(['posts'])?.find((post) => post.id === postId);
-  }
-});
+  ...postQuery.detail(id),
+  initialData: () => queryClient.getQueryData(['post', 'list'])?.find(p => p.id === id)
+})
 ```
 
 ## 占位数据
@@ -159,14 +154,13 @@ const { data } = useQuery({
 加载时显示占位符：
 
 ```typescript
-const { data, isPlaceholderData } = useQuery({
-  queryKey: ['posts', page],
-  queryFn: () => fetchPosts(page),
-  placeholderData: (previousData) => previousData  // 加载时保持上一页数据
-});
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
 
-// 或提供静态占位符
-placeholderData: { posts: [], total: 0 }
+const { data, isPlaceholderData } = useQuery({
+  ...postQuery.paginated(page),
+  placeholderData: (previousData) => previousData
+})
 ```
 
 ## 带查询的乐观更新
@@ -174,31 +168,26 @@ placeholderData: { posts: [], total: 0 }
 立即更新 UI，错误时回滚：
 
 ```typescript
-const queryClient = useQueryClient();
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { post, postQuery } from '@/features/post/api/post'
+
+const queryClient = useQueryClient()
 
 const { mutate } = useMutation({
-  mutationFn: updatePost,
-  onMutate: async (newPost) => {
-    // 取消进行中的 queries
-    await queryClient.cancelQueries({ queryKey: ['post', newPost.id] });
-
-    // 快照当前值
-    const previousPost = queryClient.getQueryData(['post', newPost.id]);
-
-    // 乐观更新
-    queryClient.setQueryData(['post', newPost.id], newPost);
-
-    return { previousPost };
+  mutationFn: ({ id, data }) => post.update(id, data),
+  onMutate: async ({ id, data }) => {
+    await queryClient.cancelQueries(postQuery.detail(id))
+    const previous = queryClient.getQueryData(['post', 'detail', id])
+    queryClient.setQueryData(['post', 'detail', id], data)
+    return { previous }
   },
-  onError: (err, newPost, context) => {
-    // 错误时回滚
-    queryClient.setQueryData(['post', newPost.id], context?.previousPost);
+  onError: (err, { id }, context) => {
+    queryClient.setQueryData(['post', 'detail', id], context?.previous)
   },
-  onSettled: (newPost) => {
-    // 成功或错误后重新获取
-    queryClient.invalidateQueries({ queryKey: ['post', newPost.id] });
+  onSettled: ({ id }) => {
+    queryClient.invalidateQueries(postQuery.detail(id))
   }
-});
+})
 ```
 
 ## 查询重试
@@ -206,12 +195,14 @@ const { mutate } = useMutation({
 配置重试行为：
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data } = useQuery({
-  queryKey: ['post', postId],
-  queryFn: () => fetchPost(postId),
-  retry: 3, // 重试 3 次
-  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000) // 指数退避
-});
+  ...postQuery.detail(id),
+  retry: 3,
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000)
+})
 ```
 
 ## 错误处理
@@ -219,14 +210,16 @@ const { data } = useQuery({
 处理查询错误：
 
 ```typescript
+import { useQuery } from '@tanstack/react-query'
+import { postQuery } from '@/features/post/api/post'
+
 const { data, error, isError } = useQuery({
-  queryKey: ['post', postId],
-  queryFn: () => fetchPost(postId),
-  throwOnError: false  // 不抛出错误，只设置 error
-});
+  ...postQuery.detail(id),
+  throwOnError: false
+})
 
 if (isError) {
-  return <ErrorMessage error={error} />;
+  return <ErrorMessage error={error} />
 }
 ```
 
