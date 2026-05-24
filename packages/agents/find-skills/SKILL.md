@@ -1,142 +1,142 @@
 ---
 name: find-skills
-description: 当用户问"怎么做 X"、"有没有 X 相关的 skill"、"是否存在能做……的 skill"，或者想扩展 agent 能力时，帮助用户发现和安装 agent skill。用户想找的功能可能已经作为可安装 skill 存在时就用本 skill。
+description: Helps users discover and install agent skills. Use when users ask "how to do X", "is there a skill for X", "can you do X", or want to extend agent capabilities. Triggered when users look for tools, templates, workflows, or skills in specific domains like design, testing, or deployment.
 ---
 
 # Find Skills
 
-本 skill 帮你从 open agent skills 生态里发现并安装 skill。
+Discover and install skills from the open agent skills ecosystem.
 
-## 什么时候用
+## When to Use
 
-满足以下任一条件就用：
+Use when any of these apply:
 
-- 用户问"怎么做 X"，X 可能是某个已有 skill 能解决的常见任务
-- 用户说"找一个 X 相关的 skill"或"有没有 X 的 skill"
-- 用户问"你能做 X 吗"，X 是某个专业领域能力
-- 用户表达想扩展 agent 能力
-- 用户想搜工具、模板、工作流
-- 用户提到想要某个领域（设计、测试、部署等）的辅助
+- User asks "how to do X" where X might be a common task covered by an existing skill
+- User asks to "find a skill for X" or "is there a skill for X"
+- User asks "can you do X" where X is a specialized capability
+- User expresses interest in extending agent capabilities
+- User wants to search for tools, templates, or workflows
+- User mentions wanting help in a specific domain (design, testing, deployment, etc.)
 
-## Skills CLI 是什么
+## Skills CLI
 
-Skills CLI（`npx skills`）是 open agent skills 生态的包管理器。Skill 是模块化的包，用专业知识、工作流、工具来扩展 agent 能力。
+`pnpm dlx skills` is the package manager for the open agent skills ecosystem. Skills are modular packages that extend agent capabilities with专业知识, workflows, and tools.
 
-**关键命令：**
+**Key commands:**
 
-- `npx skills find [query]` — 交互式或按关键词搜索 skill
-- `npx skills add <package>` — 从 GitHub 等源安装 skill
-- `npx skills check` — 检查 skill 更新
-- `npx skills update` — 更新所有已装 skill
+- `pnpm dlx skills find [query]` — Search skills interactively or by keyword
+- `pnpm dlx skills add <package>` — Install a skill from GitHub or other sources
+- `pnpm dlx skills check` — Check for skill updates
+- `pnpm dlx skills update` — Update all installed skills
 
-**浏览 skill 库：** https://skills.sh/
+**Browse skill library:** https://skills.sh/
 
-## 怎么帮用户找 skill
+## How to Help Users Find Skills
 
-### Step 1：理解用户需求
+### Step 1: Understand the Need
 
-用户求助时识别：
+Identify:
 
-1. 领域（如 React、测试、设计、部署）
-2. 具体任务（如写测试、做动画、review PR）
-3. 这是不是足够常见到可能有现成 skill
+1. Domain (e.g., React, testing, design, deployment)
+2. Specific task (e.g., write tests, animate, review PRs)
+3. Whether it's common enough to likely have an existing skill
 
-### Step 2：先看 leaderboard
+### Step 2: Check the Leaderboard First
 
-跑 CLI 搜索之前，先看 [skills.sh leaderboard](https://skills.sh/)，看这个领域有没有出名的 skill。leaderboard 按总安装量排序，能浮现出最流行、经过实战检验的选项。
+Before running CLI searches, check the [skills.sh leaderboard](https://skills.sh/) to see if there are well-known skills in this area. The leaderboard is sorted by total installs, surfacing the most popular and battle-tested options.
 
-例如 Web 开发的头部 skill：
+Top skills for web development:
 
-- `vercel-labs/agent-skills` — React、Next.js、Web 设计（各 10 万+ 安装）
-- `anthropics/skills` — 前端设计、文档处理（10 万+ 安装）
+- `vercel-labs/agent-skills` — React, Next.js, Web design (100K+ installs each)
+- `anthropics/skills` — Frontend design, document processing (100K+ installs)
 
-### Step 3：搜 skill
+### Step 3: Search for Skills
 
-leaderboard 没覆盖到用户需求时，跑 find 命令：
-
-```bash
-npx skills find [query]
-```
-
-例：
-
-- 用户问"我的 React 应用怎么提速？" → `npx skills find react performance`
-- 用户问"能帮我做 PR review 吗？" → `npx skills find pr review`
-- 用户问"我要做一个 changelog" → `npx skills find changelog`
-
-### Step 4：推荐前先验质量
-
-**不要只凭搜索结果就推荐 skill**，先验：
-
-1. **安装量** —— 优先 1K+ 安装的；100 以下要慎重
-2. **来源信誉** —— 官方源（`vercel-labs`、`anthropics`、`microsoft`）比无名作者更可信
-3. **GitHub stars** —— 看源仓库；<100 star 的仓库要保持怀疑
-
-### Step 5：把选项给用户
-
-找到合适的 skill 后，告诉用户：
-
-1. skill 名字和用途
-2. 安装量和来源
-3. 安装命令
-4. skills.sh 上的详情链接
-
-回答示例：
-
-```
-我找到一个可能合适的 skill！"react-best-practices" 提供 Vercel 工程团队的
-React 和 Next.js 性能优化指南。（185K 安装）
-
-安装命令：
-npx skills add vercel-labs/agent-skills@react-best-practices
-
-详情：https://skills.sh/vercel-labs/agent-skills/react-best-practices
-```
-
-### Step 6：可以帮装
-
-用户同意就帮装：
+If the leaderboard doesn't cover the user's need, run the find command:
 
 ```bash
-npx skills add <owner/repo@skill> -g -y
+pnpm dlx skills find [query]
 ```
 
-`-g` 是全局安装（user 级别），`-y` 是跳过确认提示。
+Examples:
 
-## 常见 skill 分类
+- "how to speed up my React app?" → `pnpm dlx skills find react performance`
+- "can you help with PR review?" → `pnpm dlx skills find pr review`
+- "I need to make a changelog" → `pnpm dlx skills find changelog`
 
-搜索时考虑这些常见分类：
+### Step 4: Validate Quality Before Recommending
 
-| 分类         | 示例查询                                  |
-| ------------ | ----------------------------------------- |
-| Web 开发     | react、nextjs、typescript、css、tailwind  |
-| 测试         | testing、jest、playwright、e2e            |
-| DevOps       | deploy、docker、kubernetes、ci-cd         |
-| 文档         | docs、readme、changelog、api-docs         |
-| 代码质量     | review、lint、refactor、best-practices    |
-| 设计         | ui、ux、design-system、accessibility      |
-| 生产力       | workflow、automation、git                 |
+**Don't recommend a skill based only on search results.** Validate:
 
-## 高效搜索技巧
+1. **Install count** — Prefer 1K+ installs; be cautious with <100
+2. **Source reputation** — Official sources (`vercel-labs`, `anthropics`, `microsoft`) are more trustworthy than unknown authors
+3. **GitHub stars** — Check the source repo; be skeptical of <100 stars
 
-1. **用具体关键词**："react testing" 比单独的 "testing" 好
-2. **试同义词**："deploy" 不行就试 "deployment" 或 "ci-cd"
-3. **看热门来源**：很多 skill 来自 `vercel-labs/agent-skills` 或 `ComposioHQ/awesome-claude-skills`
+### Step 5: Present Options to User
 
-## 找不到 skill 时
+When you find a suitable skill, tell the user:
 
-没有相关 skill 的话：
+1. Skill name and what it does
+2. Install count and source
+3. Installation command
+4. Link to details on skills.sh
 
-1. 承认没找到现成的
-2. 提议用你的通用能力直接帮忙
-3. 建议用户可以用 `npx skills init` 自己创建
-
-例：
+Example response:
 
 ```
-我搜了 "xyz" 相关的 skill 但没找到匹配的。
-我还是可以直接帮你做这件事！要现在就开始吗？
+I found a potentially suitable skill! "react-best-practices" provides Vercel engineering team's
+React and Next.js performance optimization guide. (185K installs)
 
-如果这是你常做的事，可以自己建一个 skill：
-npx skills init my-xyz-skill
+Install:
+pnpm dlx skills add vercel-labs/agent-skills@react-best-practices
+
+Details: https://skills.sh/vercel-labs/agent-skills/react-best-practices
+```
+
+### Step 6: Offer to Install
+
+If the user agrees, install for them:
+
+```bash
+pnpm dlx skills add <owner/repo@skill> -g -y
+```
+
+`-g` is global install (user level), `-y` skips confirmation.
+
+## Common Skill Categories
+
+Consider these categories when searching:
+
+| Category      | Example Queries                              |
+|---------------|----------------------------------------------|
+| Web Dev       | react, nextjs, typescript, css, tailwind      |
+| Testing       | testing, jest, playwright, e2e                 |
+| DevOps        | deploy, docker, kubernetes, ci-cd             |
+| Documentation | docs, readme, changelog, api-docs            |
+| Code Quality  | review, lint, refactor, best-practices       |
+| Design        | ui, ux, design-system, accessibility         |
+| Productivity  | workflow, automation, git                     |
+
+## Search Tips
+
+1. **Use specific keywords** — "react testing" is better than "testing" alone
+2. **Try synonyms** — if "deploy" doesn't work, try "deployment" or "ci-cd"
+3. **Check popular sources** — many skills come from `vercel-labs/agent-skills` or `ComposioHQ/awesome-claude-skills`
+
+## No Skill Found
+
+If no relevant skill exists:
+
+1. Acknowledge no match was found
+2. Offer to help directly with your general capabilities
+3. Suggest the user can create one with `pnpm dlx skills init`
+
+Example:
+
+```
+I searched for skills related to "xyz" but didn't find a match.
+I can still help you do this directly! Want to get started?
+
+If this is something you do often, you can create a skill yourself:
+pnpm dlx skills init my-xyz-skill
 ```
