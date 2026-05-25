@@ -3,261 +3,73 @@ name: ui
 description: >
   @openconsole/shadcn + @openconsole/atoms UI 组件使用规范。
 
-  基础组件来自 @openconsole/shadcn（Button, Card, Dialog, Sidebar 等 60+ 组件），
+  基础组件来自 @openconsole/shadcn（Button, Card, Dialog、Sidebar 等 60+ 组件），
   高阶组件来自 @openconsole/atoms（ThemeSwitch, Preferences, Sidebar, Header, Breadcrumbs 等）。
 
-  触发场景：使用 UI 组件、表单布局、主题适配、布局组合、UI 设计评审、
-  想下载 shadcn 组件或使用其他 UI 库时。
-
+  触发场景：使用 UI 组件、表单布局、主题适配、布局组合、UI 设计评审。
   禁止直接下载 shadcn 组件或使用其他 UI 库。
 ---
 
 # UI 组件规范
 
-本项目使用双包架构：
+## 双包架构
 
 | 包 | 职责 | 导入 |
 |---|---|---|
 | `@openconsole/shadcn` | 60+ 基础组件（primitives） | `import { Button } from '@openconsole/shadcn'` |
 | `@openconsole/atoms` | 高阶业务组件 | `import { Header } from '@openconsole/atoms'` |
 
----
-
-## 强制规则
-
 **禁止直接下载 shadcn 组件**：
 - ✗ `npx shadcn@latest add button`
 - ✗ 从 shadcn/ui 官网复制组件代码
 - ✗ 使用其他 UI 库（Material UI, Chakra UI, Ant Design 等）
 
-**正确方式**：
-```tsx
-// ✓ 使用包提供的组件
-import { Button } from '@openconsole/shadcn'
-import { Header } from '@openconsole/atoms'
-```
-
----
-
-## 组件选择原则
-
-1. **优先使用 atoms 高阶组件**：Settings drawer → `Preferences`；带 logo 的侧边栏 → `Sidebar`；主题切换按钮 → `ThemeSwitch`。
-2. **基础组件用于原子化需求**：shadcn 组件用于构建业务组件，不直接暴露给页面。
-3. **禁止混用其他 UI 库**：只使用 `@openconsole/shadcn` + `@openconsole/atoms`。
-
----
-
-## @openconsole/shadcn 组件分类（60+ 组件）
-
-| 类别 | 组件 |
-|---|---|
-| 表单输入 | `Input`, `Textarea`, `Select`, `Checkbox`, `Switch`, `Slider`, `RadioGroup`, `InputOTP`, `InputGroup`, `NativeSelect` |
-| 覆盖层 | `Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `Popover`, `Tooltip`, `HoverCard` |
-| 导航 | `Sidebar`, `Tabs`, `Breadcrumb`, `Pagination`, `NavigationMenu`, `Menubar` |
-| 菜单 | `DropdownMenu`, `ContextMenu`, `Command` |
-| 布局 | `Card`, `Accordion`, `Collapsible`, `Resizable`, `ScrollArea`, `Separator` |
-| 数据展示 | `Table`, `Avatar`, `Badge`, `Skeleton`, `Progress` |
-| 反馈 | `Alert`, `Empty`, `Spinner`, `sonner` (Toast) |
-| 多媒体 | `Carousel`, `Chart`, `Calendar` |
-| 表单集成 | `Form`, `Field`, `FieldGroup`, `Label` |
-| 图标 | `Icon` |
-
----
-
-## @openconsole/atoms 组件
-
-| 组件 | 用途 | 导入 |
-|---|---|---|
-| `ThemeSwitch` | 主题切换按钮（View Transitions API） | `import { ThemeSwitch } from '@openconsole/atoms'` |
-| `Header` | 粘性顶部栏（自动面包屑 + 主题 + 设置） | `import { Header } from '@openconsole/atoms'` |
-| `Sidebar` | 三段式侧边栏（brand/menu/account） | `import { Sidebar } from '@openconsole/atoms'` |
-| `Breadcrumbs` | 路径派生面包屑导航 | `import { Breadcrumbs } from '@openconsole/atoms'` |
-| `Preferences` | 设置抽屉（主题 + 布局 Tab） | `import { Preferences } from '@openconsole/atoms'` |
-| `ColorPicker` | CSS 变量绑定颜色选择器 | `import { ColorPicker } from '@openconsole/atoms'` |
-| `Unauthorized` | 401 错误页面 | `import { Unauthorized } from '@openconsole/atoms'` |
-| `Forbidden` | 403 错误页面 | `import { Forbidden } from '@openconsole/atoms'` |
-| `NotFound` | 404 错误页面 | `import { NotFound } from '@openconsole/atoms'` |
-| `ServerError` | 500 错误页面 | `import { ServerError } from '@openconsole/atoms'` |
-| `Maintenance` | 503 错误页面 | `import { Maintenance } from '@openconsole/atoms'` |
-
-### atoms Providers
-
-| Provider | 作用 | 持久化 |
-|---|---|---|
-| `ThemeProvider` | 亮/暗/系统主题 | localStorage（next-themes） |
-| `FontProvider` | 活跃字体 | localStorage |
-| `LayoutProvider` | 侧边栏变体配置 | 不持久化 |
-
-atoms 完整 API 详见 [blocks.md](./rules/blocks.md)。
-
----
-
-## 目录结构
-
-```
-features/<domain>/
-├── components/     # 业务 UI 组件（组合 shadcn + atoms）
-├── api/           # TanStack Query API 层
-├── hooks/         # 自定义 hooks
-└── schemas.ts    # Zod schemas
-
-app/
-├── layout.tsx     # Root layout（Providers 组合）
-└── page.tsx       # 页面
-```
-
----
-
-## Providers 组合
-
-### 1. 字体配置（app/fonts.ts）
-
-```ts
-// app/fonts.ts
-import { Inter, Manrope } from "next/font/google";
-
-export const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-export const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
-```
-
-### 2. 根 Layout（app/layout.tsx）
-
-根 Layout 只放 `ThemeProvider` + `FontProvider`。
-
-```tsx
-// app/layout.tsx
-import "./globals.css";
-import { inter, manrope } from "./fonts";
-import { ThemeProvider, FontProvider } from "@openconsole/atoms";
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" className="font-inter" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var font = localStorage.getItem('openconsole-font')
-                  if (font && ['inter', 'manrope', 'system'].includes(font)) {
-                    document.documentElement.classList.remove('font-inter')
-                    document.documentElement.classList.add('font-' + font)
-                  }
-                } catch (e) {}
-              })()
-            `,
-          }}
-        />
-      </head>
-      <body className={`${inter.variable} ${manrope.variable} antialiased`}>
-        <NuqsAdapter>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <FontProvider>
-              <NextToploader color="var(--primary)" showSpinner={false} />
-              {children}
-              <Toaster />
-            </FontProvider>
-          </ThemeProvider>
-        </NuqsAdapter>
-      </body>
-    </html>
-  );
-}
-```
-
-### 3. 业务 Layout（如 app/dashboard/layout.tsx）
-
-业务 Layout 放 `LayoutProvider` + `SidebarProvider` + `Sidebar` + `Header`。
-
-```tsx
-// app/dashboard/layout.tsx
-import { Header, LayoutProvider, Sidebar } from "@openconsole/atoms";
-import { SidebarInset, SidebarProvider } from "@openconsole/shadcn";
-import { Suspense } from "react";
-import { siderConfig } from "@/config/sidebar";
-import { auth } from "@/lib/auth/session";
-
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  const account = session ? { name: session.user?.name ?? "User", email: session.user?.email ?? "", avatar: "" } : { name: "Guest", email: "guest@example.com", avatar: "" };
-
-  return (
-    <LayoutProvider>
-      <SidebarProvider>
-        <Sidebar brand={siderConfig.brand} menu={siderConfig.menu} account={account} />
-        <SidebarInset>
-          <Suspense>
-            <Header />
-          </Suspense>
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
-    </LayoutProvider>
-  );
-}
-```
-
-**关键点**：
-
-- `<html>` 需要 `className="font-inter"` 和 `suppressHydrationWarning`
-- 内联脚本防止字体闪烁
-- `ThemeProvider` → `FontProvider` 在根 Layout
-- `LayoutProvider` → `SidebarProvider` → `Sidebar` + `Header` 在业务 Layout
-
 ---
 
 ## Critical Rules
 
-这些规则**强制执行**。
-
 ### 样式与 Tailwind → [styling.md](./rules/styling.md)
 
-- **`className` 用于布局，不用于样式**：不要覆盖组件颜色或字体。
-- **禁止 `space-x-*` / `space-y-*`**：使用 `flex gap-*` 代替。
-- **等宽高用 `size-*`**：`size-10` 而不是 `w-10 h-10`。
-- **使用 `truncate` 简写**：不是 `overflow-hidden text-ellipsis whitespace-nowrap`。
-- **禁止手动 `dark:` 颜色覆盖**：使用语义 token（`bg-background`、`text-muted-foreground`）。
-- **条件类用 `cn()`**：不要写手动模板字符串三元表达式。
-- **覆盖组件禁止手动 `z-index`**：Dialog、Sheet、Popover 等自行处理层叠。
+- **`className` 用于布局，不用于样式**
+- **禁止 `space-x-*` / `space-y-*`**：使用 `flex gap-*`
+- **等宽高用 `size-*`**：`size-10` 而不是 `w-10 h-10`
+- **使用 `truncate` 简写**
+- **禁止手动 `dark:` 颜色覆盖**：使用语义 token
+- **条件类用 `cn()`**
+- **覆盖组件禁止手动 `z-index`**
 
 ### 表单与输入 → [forms.md](./rules/forms.md)
 
-- **表单使用 `FieldGroup` + `Field`**：不要用原始 `div` + `space-y-*` 做表单布局。
-- **`InputGroup` 使用 `InputGroupInput` / `InputGroupTextarea`**：不要在 `InputGroup` 内直接用 `Input` / `Textarea`。
-- **输入框内的按钮使用 `InputGroup` + `InputGroupAddon`**。
-- **2-7 个选项用 `ToggleGroup`**：不要手动循环 `Button`。
-- **相关复选框 / 单选分组用 `FieldSet` + `FieldLegend`**。
-- **字段验证使用 `data-invalid` + `aria-invalid`**：`data-invalid` 在 `Field` 上，`aria-invalid` 在控件上。
+- **表单使用 `FieldGroup` + `Field`**
+- **`InputGroup` 使用 `InputGroupInput` / `InputGroupTextarea`**
+- **2-7 个选项用 `ToggleGroup`**
+- **相关字段分组用 `FieldSet` + `FieldLegend`**
+- **字段验证使用 `data-invalid` + `aria-invalid`**
 
 ### 组件结构 → [composition.md](./rules/composition.md)
 
-- **项必须在 Group 内**：`SelectItem` → `SelectGroup`、`DropdownMenuItem` → `DropdownMenuGroup`。
-- **Dialog、Sheet、Drawer 必须有 Title**：`DialogTitle`、`SheetTitle`、`DrawerTitle` 是可访问性必需。
-- **使用完整 Card 组合**：`CardHeader` / `CardTitle` / `CardDescription` / `CardContent` / `CardFooter`。
-- **Button 没有 `isPending` / `isLoading` 属性**：组合 `Spinner` + `data-icon` + `disabled`。
-- **`TabsTrigger` 必须在 `TabsList` 内**。
-- **`Avatar` 必须有 `AvatarFallback`**。
-
-### 使用组件而非自定义标记 → [composition.md](./rules/composition.md)
-
-- **使用现有组件**：Callout 用 `Alert`；空状态用 `Empty`；Toast 用 `sonner`。
-- **`Separator`** 代替 `<hr>` 或 `<div className="border-t">`。
-- **`Skeleton`** 代替自定义 `animate-pulse` div。
-- **`Badge`** 代替自定义样式 span。
+- **项必须在 Group 内**
+- **Dialog、Sheet、Drawer 必须有 Title**
+- **使用完整 Card 组合**
+- **Button 没有 `isPending` / `isLoading`**
+- **`Avatar` 必须有 `AvatarFallback`**
 
 ### 图标 → [icons.md](./rules/icons.md)
 
-- **Button 内图标使用 `data-icon`**：`data-icon="inline-start"` 或 `data-icon="inline-end"`。
-- **组件内图标不加尺寸类**：组件通过 CSS 处理图标尺寸。
-- **图标作为对象传递**：不是字符串键的查找表。
+- **Button 内图标使用 `data-icon`**
+- **组件内图标不加尺寸类**
+- **图标作为对象传递**
+
+### Provider 组合与 atoms → [foundation.md](./rules/foundation.md)
+
+详见 [foundation.md](./rules/foundation.md)。
 
 ---
 
 ## 关键模式
 
 ```tsx
-// 表单布局：FieldGroup + Field，不用 div + Label
+// 表单布局
 <FieldGroup>
   <Field>
     <FieldLabel htmlFor="email">邮箱</FieldLabel>
@@ -265,135 +77,77 @@ export default async function DashboardLayout({ children }: { children: React.Re
   </Field>
 </FieldGroup>
 
-// 验证：data-invalid 在 Field，aria-invalid 在控件
-<Field data-invalid>
-  <FieldLabel>邮箱</FieldLabel>
-  <Input aria-invalid />
-  <FieldDescription>无效的邮箱地址。</FieldDescription>
-</Field>
-
-// Button 图标：data-icon，不加尺寸类
+// Button 图标
 <Button>
   <SearchIcon data-icon="inline-start" />
   搜索
 </Button>
 
-// 间距：gap-*，不是 space-y-*
+// 间距
 <div className="flex flex-col gap-4">  // 正确
 <div className="space-y-4">           // 错误
 
-// 等宽高：size-*，不是 w-* h-*
+// 等宽高
 <Avatar className="size-10">   // 正确
 <Avatar className="w-10 h-10"> // 错误
 
-// 状态颜色：Badge variants 或语义 token，不用原始颜色
+// 状态颜色
 <Badge variant="secondary">+20.1%</Badge>    // 正确
 <span className="text-emerald-600">+20.1%</span> // 错误
 ```
 
 ---
 
-## 组件选择表
+## Providers
 
-| 需求 | 使用 |
-|---|---|
-| 按钮 / 操作 | `Button` + 适当 variant |
-| 表单输入 | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
-| 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem` |
-| 数据展示 | `Table`, `Card`, `Badge`, `Avatar` |
-| 导航 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination` |
-| 覆盖层 | `Dialog`（模态框）, `Sheet`（侧边面板）, `Drawer`（底部面板）, `AlertDialog`（确认框） |
-| 反馈 | `sonner`（Toast）, `Alert`, `Progress`, `Skeleton`, `Spinner` |
-| 命令面板 | `Command` + `Dialog` |
-| 图表 | `Chart`（Recharts 封装） |
-| 布局 | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible` |
-| 空状态 | `Empty` |
-| 菜单 | `DropdownMenu`, `ContextMenu`, `Menubar` |
-| 提示 / 信息 | `Tooltip`, `HoverCard`, `Popover` |
+| Provider | 来自 | 作用 |
+|---|---|---|
+| `ThemeProvider` | `@openconsole/atoms` | 亮/暗/系统主题 |
+| `FontProvider` | `@openconsole/atoms` | 活跃字体 |
+| `LayoutProvider` | `@openconsole/atoms` | 侧边栏变体配置 |
+| `SidebarProvider` | `@openconsole/shadcn` | 侧边栏状态 |
+
+详见 [foundation.md](./rules/foundation.md)。
 
 ---
 
-## 主题适配
+## 组件选择表
 
-### 工作原理
+### atoms 高阶组件
 
-1. CSS 变量在 `:root`（浅色）和 `.dark`（深色模式）中定义
-2. Tailwind 将它们映射到 utilities：`bg-primary`、`text-muted-foreground` 等
-3. 组件使用这些 utilities — 更更改量会更改所有引用它的组件
-
-### Color Token
-
-每个颜色遵循 `name` / `name-foreground` 约定。
-
-| Token | 用途 |
+| 需求 | 使用 |
 |---|---|
-| `--background` / `--foreground` | 页面背景和默认文本 |
-| `--card` / `--card-foreground` | Card 表面 |
-| `--primary` / `--primary-foreground` | 主要按钮和操作 |
-| `--secondary` / `--secondary-foreground` | 次要操作 |
-| `--muted` / `--muted-foreground` | 静音/禁用状态 |
-| `--accent` / `--accent-foreground` | 悬停和强调状态 |
-| `--destructive` / `--destructive-foreground` | 错误和破坏性操作 |
-| `--border` | 默认边框颜色 |
-| `--input` | 表单输入边框 |
-| `--ring` | 焦点环颜色 |
-| `--chart-1` 到 `--chart-5` | 图表/数据可视化 |
-| `--sidebar-*` | 侧边栏专用颜色 |
-| `--surface` / `--surface-foreground` | 次要表面 |
+| 主题切换按钮 | `ThemeSwitch` |
+| 应用布局壳 | `Header` + `Sidebar` + `SidebarInset` |
+| 面包屑导航 | `Breadcrumbs` / `useBreadcrumbs()` |
+| 设置抽屉 | `Preferences` |
+| 颜色选择器 | `ColorPicker` |
+| 错误页面 | `NotFound` (404), `Unauthorized` (401), `Forbidden` (403), `ServerError` (500), `Maintenance` (503) |
 
-颜色使用 OKLCH：`--primary: oklch(0.205 0 0)`。
+### shadcn 基础组件
 
-### 亮色 / 深色模式
-
-亮色/深色切换通过根元素上的 `.dark` class 实现。使用 `ThemeProvider` 管理。
-
-### 适配主题的正确方式
-
-**1. 使用内置 Variants**
-
-```tsx
-<Button variant="outline" size="sm">点击</Button>
-```
-
-**2. 通过 className 添加布局样式**
-
-```tsx
-<Card className="max-w-md mx-auto">...</Card>
-```
-
-**3. 全局 CSS 变量（在 app/globals.css 中定义）**
-
-```css
-:root {
-  --primary: oklch(0.55 0.18 235);
-  --background: oklch(0.98 0.01 235);
-}
-.dark {
-  --primary: oklch(0.55 0.18 235);
-  --background: oklch(0.15 0.01 235);
-}
-```
-
-**4. 组件特定的 CSS 变量**
-
-```tsx
-<Card style={{ '--card-bg': 'var(--primary)' }}>...</Card>
-```
-
-### 常见错误
-
-| 错误 | 正确 |
+| 需求 | 使用 |
 |---|---|
-| `bg-blue-500 text-white` | `bg-primary text-primary-foreground` |
-| `bg-white dark:bg-gray-900` | `bg-background` |
-| `isActive ? "bg-blue-100" : "bg-gray-100"` | `isActive ? "bg-accent" : "bg-muted"` |
+| 按钮 / 操作 | `Button` + variant |
+| 表单输入 | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
+| 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem` |
+| 数据展示 | `Table`, `Card`, `Badge`, `Avatar`, `Skeleton`, `Progress` |
+| 导航 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`, `Menubar` |
+| 覆盖层 | `Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `Popover`, `Tooltip`, `HoverCard` |
+| 反馈 | `sonner`, `Alert`, `Spinner` |
+| 命令面板 | `Command` + `Dialog` |
+| 图表 | `Chart` |
+| 布局 | `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible` |
+| 空状态 | `Empty` |
+| 菜单 | `DropdownMenu`, `ContextMenu` |
+| 表单组合 | `Form`, `Field`, `FieldGroup`, `Label` |
 
 ---
 
 ## 详细参考
 
-- [rules/styling.md](./rules/styling.md) — 语义颜色、variants、className、间距、size、truncate、dark mode、cn()、z-index
-- [rules/forms.md](./rules/forms.md) — FieldGroup、Field、InputGroup、ToggleGroup、FieldSet、验证状态
-- [rules/composition.md](./rules/composition.md) — Groups、覆盖层、Card、Avatar、Alert、Empty、Toast、Separator、Skeleton、Badge、Button 加载状态、blocks vs primitives 边界
-- [rules/icons.md](./rules/icons.md) — data-icon、图标尺寸、图标作为对象传递
-- [rules/blocks.md](./rules/blocks.md) — atoms 高阶组件完整 API
+- [rules/styling.md](./rules/styling.md) — 语义颜色、间距、size、truncate、cn()、z-index
+- [rules/forms.md](./rules/forms.md) — FieldGroup、Field、InputGroup、ToggleGroup、FieldSet
+- [rules/composition.md](./rules/composition.md) — Groups、Card、Avatar、Alert、Empty、Toast
+- [rules/icons.md](./rules/icons.md) — data-icon、图标传递
+- [rules/foundation.md](./rules/foundation.md) — Provider 组合、Layout 结构、atoms 高阶组件 API
