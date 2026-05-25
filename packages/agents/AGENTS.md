@@ -1,6 +1,6 @@
-# Project Agents Reference
+# AI Coding Standards
 
-本文档是所有 AI 编码 agent 在本项目中的**单一信息源（Single Source of Truth）**。
+公司内部所有 Next.js 项目的**统一开发规范**——所有 AI agent 必须遵循。技术栈版本、目录结构、核心架构约束见下方。
 
 ---
 
@@ -39,7 +39,9 @@
 
 ---
 
-## 目录结构（强制）
+## 核心架构约束（所有项目必须统一）
+
+### 1. 目录结构
 
 ```
 project/
@@ -76,15 +78,41 @@ project/
 └── package.json
 ```
 
-### 强制规则
+| 规则 | 原因 |
+| --- | --- |
+| **No `src/`** | 根目录平铺 |
+| **No `shared/`** | 使用 `lib/` |
+| **No `lib/api/`** | 使用 `lib/http/` 避免与 `app/api/` 冲突 |
+| **业务代码在 `features/`** | `app/` 仅用于路由 |
+| **Server 函数不在 index.ts** | `"use server"` 必须在 import 点可见 |
 
-| 规则                         | 原因                                    |
-| ---------------------------- | --------------------------------------- |
-| **No `src/`**                | 根目录平铺                              |
-| **No `shared/`**             | 使用 `lib/`                             |
-| **No `lib/api/`**            | 使用 `lib/http/` 避免与 `app/api/` 冲突 |
-| **业务代码在 `features/`**   | `app/` 仅用于路由                       |
-| **Server 函数不在 index.ts** | `"use server"` 必须在 import 点可见     |
+### 2. 项目初始化（Skeleton）
+
+所有新项目**必须**使用 `skill:nextjs-best-practices` 的 `references/scaffold.md` 生成统一骨架，不得使用 `npx create-next-app` 或其他方式初始化。骨架包含：
+- 统一的目录结构和配置文件
+- 统一的 Provider 嵌套链（ThemeProvider / FontProvider / NuqsAdapter 等）
+- 统一的 Dashboard layout（Sidebar + Header）
+- 统一的错误页面和根布局
+
+### 3. 主题布局（Theme & Layout）
+
+所有项目必须使用 `@openconsole/atoms` 提供的高阶组件来管理全局状态和布局：
+- 根布局必须嵌套：`ThemeProvider` > `FontProvider` > `NuqsAdapter` > `NextTopLoader` > `Toaster`
+- Dashboard/Admin 布局必须嵌套：`LayoutProvider` > `SidebarProvider` > `Sidebar` + `SidebarInset`
+- 图标**必须**使用 `lucide-react`，配置中传递 PascalCase 字符串。
+
+### 4. 登录与鉴权（Auth Flow）
+
+所有项目共享同一套鉴权机制，统一由 `nextjs-auth-callback` 处理：
+- 状态读取：RSC/Server Action 必须使用 `auth()` 获取当前 session，禁止使用 `getServerSession()` 或手动读 cookie。
+- 路由守卫：Server Action 中操作数据前必须调用 `await protect()`。
+- 回调接管：所有未授权访问必须重定向到统一登录中心，本地通过 `<Callback />` 处理 token fragment 注入。
+
+### 5. HTTP 请求封装（Fetching）
+
+- 统一使用 `ofetch` 作为基础 HTTP 客户端，放在 `lib/http/` 下。
+- 请求外部服务（带鉴权）必须使用统一的 `bearer()` 拼接 Token，禁止手动 `Bearer ${token}`。
+- 数据获取状态管理（Client侧）统一使用 `@tanstack/react-query`，禁止使用 SWR。
 
 ---
 

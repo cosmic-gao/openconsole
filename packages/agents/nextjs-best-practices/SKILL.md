@@ -1,39 +1,98 @@
 ---
 name: nextjs-best-practices
 description: |
-  本项目（shadcn-admin，Next.js 16.2.6 + React 19.2.6 + @openconsole/{shadcn,atoms}）专属的写代码规范、代码片段范式、踩坑指南。所有规则都引用项目实际文件路径、实际 API 封装（auth() / bearer() / protect()）、实际依赖版本——不是泛用 Next.js 教程。无论用户怎么描述——加路由、写组件、写 Server Action、调 cookie、加环境变量、写 form、加图表、改 sidebar、调 metadata、调字体、加 features 切片、性能优化、bundle 分析、'use cache'、async params、hydration 错误、RSC 边界——只要在这个项目里写/改/审查代码就触发此 skill。项目目录结构和依赖清单见根目录 `AGENTS.md`；登录回调（SSO/外部登录/proxy.ts/lib/auth）走 `nextjs-auth-callback` skill。本 skill 不重复这两套内容。
+  **公司所有内部 Next.js 项目通用**的编码规范、代码片段范式、踩坑指南（基于 Next.js 16.2.6 + React 19.2.6 + @openconsole/{shadcn,atoms}）。无论用户怎么描述——做项目、加路由、写组件、写 Server Action、调 cookie、加环境变量、写 form、加图表、改 sidebar、调 metadata、调字体、加 features 切片、性能优化、bundle 分析、'use cache'、async params、hydration 错误、RSC 边界——只要在内部项目里**从零初始化**或**写/改/审查代码**就触发此 skill。全局核心架构约束见根目录 `AGENTS.md`；登录回调走 `nextjs-auth-callback` skill。
 ---
 
-# Next.js Best Practices — 本项目专用写代码规范
+# Next.js Best Practices — 内部项目通用编码规范
 
 ## 这个 skill 干什么
 
-只做一件事：**告诉你在这个项目里写代码该怎么写**——给出可直接照搬的代码片段，标出该用什么 API、不该写什么、为什么。
+只做一件事：**规范所有内部项目写代码的方式**——给出可直接照搬的代码片段，标出该用什么 API、不该写什么、为什么。
 
 边界：
 
 | 主题 | 在哪里 |
 | --- | --- |
-| 项目目录结构 / 依赖清单 / 构建命令 / 怎么从零搭起来 | 根目录 [`AGENTS.md`](../../AGENTS.md) |
+| 项目目录结构 / 依赖清单 / 构建命令 / 技术栈版本 | 根目录 [`AGENTS.md`](../../AGENTS.md) |
+| 从零初始化项目（空目录搭骨架） | **本 skill** 的 [`references/scaffold.md`](./references/scaffold.md) |
 | 外部登录回调（SSO / proxy.ts / lib/auth/* / `<Callback />`） | [`nextjs-auth-callback`](../nextjs-auth-callback/SKILL.md) skill |
 | 写 page / layout / Server Action / 组件的具体范式 | **本 skill** |
 | 深入到具体规则（性能、重渲、bundle……） | 本 skill 的 [`references/`](./references/) 文件夹 |
 
 ---
 
-## 项目当前状态（事实清单）
+## 项目初始化（空目录搭骨架）
 
-### 版本
+用户说"做一个 xxx APP"、"新建一个项目"、"搭一个后台"、"从零开始"时，执行以下流程：
 
-| 组件 | 版本 |
-| --- | --- |
-| Next.js | **16.2.6** |
-| React | **19.2.6** |
-| TypeScript | **6.0.3** |
-| Tailwind CSS | **v4** |
-| Node target | **ES2017** |
+### Step 1：用 AskUserQuestion 问 3 个关键参数
 
-### 已封装好、直接用的项目 API
+```jsonc
+{
+  "questions": [
+    {
+      "question": "项目叫什么名字？这会写进 package.json 的 name 字段。",
+      "header": "项目名",
+      "options": [
+        { "label": "shadcn-admin", "description": "默认值，仓库通用名" },
+        { "label": "my-app", "description": "示例：换成你的项目名" }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "在哪里创建？",
+      "header": "位置",
+      "options": [
+        { "label": "在当前目录（当前目录必须是空的）", "description": "适合刚 git clone 完一个空仓库" },
+        { "label": "在子目录 ./<项目名>/", "description": "在工作目录下建一个新子目录" }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "要不要顺手装登录回调？装了之后未登录访问会跳到外部登录页。",
+      "header": "登录回调",
+      "options": [
+        { "label": "要 —— 装好后顺便配登录", "description": "搭完骨架自动调用 nextjs-auth-callback skill" },
+        { "label": "先不要 —— 只搭骨架", "description": "之后可以单独说'加登录'再装" }
+      ],
+      "multiSelect": false
+    }
+  ]
+}
+```
+
+### Step 2：准备目录
+
+`ls -la` 确认目标目录为空（只允许有 `.git` / `.gitignore`）。非空就停下来问用户。子目录模式先 `mkdir <name> && cd <name>`。
+
+### Step 3：按 [`references/scaffold.md`](./references/scaffold.md) 的文件清单逐个 Write 创建
+
+**严格按片段内容**——除了 `package.json` 的 `"name"` 字段换成用户填的项目名以外，**不要擅自改**任何片段内容。
+
+### Step 4：装依赖、起开发服
+
+```bash
+pnpm install
+pnpm dev
+```
+
+`pnpm install` 失败大概率是 Node 版本 < 20，提示用户升级。
+
+### Step 5：报告 + 衔接登录回调
+
+成功后报告：
+- 项目骨架位置、`pnpm dev` 端口
+- 访问 http://localhost:3000/dashboard 看欢迎页
+- 下一步建议：换 favicon、改 sidebar、加 feature
+
+如果 Step 1 用户选了"要登录回调"，**直接调用** `nextjs-auth-callback` skill。
+
+> ⚠️ **不要**用 `npx create-next-app`——生成的目录约定跟本项目冲突。
+
+---
+
+## 已封装好、直接用的项目 API
 
 | 想做什么 | 用这个 | 路径 | 来源 |
 | --- | --- | --- | --- |
@@ -42,7 +101,6 @@ description: |
 | 守护 Server Action（无 session 即跳转） | `protect()` | `@/lib/auth/guards` | nextjs-auth-callback |
 | Cookie 名常量 | `TOKEN_COOKIE` / `TENANT_COOKIE` / `CONTINUE_COOKIE` | `@/lib/auth/cookies` | nextjs-auth-callback |
 | 环境变量（类型安全） | `env.*` | `@/env` | 项目根 |
-| Sidebar 配置 | `siderConfig` | `@/config/sidebar` | 项目根 |
 | Toast | `toast()` | `sonner` | npm |
 | UI 基础原语（Button、Input、Dialog 等） | exports | `@openconsole/shadcn` | npm |
 | UI 高阶组件（Sidebar、Header、FontProvider、ThemeProvider、LayoutProvider） | exports | `@openconsole/atoms` | npm |
@@ -333,7 +391,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 ```
 
-Root `app/layout.tsx` 已经设了 `title: "Shadcn Admin"`——子页面会覆盖。
+Root `app/layout.tsx` 已经设了默认 title——子页面会覆盖。
 
 详见 [`references/ui/metadata.md`](./references/ui/metadata.md)
 

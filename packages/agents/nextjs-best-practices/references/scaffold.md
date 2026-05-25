@@ -1,128 +1,4 @@
----
-name: nextjs-scaffold
-description: |
-  shadcn-admin 模板项目初始化：在空目录或新仓库里一次性生成完整的 Next.js 16 + React 19 + Tailwind v4 + @openconsole/{shadcn,atoms} 管理后台骨架——目录结构、依赖清单、配置文件、`app/` 骨架全部到位，`pnpm install && pnpm dev` 即可访问 `/dashboard`。无论用户怎么描述——"做一个 xxx APP"、"新建一个项目"、"搭一个后台"、"创建一个 dashboard"、"从零开始一个 next.js 项目"、"初始化项目"、"scaffold an admin"、"bootstrap a next.js app"、"start a new project"、"我要做一个 SaaS 后台"、"建一个 admin 模板"——只要是"在没有项目或在空目录里搭起本仓库这套技术栈"的场景都触发此 skill（即使用户没说"shadcn-admin"或没明确点名 Next.js，只要意图是"从零搞一个新项目"就应当触发，由本 skill 反问技术栈细节）。本 skill **不**负责登录（登录走 `nextjs-auth-callback`），**不**负责业务功能代码（业务代码走 `nextjs-best-practices`）。
----
-
-# Next.js Scaffold —— shadcn-admin 模板项目初始化
-
-## 这个 skill 干什么
-
-只做一件事：**在空目录里把 shadcn-admin APP 骨架立起来**——按下面给出的代码片段逐个文件创建、最后 `pnpm install`。结束态：访问 `/` 重定向到 `/dashboard`，看到带 sidebar 的欢迎页。
-
-**只生成 APP 本身的工作文件**——不生成 `STRUCTURE.md` / `AGENTS.md` / 各种 README 等元文档，也不生成 `skills/` / `docker-compose.nacos.yml` 等开发设施。完整清单见下方 "## 文件清单"。
-
-**所有要创建的文件内容都内联在本文件下方**——agent 按 "## 文件清单" 一节里给出的路径 + 代码片段直接 Write 创建。
-
-边界：
-
-| 主题 | 在哪里 |
-| --- | --- |
-| **建 APP 骨架（本 skill）** | 创建配置文件、写 `app/` 骨架、`config/sidebar.ts`、`pnpm install` |
-| 加登录回调（SSO / proxy.ts / `<Callback />`） | [`nextjs-auth-callback`](../nextjs-auth-callback/SKILL.md) |
-| 写业务页面 / Server Action / 组件 | [`nextjs-best-practices`](../nextjs-best-practices/SKILL.md) |
-
-**为什么独立**：搭项目和写代码是两类工作——搭一次永远不再做，写代码天天做。把骨架沉淀进 skill 比让 agent 每次重新推导更可靠。
-
-## 适用 / 不适用
-
-✓ 用户处在**空目录**或**新仓库**，要求"按 shadcn-admin 搭项目"
-✓ 用户说"做一个 xxx APP / dashboard / 后台 / SaaS / admin"，没指定其它技术栈
-✓ 用户明确点名 Next.js + Tailwind v4 + shadcn 风格管理后台
-
-| 不适用 | 应该用 |
-| --- | --- |
-| 已存在的项目里加 feature / 路由 / 组件 | [`nextjs-best-practices`](../nextjs-best-practices/SKILL.md) |
-| 加登录回调到已有项目 | [`nextjs-auth-callback`](../nextjs-auth-callback/SKILL.md) |
-| 用户要求别的栈（Vite + React、Remix、Astro、Nuxt 等） | 推荐对应栈的 scaffold |
-| 用户已经在用 `create-next-app` 输出的目录 | 评估冲突——`src/` + 自带 ESLint + `app/api/hello/route.ts` 跟本项目约定有冲突；询问是否清空重来 |
-
-> ⚠️ **不要**用 `npx create-next-app`——生成的目录约定跟本项目冲突。
-
----
-
-## 实施流程
-
-### Step 1：用 AskUserQuestion 问 3 个关键参数
-
-```jsonc
-{
-  "questions": [
-    {
-      "question": "项目叫什么名字？这会写进 package.json 的 name 字段。",
-      "header": "项目名",
-      "options": [
-        { "label": "shadcn-admin", "description": "默认值，仓库通用名" },
-        { "label": "my-app", "description": "示例：换成你的项目名" }
-      ],
-      "multiSelect": false
-    },
-    {
-      "question": "在哪里创建？",
-      "header": "位置",
-      "options": [
-        { "label": "在当前目录（当前目录必须是空的）", "description": "适合刚 git clone 完一个空仓库" },
-        { "label": "在子目录 ./<项目名>/", "description": "在工作目录下建一个新子目录" }
-      ],
-      "multiSelect": false
-    },
-    {
-      "question": "要不要顺手装登录回调？装了之后未登录访问会跳到外部登录页。",
-      "header": "登录回调",
-      "options": [
-        { "label": "要 —— 装好后顺便配登录", "description": "搭完骨架自动调用 nextjs-auth-callback skill" },
-        { "label": "先不要 —— 只搭骨架", "description": "之后可以单独说\"加登录\"再装" }
-      ],
-      "multiSelect": false
-    }
-  ]
-}
-```
-
-### Step 2：准备目录
-
-`ls -la` 确认目标目录为空（只允许有 `.git` / `.gitignore`）。非空就停下来问用户。子目录模式先 `mkdir <name> && cd <name>`。
-
-### Step 3：按下方「文件清单」逐个 Write 创建
-
-**严格按片段内容**——除了 `package.json` 的 `"name"` 字段换成用户填的项目名以外，**不要擅自改**任何片段内容。改了就跟其它 skill 的预期对不上。
-
-### Step 4：装依赖、起开发服
-
-```bash
-pnpm install
-pnpm dev
-```
-
-`pnpm install` 失败大概率是 Node 版本 < 20，提示用户升级。
-
-### Step 5：报告 + 衔接登录回调
-
-成功后报告：
-- 项目骨架位置、`pnpm dev` 端口
-- 访问 http://localhost:3000/dashboard 看欢迎页
-- 下一步建议：换 favicon、改 sidebar、加 feature
-
-如果 Step 1 用户选了"要登录回调"，**直接调用** `nextjs-auth-callback` skill。
-
----
-
-## 强制约定（创建文件时不能违反的几条）
-
-下方所有片段已经按此生成，**不要在创建时擅自改**：
-
-| 规则 | 原因 |
-| --- | --- |
-| 根目录平铺，**No `src/`**；tsconfig 已配 `"@/*": ["./*"]` | nextjs-best-practices 的所有路径假设都基于此 |
-| **No `shared/`**；用 `lib/` | FSD 术语易混淆 |
-| **No `lib/api/`**；用 `lib/http/`（未来加） | 避开 `app/api/` 路由命名冲突 |
-| 顶层只有 `app` / `public` / `features` / `config` / `lib` 这五个单词 | 增加可预测性 |
-| 文件名 **kebab-case** | 跟项目其它代码风格一致 |
-| `app/page.tsx` 用 `redirect("/dashboard")`，**不要**塞业务 | 给 nextjs-auth-callback 留改造空间（它会注入 `<Callback />`） |
-| `app/dashboard/layout.tsx` 的 `account` prop 先用 `GUEST_ACCOUNT` 常量 | 登录装好后由 auth-callback skill 改 `await auth()` |
-| `config/sidebar.ts` 的 `icon` 字段必须是 PascalCase 字符串（如 `"LayoutDashboard"`） | icon 要序列化过 RSC 边界，不能传 React 组件 |
-
----
+# 项目初始化 — 公司内部项目骨架模板
 
 ## 文件清单
 
@@ -161,11 +37,11 @@ scaffold 输出**只包含 APP 本身的工作文件**：
 
 #### `package.json`
 
-> 把 `"name"` 字段换成用户在 Step 1 填的项目名。其它字段不改。
+> `package.json` 的 `"name"` 字段已由用户在 Step 1 填写，以下保持默认。
 
 ```json
 {
-  "name": "shadcn-admin",
+  "name": "<项目名占位符，实际为用户在 Step 1 填写的项目名>",
   "version": "0.1.0",
   "private": true,
   "scripts": {
