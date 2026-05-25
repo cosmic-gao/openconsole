@@ -1,20 +1,41 @@
 ---
-name: shadcn
+name: ui
 description: >
-  @openconsole/shadcn + @openconsole/atoms 使用规范。基础 UI 组件（primitives）来自
-  @openconsole/shadcn（Button, Card, Dialog, Sidebar 等），高阶组件来自 @openconsole/atoms
-  （ThemeSwitch, Preferences, Sidebar, Header, Breadcrumbs 等）。触发场景：使用 UI 组件、表单布局、
-  主题适配、布局组合。
+  @openconsole/shadcn + @openconsole/atoms UI 组件使用规范。
+
+  基础组件来自 @openconsole/shadcn（Button, Card, Dialog, Sidebar 等 60+ 组件），
+  高阶组件来自 @openconsole/atoms（ThemeSwitch, Preferences, Sidebar, Header, Breadcrumbs 等）。
+
+  触发场景：使用 UI 组件、表单布局、主题适配、布局组合、UI 设计评审、
+  想下载 shadcn 组件或使用其他 UI 库时。
+
+  禁止直接下载 shadcn 组件或使用其他 UI 库。
 ---
 
 # UI 组件规范
 
 本项目使用双包架构：
 
-| 包                    | 职责                       | 导入                                           |
-| --------------------- | -------------------------- | ---------------------------------------------- |
-| `@openconsole/shadcn` | 基础 UI 组件（primitives） | `import { Button } from '@openconsole/shadcn'` |
-| `@openconsole/atoms`  | 高阶业务组件               | `import { Header } from '@openconsole/atoms'`  |
+| 包 | 职责 | 导入 |
+|---|---|---|
+| `@openconsole/shadcn` | 60+ 基础组件（primitives） | `import { Button } from '@openconsole/shadcn'` |
+| `@openconsole/atoms` | 高阶业务组件 | `import { Header } from '@openconsole/atoms'` |
+
+---
+
+## 强制规则
+
+**禁止直接下载 shadcn 组件**：
+- ✗ `npx shadcn@latest add button`
+- ✗ 从 shadcn/ui 官网复制组件代码
+- ✗ 使用其他 UI 库（Material UI, Chakra UI, Ant Design 等）
+
+**正确方式**：
+```tsx
+// ✓ 使用包提供的组件
+import { Button } from '@openconsole/shadcn'
+import { Header } from '@openconsole/atoms'
+```
 
 ---
 
@@ -22,7 +43,52 @@ description: >
 
 1. **优先使用 atoms 高阶组件**：Settings drawer → `Preferences`；带 logo 的侧边栏 → `Sidebar`；主题切换按钮 → `ThemeSwitch`。
 2. **基础组件用于原子化需求**：shadcn 组件用于构建业务组件，不直接暴露给页面。
-3. **禁止混用其他 UI 库**：只使用 `@openconsole/shadcn` + `@openconsole/atoms`，禁止引入其他 UI 库。
+3. **禁止混用其他 UI 库**：只使用 `@openconsole/shadcn` + `@openconsole/atoms`。
+
+---
+
+## @openconsole/shadcn 组件分类（60+ 组件）
+
+| 类别 | 组件 |
+|---|---|
+| 表单输入 | `Input`, `Textarea`, `Select`, `Checkbox`, `Switch`, `Slider`, `RadioGroup`, `InputOTP`, `InputGroup`, `NativeSelect` |
+| 覆盖层 | `Dialog`, `Sheet`, `Drawer`, `AlertDialog`, `Popover`, `Tooltip`, `HoverCard` |
+| 导航 | `Sidebar`, `Tabs`, `Breadcrumb`, `Pagination`, `NavigationMenu`, `Menubar` |
+| 菜单 | `DropdownMenu`, `ContextMenu`, `Command` |
+| 布局 | `Card`, `Accordion`, `Collapsible`, `Resizable`, `ScrollArea`, `Separator` |
+| 数据展示 | `Table`, `Avatar`, `Badge`, `Skeleton`, `Progress` |
+| 反馈 | `Alert`, `Empty`, `Spinner`, `sonner` (Toast) |
+| 多媒体 | `Carousel`, `Chart`, `Calendar` |
+| 表单集成 | `Form`, `Field`, `FieldGroup`, `Label` |
+| 图标 | `Icon` |
+
+---
+
+## @openconsole/atoms 组件
+
+| 组件 | 用途 | 导入 |
+|---|---|---|
+| `ThemeSwitch` | 主题切换按钮（View Transitions API） | `import { ThemeSwitch } from '@openconsole/atoms'` |
+| `Header` | 粘性顶部栏（自动面包屑 + 主题 + 设置） | `import { Header } from '@openconsole/atoms'` |
+| `Sidebar` | 三段式侧边栏（brand/menu/account） | `import { Sidebar } from '@openconsole/atoms'` |
+| `Breadcrumbs` | 路径派生面包屑导航 | `import { Breadcrumbs } from '@openconsole/atoms'` |
+| `Preferences` | 设置抽屉（主题 + 布局 Tab） | `import { Preferences } from '@openconsole/atoms'` |
+| `ColorPicker` | CSS 变量绑定颜色选择器 | `import { ColorPicker } from '@openconsole/atoms'` |
+| `Unauthorized` | 401 错误页面 | `import { Unauthorized } from '@openconsole/atoms'` |
+| `Forbidden` | 403 错误页面 | `import { Forbidden } from '@openconsole/atoms'` |
+| `NotFound` | 404 错误页面 | `import { NotFound } from '@openconsole/atoms'` |
+| `ServerError` | 500 错误页面 | `import { ServerError } from '@openconsole/atoms'` |
+| `Maintenance` | 503 错误页面 | `import { Maintenance } from '@openconsole/atoms'` |
+
+### atoms Providers
+
+| Provider | 作用 | 持久化 |
+|---|---|---|
+| `ThemeProvider` | 亮/暗/系统主题 | localStorage（next-themes） |
+| `FontProvider` | 活跃字体 | localStorage |
+| `LayoutProvider` | 侧边栏变体配置 | 不持久化 |
+
+atoms 完整 API 详见 [blocks.md](./rules/blocks.md)。
 
 ---
 
@@ -84,7 +150,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${manrope.variable} antialiased`}>
+      <body className={`${inter.variable} ${manrope.variable} antialiased`}>
         <NuqsAdapter>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             <FontProvider>
@@ -138,12 +204,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 - 内联脚本防止字体闪烁
 - `ThemeProvider` → `FontProvider` 在根 Layout
 - `LayoutProvider` → `SidebarProvider` → `Sidebar` + `Header` 在业务 Layout
-
----
-
-## atoms 高阶组件
-
-详见 [atoms-usage.md](./rules/atoms-usage.md)。
 
 ---
 
@@ -235,27 +295,98 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
 ## 组件选择表
 
-| 需求           | 使用                                                                                                |
-| -------------- | --------------------------------------------------------------------------------------------------- |
-| 按钮 / 操作    | `Button` + 适当 variant                                                                             |
-| 表单输入       | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
-| 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem`                                                                   |
-| 数据展示       | `Table`, `Card`, `Badge`, `Avatar`                                                                  |
-| 导航           | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`                                     |
-| 覆盖层         | `Dialog`（模态框）, `Sheet`（侧边面板）, `Drawer`（底部面板）, `AlertDialog`（确认框）              |
-| 反馈           | `sonner`（Toast）, `Alert`, `Progress`, `Skeleton`, `Spinner`                                       |
-| 命令面板       | `Command` + `Dialog`                                                                                |
-| 图表           | `Chart`（Recharts 封装）                                                                            |
-| 布局           | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible`                          |
-| 空状态         | `Empty`                                                                                             |
-| 菜单           | `DropdownMenu`, `ContextMenu`, `Menubar`                                                            |
-| 提示 / 信息    | `Tooltip`, `HoverCard`, `Popover`                                                                   |
+| 需求 | 使用 |
+|---|---|
+| 按钮 / 操作 | `Button` + 适当 variant |
+| 表单输入 | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
+| 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem` |
+| 数据展示 | `Table`, `Card`, `Badge`, `Avatar` |
+| 导航 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination` |
+| 覆盖层 | `Dialog`（模态框）, `Sheet`（侧边面板）, `Drawer`（底部面板）, `AlertDialog`（确认框） |
+| 反馈 | `sonner`（Toast）, `Alert`, `Progress`, `Skeleton`, `Spinner` |
+| 命令面板 | `Command` + `Dialog` |
+| 图表 | `Chart`（Recharts 封装） |
+| 布局 | `Card`, `Separator`, `Resizable`, `ScrollArea`, `Accordion`, `Collapsible` |
+| 空状态 | `Empty` |
+| 菜单 | `DropdownMenu`, `ContextMenu`, `Menubar` |
+| 提示 / 信息 | `Tooltip`, `HoverCard`, `Popover` |
 
 ---
 
 ## 主题适配
 
-详见 [customization.md](./customization.md)。
+### 工作原理
+
+1. CSS 变量在 `:root`（浅色）和 `.dark`（深色模式）中定义
+2. Tailwind 将它们映射到 utilities：`bg-primary`、`text-muted-foreground` 等
+3. 组件使用这些 utilities — 更更改量会更改所有引用它的组件
+
+### Color Token
+
+每个颜色遵循 `name` / `name-foreground` 约定。
+
+| Token | 用途 |
+|---|---|
+| `--background` / `--foreground` | 页面背景和默认文本 |
+| `--card` / `--card-foreground` | Card 表面 |
+| `--primary` / `--primary-foreground` | 主要按钮和操作 |
+| `--secondary` / `--secondary-foreground` | 次要操作 |
+| `--muted` / `--muted-foreground` | 静音/禁用状态 |
+| `--accent` / `--accent-foreground` | 悬停和强调状态 |
+| `--destructive` / `--destructive-foreground` | 错误和破坏性操作 |
+| `--border` | 默认边框颜色 |
+| `--input` | 表单输入边框 |
+| `--ring` | 焦点环颜色 |
+| `--chart-1` 到 `--chart-5` | 图表/数据可视化 |
+| `--sidebar-*` | 侧边栏专用颜色 |
+| `--surface` / `--surface-foreground` | 次要表面 |
+
+颜色使用 OKLCH：`--primary: oklch(0.205 0 0)`。
+
+### 亮色 / 深色模式
+
+亮色/深色切换通过根元素上的 `.dark` class 实现。使用 `ThemeProvider` 管理。
+
+### 适配主题的正确方式
+
+**1. 使用内置 Variants**
+
+```tsx
+<Button variant="outline" size="sm">点击</Button>
+```
+
+**2. 通过 className 添加布局样式**
+
+```tsx
+<Card className="max-w-md mx-auto">...</Card>
+```
+
+**3. 全局 CSS 变量（在 app/globals.css 中定义）**
+
+```css
+:root {
+  --primary: oklch(0.55 0.18 235);
+  --background: oklch(0.98 0.01 235);
+}
+.dark {
+  --primary: oklch(0.55 0.18 235);
+  --background: oklch(0.15 0.01 235);
+}
+```
+
+**4. 组件特定的 CSS 变量**
+
+```tsx
+<Card style={{ '--card-bg': 'var(--primary)' }}>...</Card>
+```
+
+### 常见错误
+
+| 错误 | 正确 |
+|---|---|
+| `bg-blue-500 text-white` | `bg-primary text-primary-foreground` |
+| `bg-white dark:bg-gray-900` | `bg-background` |
+| `isActive ? "bg-blue-100" : "bg-gray-100"` | `isActive ? "bg-accent" : "bg-muted"` |
 
 ---
 
@@ -263,7 +394,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
 - [rules/styling.md](./rules/styling.md) — 语义颜色、variants、className、间距、size、truncate、dark mode、cn()、z-index
 - [rules/forms.md](./rules/forms.md) — FieldGroup、Field、InputGroup、ToggleGroup、FieldSet、验证状态
-- [rules/composition.md](./rules/composition.md) — Groups、覆盖层、Card、Avatar、Alert、Empty、Toast、Separator、Skeleton、Badge、Button 加载状态、atoms vs primitives 边界
+- [rules/composition.md](./rules/composition.md) — Groups、覆盖层、Card、Avatar、Alert、Empty、Toast、Separator、Skeleton、Badge、Button 加载状态、blocks vs primitives 边界
 - [rules/icons.md](./rules/icons.md) — data-icon、图标尺寸、图标作为对象传递
-- [rules/atoms-usage.md](./rules/atoms-usage.md) — atoms 高阶组件使用规范
-- [customization.md](./customization.md) — 主题适配、语义 token、CSS 变量
+- [rules/blocks.md](./rules/blocks.md) — atoms 高阶组件完整 API

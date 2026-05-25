@@ -113,7 +113,7 @@ features/<domain>/api/
 | 登录/鉴权/会话 | `skill:nextjs-auth-callback` |
 | Next.js 代码规范 | `skill:nextjs-best-practices` |
 | TanStack Query 规范 | `skill:tanstack-query` |
-| UI 组件规范 | `skill:shadcn` |
+| UI 组件规范 | `skill:ui` |
 
 ---
 
@@ -145,7 +145,7 @@ pnpm format     # Prettier
 3. 登录/鉴权 → 调用 `skill:nextjs-auth-callback`
 4. 代码规范 → 调用 `skill:nextjs-best-practices`
 5. 客户端数据获取 → 调用 `skill:tanstack-query`
-6. UI 组件 → 调用 `skill:shadcn`
+6. UI 组件 → 调用 `skill:ui`
 7. 只有 `date-fns` 是可选依赖，其他都是必选
 8. 传给 client 组件的 props 必须 JSON-serializable
 9. 图片使用 `next/image`；外部域名添加到 `next.config.ts`
