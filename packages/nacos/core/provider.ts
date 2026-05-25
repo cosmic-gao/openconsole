@@ -1,26 +1,42 @@
 /**
- * Provider — register this instance with the registry.
+ * 服务注册（Provider）—— 把当前进程注册到 Nacos。
  *
- * Detects the network address, registers, lets the SDK manage heartbeats
- * (ephemeral), and deregisters on SIGTERM/SIGINT so K8s/Docker shutdowns
- * skip the 15–30 s health-check window.
+ * 自动探测对外 IP、注册、由 SDK 维护临时实例心跳、监听 SIGTERM/SIGINT
+ * 反注册。K8s/Docker 优雅停机能跳过 15–30 秒的健康检查窗口。
  *
- * Re-entry safe: `start()` is a no-op when already running. `stop()` races
- * the deregister call against a short timeout so a stalled Nacos can't
- * stretch the shutdown grace period.
+ * 可重入：`start()` 在已运行时为空操作；`stop()` 给 deregister 加了
+ * 3 秒超时，避免注册中心 hang 住时把整个 shutdown grace period 吃光。
+ *
+ * @module
  */
 import os from "node:os";
 
-import type { Instance, ProviderOptions, Registry } from "./types";
+import { DEFAULT_GROUP, type Instance, type ProviderOptions, type Registry } from "./types";
 
-const DEFAULT_GROUP = "DEFAULT_GROUP";
+/** deregister 的超时，毫秒。 */
 const DEREGISTER_TIMEOUT_MS = 3000;
 
+/** {@link detectIp} 返回值，附带来源便于排查。 */
 interface DetectedIp {
   ip: string;
+  /** 来源标识，写到启动日志中：`env:NACOS_HOST_IP` / `iface:eth0` / `fallback` 等。 */
   source: string;
 }
 
+/**
+ * 自动探测对外 IP。
+ *
+ * 优先级（从高到低）：
+ * 1. `NACOS_HOST_IP`
+ * 2. `POD_IP`（K8s Downward API）
+ * 3. `HOST_IP`
+ * 4. `NACOS_PREFER_INTERFACE` 指定的网卡
+ * 5. 第一个非内网 IPv4
+ * 6. 兜底 `127.0.0.1`
+ *
+ * 多网卡机器**强烈建议**显式设置 `NACOS_HOST_IP` 或 `NACOS_PREFER_INTERFACE`，
+ * 否则每次启动可能选到不同 IP。
+ */
 function detectIp(): DetectedIp {
   if (process.env.NACOS_HOST_IP)
     return { ip: process.env.NACOS_HOST_IP, source: "env:NACOS_HOST_IP" };
@@ -31,7 +47,7 @@ function detectIp(): DetectedIp {
 
   const ifaces = os.networkInterfaces();
 
-  // Honor an explicit interface preference (e.g., "eth0", "en0").
+  // 显式指定网卡（"eth0" / "en0" 等）。
   const preferred = process.env.NACOS_PREFER_INTERFACE;
   if (preferred && ifaces[preferred]) {
     for (const addr of ifaces[preferred] ?? []) {
@@ -41,8 +57,8 @@ function detectIp(): DetectedIp {
     }
   }
 
-  // First non-internal IPv4 across all interfaces. Non-deterministic on
-  // multi-NIC hosts — set NACOS_PREFER_INTERFACE or NACOS_HOST_IP to pin it.
+  // 取遍历到的第一个非内网 IPv4。多网卡时顺序不稳定，必要时用上面两个
+  // 环境变量固定。
   for (const [name, list] of Object.entries(ifaces)) {
     for (const addr of list ?? []) {
       if (addr.family === "IPv4" && !addr.internal) {
@@ -54,11 +70,18 @@ function detectIp(): DetectedIp {
   return { ip: "127.0.0.1", source: "fallback" };
 }
 
+/** 运行时快照，供 `stop()` 反注册时用。 */
 interface Runtime {
   instance: Instance;
   group: string;
 }
 
+/**
+ * 服务提供方。
+ *
+ * 由 {@link create} 在 `provider.enabled === true` 时实例化，通过
+ * {@link Client.provider} 暴露给业务（一般用不到，主要给运维内省）。
+ */
 export class Provider {
   private runtime: Runtime | null = null;
   private hooked = false;
@@ -69,6 +92,7 @@ export class Provider {
     private readonly opts: ProviderOptions,
   ) {}
 
+  /** 探测 IP、注册实例、挂上 SIGTERM/SIGINT 钩子。已运行时为空操作。 */
   async start(): Promise<void> {
     if (this.runtime || !this.opts.enabled) return;
 
@@ -104,6 +128,12 @@ export class Provider {
     this.hook();
   }
 
+  /**
+   * 反注册实例。
+   *
+   * 限时 {@link DEREGISTER_TIMEOUT_MS}：注册中心若 hang 住，超过时间就放弃，
+   * 避免把整个进程 shutdown grace period 吃完。
+   */
   async stop(): Promise<void> {
     if (!this.runtime) return;
     const snap = this.runtime;
@@ -132,15 +162,21 @@ export class Provider {
     }
   }
 
+  /** 当前已注册的实例快照，未启动时为 null。 */
   current(): Instance | null {
     return this.runtime?.instance ?? null;
   }
 
+  /**
+   * 挂载 SIGTERM/SIGINT 钩子：收到信号 → 反注册 → 重发同样的信号让进程
+   * 走默认终止流程。使用 `process.once` 保证只触发一次，避免重发后又
+   * 进入自己的 handler 形成死循环。
+   */
   private hook() {
     if (this.hooked) return;
     this.hooked = true;
     const handler = async (signal: NodeJS.Signals) => {
-      // Coalesce concurrent SIGTERM+SIGINT.
+      // SIGTERM + SIGINT 几乎同时到达时合并。
       if (this.shuttingDown) return;
       this.shuttingDown = true;
       console.info(`[nacos] received ${signal}, deregistering`);

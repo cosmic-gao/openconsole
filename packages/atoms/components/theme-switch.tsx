@@ -12,15 +12,14 @@ import {
 import { useViewTransition } from "../hooks/use-view-transition";
 
 /**
- * Zero-prop light/dark toggle.
+ * 零参数的明暗主题切换按钮。
  *
- * Renders a Sun/Moon button that flips `next-themes` between `light` and
- * `dark` (reads `resolvedTheme`, so it also works correctly while in
- * System mode). Each click triggers a View Transitions API circular
- * reveal animated from the cursor position; unsupported browsers fall
- * back to an instant switch.
+ * 渲染一个 Sun/Moon 按钮，在 `next-themes` 的 `light` / `dark` 之间翻转
+ * （读 `resolvedTheme`，因此即使在 System 模式下也能正确切换）。
+ * 每次点击通过 View Transitions API 从鼠标位置触发圆形 reveal 动画；
+ * 浏览器不支持时回退为即时切换。
  *
- * Drop into a nav, sidebar, or header corner.
+ * 直接丢进导航、侧边栏或顶栏角落即可使用。
  */
 export function ThemeSwitch() {
   const { toggleTheme } = useViewTransition();

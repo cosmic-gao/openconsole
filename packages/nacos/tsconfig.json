@@ -12,7 +12,6 @@
   "include": [
     "index.ts",
     "core/**/*.ts",
-    "adapters/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"
   ],

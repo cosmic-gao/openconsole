@@ -14,8 +14,11 @@ import {
 import type { ImportedTheme } from "./types";
 
 interface ImporterProps {
+  /** 对话框是否打开。 */
   open: boolean;
+  /** 开 / 关回调。 */
   onOpenChange: (open: boolean) => void;
+  /** 用户点击「Import Theme」时回调解析出的主题。 */
   onImport: (theme: ImportedTheme) => void;
 }
 
@@ -32,6 +35,11 @@ const PLACEHOLDER = `:root {
   /* And more */
 }`;
 
+/**
+ * 抽取与正则匹配的 selector 后第一对 `{}` 之间的内容。
+ *
+ * 用字符级深度计数支持嵌套规则，比纯正则更稳。
+ */
 function body(css: string, selector: RegExp): string | null {
   const start = css.search(selector);
   if (start < 0) return null;
@@ -49,6 +57,11 @@ function body(css: string, selector: RegExp): string | null {
   return null;
 }
 
+/**
+ * 把 {@link body} 返回的声明块解析成 `{ name: value }`。
+ *
+ * 只识别 `--*: value;` 形态，忽略其它声明。
+ */
 function declarations(
   css: string,
   selector: RegExp,
@@ -62,6 +75,12 @@ function declarations(
   return vars;
 }
 
+/**
+ * 粘贴 CSS 主题导入对话框。
+ *
+ * 用户粘贴一段含 `:root { ... }` 与 `.dark { ... }` 的 CSS，提交时
+ * 解析出两个变量映射并回调 `onImport`。注释（`/* ... *\/`）会被先移除。
+ */
 export function Importer({ open, onOpenChange, onImport }: ImporterProps) {
   const [text, setText] = React.useState("");
 

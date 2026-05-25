@@ -20,48 +20,44 @@ import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
 import { ThemeSwitch } from "./theme-switch";
 
+/** {@link Header} 的 props。 */
 export interface HeaderProps extends React.ComponentProps<"header"> {
   /**
-   * Navigation slot — defaults to `<Breadcrumbs />` (auto-derived from
-   * `usePathname()`). Pass a custom `ReactNode` (e.g. a page title) to
-   * override, or `false` to hide it entirely. Rendered on the sidebar
-   * side of the header alongside the auto-rendered expand button when
-   * the sidebar is collapsed.
+   * 导航插槽 —— 缺省为 `<Breadcrumbs />`（按 `usePathname()` 自动派生）。
+   * 传入自定义 `ReactNode`（例如页面标题）覆盖，传 `false` 完全隐藏。
+   * 渲染在与侧边栏同侧，侧边栏折叠时旁边会出现展开按钮。
    */
   breadcrumbs?: ReactNode | false;
   /**
-   * Props forwarded to the default `<Breadcrumbs />`. Ignored when
-   * `breadcrumbs` is overridden with a custom node.
+   * 转发给默认 `<Breadcrumbs />` 的 props。当 `breadcrumbs` 被自定义
+   * 节点覆盖时本项被忽略。
    */
   breadcrumbsProps?: BreadcrumbsProps;
   /**
-   * Tools slot rendered **before** the built-in theme / preferences
-   * actions. Typical content: notifications, search box, primary CTAs.
+   * 操作插槽，渲染在内置 `ThemeSwitch` / `Preferences` 之**前**。
+   * 典型内容：通知、搜索框、主 CTA。
    */
   actions?: ReactNode;
   /**
-   * Hide the built-in `ThemeSwitch` + `Preferences` action group. Use
-   * when the app provides its own theme / settings controls.
+   * 隐藏内置的 `ThemeSwitch` + `Preferences` 按钮组。
+   * 应用自带主题 / 设置入口时打开。
    */
   hideDefaultActions?: boolean;
 }
 
 /**
- * Sticky dashboard header pairing with `<Sidebar>` / `<SidebarInset>`.
+ * 与 `<Sidebar>` / `<SidebarInset>` 配对使用的粘性面板顶栏。
  *
- * Layout: two segments (`nav` / `tools`) with `justify-between`, a soft
- * `bg-background/60 backdrop-blur-md` backdrop, and a compact `md:h-14`
- * desktop height. Header itself has no padding —— the inner two `<div>`s
- * own `px-4` so each segment hugs its viewport edge.
+ * 版式：左右两段（`nav` / `tools`）+ `justify-between`，背景 `bg-background/60
+ * backdrop-blur-md` 半透明虚化，桌面端紧凑 `md:h-14`。`<header>` 本身没有
+ * 内边距 —— 两个内部 `<div>` 各自 `px-4`，让两段贴住视口边缘。
  *
- * The `nav` segment (breadcrumbs + auto-rendered expand trigger) sits on
- * the same side as the sidebar; the `tools` segment (caller `actions`
- * then built-in `ThemeSwitch` + `Settings`) sits on the opposite side.
- * Swap automatically when `LayoutProvider`'s `side` flips to `"right"`.
+ * `nav` 段（面包屑 + 折叠时自动出现的展开按钮）跟侧边栏同侧；`tools` 段
+ * （调用方 `actions` + 内置 `ThemeSwitch` / `Settings`）在另一侧。
+ * `LayoutProvider` 的 `side` 切到 `"right"` 时自动镜像。
  *
- * Within `tools`, `actions` renders **before** the defaults so app-level
- * controls (notifications / search / CTA) sit closer to the page content
- * and theme controls sit at the far edge.
+ * 在 `tools` 段内，`actions` 渲染在内置项**之前**，让应用级控件（通知 /
+ * 搜索 / CTA）靠近页面内容，主题类控件留在最远端。
  */
 export function Header({
   breadcrumbs,
@@ -100,9 +96,8 @@ export function Header({
     </Tooltip>
   ) : null;
 
-  // The nav segment (crumbs + trigger) lives on the sidebar side; the
-  // actions segment lives on the opposite side. Swap their order when
-  // `side="right"` so they mirror the sidebar position.
+  // nav 段（面包屑 + trigger）放在与侧边栏同侧，tools 段在另一侧。
+  // `side="right"` 时交换它们的位置以镜像侧边栏。
   const nav = (
     <div className="flex items-center gap-2 px-4">
       {side !== "right" && trigger && (

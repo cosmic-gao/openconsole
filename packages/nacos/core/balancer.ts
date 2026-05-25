@@ -1,16 +1,21 @@
 /**
- * Load balancer strategies.
+ * 负载均衡策略集合。
  *
- * Each factory returns a stateful balancer — counters/cursors are isolated.
- * Don't share an instance across unrelated consumers if you want independent
- * round-robin sequences.
+ * 每个工厂函数返回一个有状态的 {@link Balancer} 实例 —— 内部计数器 / 游标
+ * 是隔离的。如果想让多个消费者共享独立的轮询序列，**不要**复用同一个实例。
  *
- * Contract: `pick()` is always called with instances from a single service.
- * `roundRobin` keys its cursor on `instances[0].service`; mixing services in
- * one call would silently share the cursor across them.
+ * 约定：`pick()` 每次都用单个服务的实例列表调用。`roundRobin` 内部以
+ * `instances[0].service` 作为游标键，跨服务混传一个列表会让游标错乱。
+ *
+ * @module
  */
 import type { Balancer, Hint, Instance, Strategy } from "./types";
 
+/**
+ * 轮询策略。
+ *
+ * 内部维护「服务名 → 游标」的 Map，保证同一服务的连续调用按顺序循环。
+ */
 export function roundRobin(): Balancer {
   const cursors = new Map<string, number>();
   return {
@@ -25,6 +30,7 @@ export function roundRobin(): Balancer {
   };
 }
 
+/** 随机策略，简单且无状态。 */
 export function random(): Balancer {
   return {
     name: "random",
@@ -35,7 +41,11 @@ export function random(): Balancer {
   };
 }
 
-/** Pick proportional to `weight` (default 1). Best for heterogeneous fleets. */
+/**
+ * 加权策略，按 `weight`（缺省 1）比例随机命中。
+ *
+ * 异构集群的首选策略；同质集群退化为等概率随机。
+ */
 export function weighted(): Balancer {
   return {
     name: "weighted",
@@ -52,7 +62,11 @@ export function weighted(): Balancer {
   };
 }
 
-/** Same hint key → same instance while the list shape is stable. */
+/**
+ * 黏性策略：同样的 {@link Hint.key} 在实例列表不变时总是命中同一实例。
+ *
+ * 适合用户/租户级别的请求亲和性。无 key 时退化为「第一个实例」。
+ */
 export function sticky(): Balancer {
   return {
     name: "sticky",
@@ -68,6 +82,15 @@ export function sticky(): Balancer {
   };
 }
 
+/**
+ * 把 {@link Strategy}（字符串或 Balancer 对象）解析成 Balancer 实例。
+ *
+ * - `undefined` → `weighted()`（默认）
+ * - 字符串 → 对应内置工厂
+ * - Balancer 对象 → 原样返回
+ *
+ * @throws 字符串不在内置列表时抛错
+ */
 export function resolve(strategy: Strategy | undefined): Balancer {
   if (!strategy) return weighted();
   if (typeof strategy !== "string") return strategy;
@@ -85,6 +108,7 @@ export function resolve(strategy: Strategy | undefined): Balancer {
   }
 }
 
+/** 过滤出可调用（healthy && enabled）的实例。 */
 export function callable(instances: Instance[]): Instance[] {
   return instances.filter((i) => i.healthy && i.enabled);
 }

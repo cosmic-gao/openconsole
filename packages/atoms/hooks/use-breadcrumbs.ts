@@ -3,23 +3,24 @@
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 
+/** 单条面包屑：显示文本 + 跳转链接。 */
 export type Crumb = {
   title: string;
   link: string;
 };
 
+/** {@link useBreadcrumbs} 的可选参数。 */
 export interface UseBreadcrumbsOptions {
   /**
-   * Per-path title override. Key is the full path (e.g. `/dashboard/orders`),
-   * value is the display title. Useful for paths whose raw segment isn't a
-   * good label (UUIDs, slugs, dynamic ids).
+   * 按完整路径覆盖显示文本。key 是完整 path（如 `/dashboard/orders`），
+   * value 是显示文本。适合无法直接从 segment 还原的标签（UUID、slug、动态 id）。
    *
-   * @example { "/dashboard": "Overview", "/dashboard/orders/123": "Order #123" }
+   * @example { "/dashboard": "概览", "/dashboard/orders/123": "订单 #123" }
    */
   labels?: Record<string, string>;
   /**
-   * Transform applied to each path segment when no `labels` entry hits.
-   * Defaults to capitalizing the first letter (`employee` → `Employee`).
+   * 当 `labels` 命中不到时对每个 segment 应用的变换函数。
+   * 默认把首字母转大写（`employee` → `Employee`）。
    */
   transform?: (segment: string, index: number, segments: string[]) => string;
 }
@@ -28,10 +29,10 @@ const defaultTransform = (segment: string) =>
   segment.charAt(0).toUpperCase() + segment.slice(1);
 
 /**
- * Derive a breadcrumb chain from the current pathname.
+ * 从当前 pathname 推导出面包屑链。
  *
- * Each path segment becomes one crumb; `link` accumulates segments up to
- * that level. Example: `/dashboard/orders/123` →
+ * 每个 path segment 变成一条 crumb，`link` 是累计到该层的完整路径。
+ * 例如 `/dashboard/orders/123` →
  *
  * ```
  * [
@@ -41,9 +42,9 @@ const defaultTransform = (segment: string) =>
  * ]
  * ```
  *
- * Customize titles via `labels` (per-path map) or `transform` (default
- * segment → title rule). Hook is headless —— pair with `<Breadcrumbs>` for
- * the default UI or render your own.
+ * 通过 `labels`（按路径覆盖）或 `transform`（默认 segment → 标题规则）
+ * 自定义文本。本 hook 是无头的 —— 配合 `<Breadcrumbs>` 使用默认 UI，
+ * 或自行渲染。
  */
 export function useBreadcrumbs(options?: UseBreadcrumbsOptions): Crumb[] {
   const pathname = usePathname();

@@ -38,7 +38,7 @@ describe("Discovery", () => {
     await d.list("svc");
     expect(reg.watchCalls).toBe(1);
 
-    // Wait past TTL so the next list() triggers a refetch + resubscribe.
+    // 等待超过 TTL，下一次 list() 触发重新拉取 + 重订阅。
     await new Promise((r) => setTimeout(r, 5));
     reg.watchShouldFail = false;
     await d.list("svc");
@@ -86,8 +86,7 @@ describe("Discovery", () => {
       instance("svc", "10.0.0.1", 80),
       instance("svc", "10.0.0.9", 80),
     ]);
-    // The subscribed cache would already see the push, but refresh forces a
-    // direct read regardless of cache state.
+    // 已订阅的缓存原本就会收到推送；refresh 无视缓存状态强制直接读。
     await d.refresh("svc");
     const list = await d.list("svc");
     expect(list).toHaveLength(2);

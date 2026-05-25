@@ -16,30 +16,30 @@ import type { ReactNode } from "react";
 import { Button, cn } from "@openconsole/shadcn";
 
 /**
- * Props shared by every error page. The five named components below
- * (`Unauthorized`, `Forbidden`, `NotFound`, `ServerError`, `Maintenance`)
- * accept these as a partial — anything you pass overrides the canonical
- * default for that HTTP code.
+ * 错误页通用 props。下面五个命名组件（{@link Unauthorized} /
+ * {@link Forbidden} / {@link NotFound} / {@link ServerError} /
+ * {@link Maintenance}）接收本接口作为 Partial —— 传入的字段会覆盖对应
+ * HTTP 状态码的规范默认值。
  */
 export interface ErrorPageProps {
-  /** Large status code rendered above the title. */
+  /** 渲染在标题上方的大号状态码。 */
   status?: ReactNode;
-  /** Short heading (rendered as `<h1>`). */
+  /** 短标题（`<h1>`）。 */
   title?: string;
-  /** Optional longer explanation rendered as body copy. */
+  /** 标题下方的更长说明。 */
   description?: string;
-  /** Icon rendered above the status. */
+  /** 状态码上方的图标。 */
   icon?: ReactNode;
-  /** Action row rendered below the description. */
+  /** 描述下方的操作按钮行。 */
   actions?: ReactNode;
-  /** Wrapper className override. */
+  /** 外层 wrapper 的 className 覆盖。 */
   className?: string;
 }
 
 /**
- * Shared layout used by every named error component. Centered in the
- * viewport with `min-h-svh`; pass `className` to embed inside a smaller
- * container.
+ * 所有命名错误组件共享的版式。
+ *
+ * 视口居中 + `min-h-svh`；嵌入小容器时通过 `className` 覆盖外层尺寸。
  */
 function Page({
   status,
@@ -80,8 +80,8 @@ function Page({
 }
 
 /**
- * Default action row — "Go back" (router.back) + "Go home" (Link to `/`).
- * Pre-wired into each named error component; override via `actions`.
+ * 默认操作行 —— "返回上一页"（`router.back()`）+ "回到首页"（`/`）。
+ * 已预接到每个命名错误组件；要替换通过 `actions` prop 传入。
  */
 function DefaultActions() {
   const router = useRouter();
@@ -105,9 +105,7 @@ function DefaultActions() {
   );
 }
 
-/**
- * 401 Unauthorized — sign-in required. Default icon `LockKeyhole`.
- */
+/** 401 Unauthorized —— 需要登录才能访问。默认图标 `LockKeyhole`。 */
 export function Unauthorized(props: ErrorPageProps = {}) {
   return (
     <Page
@@ -121,9 +119,7 @@ export function Unauthorized(props: ErrorPageProps = {}) {
   );
 }
 
-/**
- * 403 Forbidden — authenticated but lacks permission. Default icon `Ban`.
- */
+/** 403 Forbidden —— 已登录但无权限。默认图标 `Ban`。 */
 export function Forbidden(props: ErrorPageProps = {}) {
   return (
     <Page
@@ -137,10 +133,7 @@ export function Forbidden(props: ErrorPageProps = {}) {
   );
 }
 
-/**
- * 404 Not Found — page doesn't exist or was moved. Default icon
- * `FileQuestion`.
- */
+/** 404 Not Found —— 页面不存在或已迁移。默认图标 `FileQuestion`。 */
 export function NotFound(props: ErrorPageProps = {}) {
   return (
     <Page
@@ -154,9 +147,7 @@ export function NotFound(props: ErrorPageProps = {}) {
   );
 }
 
-/**
- * 500 Internal Server Error — generic 5xx. Default icon `ServerCrash`.
- */
+/** 500 Internal Server Error —— 通用 5xx。默认图标 `ServerCrash`。 */
 export function ServerError(props: ErrorPageProps = {}) {
   return (
     <Page
@@ -170,10 +161,7 @@ export function ServerError(props: ErrorPageProps = {}) {
   );
 }
 
-/**
- * 503 Maintenance — service temporarily unavailable. Default icon
- * `Construction`.
- */
+/** 503 Maintenance —— 服务临时不可用。默认图标 `Construction`。 */
 export function Maintenance(props: ErrorPageProps = {}) {
   return (
     <Page

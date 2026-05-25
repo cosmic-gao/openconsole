@@ -42,20 +42,35 @@ const PREVIEW_TOKENS = ["primary", "secondary", "accent", "muted"] as const;
 const TWEAKCN_URL = "https://tweakcn.com/editor/theme";
 
 interface PaletteProps {
-  // Values
+  // ---- 当前值 ----
+  /** shadcn 预设当前选中的 value。 */
   shadcnValue: string;
+  /** tweakcn 预设当前选中的 value。 */
   tweakcnValue: string;
+  /** 当前圆角档位（如 `0.5rem`）。 */
   radius: string;
+  /** 当前是否暗色模式。 */
   isDarkMode: boolean;
+  /** 当前已编辑的品牌色值（`--*: value`），用来回填 `<ColorPicker>`。 */
   brandColors: Record<string, string>;
-  // Actions
+  // ---- 操作回调 ----
+  /** 用户从 shadcn 预设里选定一项。 */
   onShadcn: (preset: ThemePreset, value: string) => void;
+  /** 用户从 tweakcn 预设里选定一项。 */
   onTweakcn: (preset: ThemePreset, value: string) => void;
+  /** 用户切换圆角档位。 */
   onRadius: (radius: string) => void;
+  /** 用户在 `<ColorPicker>` 中改了某个 token。 */
   onColor: (cssVar: string, value: string) => void;
+  /** 用户点击「Import Theme」按钮，打开 Importer 对话框。 */
   onImport: () => void;
 }
 
+/**
+ * 预设下拉块（带「Random」随机按钮）。
+ *
+ * 复用给 shadcn / tweakcn 两套预设源。
+ */
 function PresetSection({
   label,
   placeholder,
@@ -127,6 +142,12 @@ function PresetSection({
   );
 }
 
+/**
+ * Preferences 抽屉的 Theme 标签页。
+ *
+ * 自上而下：shadcn 预设、tweakcn 预设、圆角、明暗模式切换、Import 入口、
+ * 品牌色编辑（Accordion 展开）、tweakcn.com 跳转推广卡片。
+ */
 export function Palette({
   shadcnValue,
   tweakcnValue,

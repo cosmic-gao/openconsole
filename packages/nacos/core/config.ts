@@ -1,27 +1,39 @@
 /**
- * Config — in-memory snapshot fed by the registry's long-polling.
+ * 动态配置 —— 由注册中心长轮询喂养的内存快照。
  *
- * Each watched dataId becomes a top-level key (alias or dataId). Reads are
- * synchronous; on a push we mutate the snapshot, notify in-process listeners,
- * and (when running under Next.js) fire `revalidateTag` so RSC segments tagged
- * with the same name are re-rendered on the next request.
+ * 每个被订阅的 dataId 会变成 snapshot 中的一个顶层键（按 `key` 或 `dataId`
+ * 命名）。读操作是同步的；收到推送时本模块会：
  *
- * `stop()` is idempotent and unsubscribes everything — call it before the
- * Registry closes (or when intentionally tearing down for HMR/tests).
+ * 1. 更新 snapshot；
+ * 2. 通知进程内 `on()` 监听器；
+ * 3. （如运行在 Next.js 下）触发 `revalidateTag`，让对应 cache tag 的 RSC
+ *    分段在下次请求时重新渲染。
+ *
+ * `stop()` 是幂等的，会取消所有订阅 —— 必须在 Registry 关闭之前调用
+ * （或在测试 / HMR 主动 teardown 时）。
+ *
+ * @module
  */
 import type { ConfigOptions, Registry } from "./types";
 
+/** {@link Config} 构造依赖。 */
 export interface ConfigDeps {
   registry: Registry;
   options: ConfigOptions;
 }
 
+/** 内部订阅记录，便于 `stop()` 时精准 unobserve。 */
 interface Subscription {
   dataId: string;
   group?: string;
   listener: (content: string) => void;
 }
 
+/**
+ * 动态配置管理器。
+ *
+ * 通过 {@link Client.config} 暴露给业务，不直接实例化。
+ */
 export class Config {
   private readonly snapshot: Record<string, unknown> = {};
   private readonly listeners = new Set<(key: string, value: unknown) => void>();
@@ -35,11 +47,14 @@ export class Config {
     this.options = deps.options;
   }
 
-  /** Load and subscribe every configured dataId. Idempotent. */
+  /**
+   * 拉取并订阅所有配置 source。可重入。
+   *
+   * 多个 source 并发拉取，启动耗时取决于最慢的那一条而不是累加。
+   */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-    // Fan out so boot time is the slowest source, not their sum.
     await Promise.all(
       (this.options.sources ?? []).map(async (src) => {
         const key = src.key ?? src.dataId;
@@ -60,7 +75,7 @@ export class Config {
     );
   }
 
-  /** Unsubscribe and drop in-process listeners. Idempotent. */
+  /** 取消所有订阅并清空进程内监听器。可重入。 */
   async stop(): Promise<void> {
     if (!this.started) return;
     this.started = false;
@@ -75,6 +90,16 @@ export class Config {
     this.listeners.clear();
   }
 
+  /**
+   * 读取配置。
+   *
+   * @example
+   * ```ts
+   * cfg.get<Flags>("flags", {} as Flags); // 带默认值
+   * cfg.get<Throttle>("throttle");        // 可能 undefined
+   * cfg.get();                            // 全量 snapshot
+   * ```
+   */
   get<T>(key: string, fallback: T): T;
   get<T>(key: string): T | undefined;
   get(): Record<string, unknown>;
@@ -87,11 +112,23 @@ export class Config {
     return (value === undefined ? fallback : value) as T | undefined;
   }
 
+  /**
+   * 订阅配置变更，返回取消订阅的函数。
+   *
+   * 注意 listener 是**同步**触发的（与 snapshot 更新同一 tick）。
+   * 后续的 `revalidate()` 是异步进行的，不影响 listener。
+   */
   on(listener: (key: string, value: unknown) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * 主动触发 Next.js 的 `revalidateTag(tag)`，让对应 cache tag 的 RSC
+   * 分段在下次请求时重新渲染。
+   *
+   * 未在 Next.js 环境（动态 import 失败）或未配置 `tag` 时为空操作。
+   */
   async revalidate(): Promise<void> {
     const tag = this.options.tag;
     if (!tag) return;
@@ -101,14 +138,15 @@ export class Config {
         | null;
       const fn = mod?.revalidateTag;
       if (typeof fn !== "function") return;
-      // `{ expire: 0 }` is ignored by Next 15 and means "expire immediately"
-      // in Next 16, so this call shape works on both.
+      // `{ expire: 0 }` 在 Next 15 上会被忽略，在 Next 16 上表示「立刻失效」，
+      // 同样的调用形态在两个版本上行为一致。
       (fn as (...args: unknown[]) => void)(tag, { expire: 0 });
     } catch {
-      /* not running under Next.js */
+      /* 未在 Next.js 中运行，忽略 */
     }
   }
 
+  /** 通知所有进程内监听器；单个 listener 抛错不会影响其他 listener。 */
   private fire(key: string) {
     const value = this.snapshot[key];
     for (const l of this.listeners) {
@@ -121,13 +159,17 @@ export class Config {
   }
 }
 
+/**
+ * 把 Nacos 拉到的原始内容解析为 JS 对象。
+ *
+ * 非 JSON（YAML / properties / 纯文本）原样保留为字符串并打印一条 warning，
+ * 调用方可在 `on()` 回调中自行 post-process。
+ */
 function parse(raw: string | null | undefined, dataId: string): unknown {
   if (!raw) return {};
   try {
     return JSON.parse(raw);
   } catch {
-    // YAML / properties / raw text are passed through unparsed; callers can
-    // post-process inside an `on()` listener.
     console.warn(
       `[nacos] config '${dataId}' is not JSON; exposing raw string`,
     );

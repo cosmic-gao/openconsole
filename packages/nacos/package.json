@@ -1,12 +1,34 @@
 {
   "name": "@openconsole/nacos",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
+  "description": "Next.js 16 Nacos client — service discovery, dynamic config, and a fetch-compatible HTTP layer with plugins.",
+  "keywords": [
+    "nacos",
+    "next.js",
+    "nextjs",
+    "service-discovery",
+    "load-balancer",
+    "config",
+    "microservices"
+  ],
   "type": "module",
   "sideEffects": false,
+  "main": "index.ts",
+  "types": "index.ts",
   "exports": {
-    ".": "./index.ts",
-    "./next": "./adapters/next.ts"
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "files": [
+    "index.ts",
+    "core",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.11.0"
   },
   "scripts": {
     "test": "vitest run",
@@ -17,10 +39,7 @@
   },
   "peerDependencies": {
     "nacos": "^2",
-    "next": "^15 || ^16"
-  },
-  "peerDependenciesMeta": {
-    "next": { "optional": true }
+    "next": "^16"
   },
   "devDependencies": {
     "@openconsole/tsconfig": "workspace:*",

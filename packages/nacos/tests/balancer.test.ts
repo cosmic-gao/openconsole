@@ -47,7 +47,7 @@ describe("balancer", () => {
         const p = b.pick(list)!;
         counts.set(p.ip, (counts.get(p.ip) ?? 0) + 1);
       }
-      // Expect ~10% / ~90% split with wide tolerance.
+      // 期望分布约 10% / 90%，留宽松容差。
       expect(counts.get("10.0.0.2")! / 10_000).toBeGreaterThan(0.85);
       expect(counts.get("10.0.0.2")! / 10_000).toBeLessThan(0.95);
     });

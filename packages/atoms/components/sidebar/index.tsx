@@ -26,31 +26,34 @@ export type {
 } from "./types";
 
 /**
- * Sidebar props. `brand`/`menu`/`account` shape the rendered chrome; the rest
- * pass through to the underlying Sidebar primitive (e.g. `className`,
- * `side`/`variant`/`collapsible` overrides).
+ * {@link Sidebar} 的 props。
+ *
+ * `brand` / `menu` / `account` 决定渲染出的视觉结构；其余 prop 透传给
+ * 底层的 shadcn `Sidebar` 原语（例如 `className`、`side` / `variant` /
+ * `collapsible` 的覆盖）。
  */
-export interface SidebarProps
-  extends React.ComponentProps<typeof SidebarPrimitive> {
-  /** Top brand block. Omit to hide the header. */
+export interface SidebarProps extends React.ComponentProps<
+  typeof SidebarPrimitive
+> {
+  /** 顶部品牌区；不传则不渲染 header。 */
   brand?: BrandData;
-  /** Sectioned menu groups. */
+  /** 分组菜单数据。 */
   menu: MenuGroup[];
-  /** Bottom account card. Omit to hide the footer. */
+  /** 底部账号卡片；不传则不渲染 footer。 */
   account?: User;
 }
 
 /**
- * Three-section sidebar (brand / menu / account) wired to atoms'
- * `LayoutProvider` for variant configuration.
+ * 三段式侧边栏（brand / menu / account），通过 atoms 的
+ * {@link LayoutProvider} 读取变体配置。
  *
- * - `brand` (optional) renders inside `SidebarHeader`.
- * - `menu` is rendered inside `SidebarContent`; supports one level of
- *   nesting via `MenuItem.children`.
- * - `account` (optional) renders inside `SidebarFooter`; when
- *   `account.menu` is non-empty, the card becomes a dropdown trigger.
+ * - `brand`（可选）渲染在 `SidebarHeader` 内。
+ * - `menu` 渲染在 `SidebarContent` 内；通过 `MenuItem.children` 支持
+ *   一层嵌套。
+ * - `account`（可选）渲染在 `SidebarFooter` 内；`account.menu` 非空时
+ *   卡片变成下拉触发器。
  *
- * Must be wrapped by shadcn's `SidebarProvider` (atoms does not bundle it).
+ * 必须包在 shadcn 的 `SidebarProvider` 内部（atoms 不重复打包它）。
  */
 export function Sidebar({ brand, menu, account, ...props }: SidebarProps) {
   const { config } = useLayout();

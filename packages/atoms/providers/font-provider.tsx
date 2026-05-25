@@ -6,48 +6,57 @@ const DEFAULT_OPTIONS = ["inter", "manrope", "system"] as const;
 const DEFAULT_STORAGE = "openconsole-font";
 const DEFAULT_CLASS_PREFIX = "font-";
 
+/** 内置三个字体选项。自定义时传 `options` 覆盖。 */
 export type FontOption = (typeof DEFAULT_OPTIONS)[number];
 
+/** {@link FontContext} 暴露给 {@link useFont} 的值。 */
 export interface FontContextValue {
+  /** 当前生效的字体值。 */
   font: string;
+  /** 设置字体；变更会立刻反映到 `<html>` 类名并写入 localStorage。 */
   setFont: (font: string) => void;
+  /** 当前可选字体列表（构造时传入或使用默认值）。 */
   options: readonly string[];
 }
 
+/** {@link FontProvider} 的 props。 */
 export interface FontProviderProps {
   children: React.ReactNode;
   /**
-   * Available font options.
+   * 可选字体集合。
+   *
    * @default ["inter", "manrope", "system"]
    */
   options?: readonly string[];
   /**
-   * Initial font used before any persisted value loads.
+   * 持久化值加载前使用的初始字体。
+   *
    * @default options[0]
    */
   defaultFont?: string;
   /**
-   * localStorage key for persistence. Pass `null` to disable persistence.
+   * localStorage 持久化键名；传 `null` 关闭持久化。
+   *
    * @default "openconsole-font"
    */
   storage?: string | null;
   /**
-   * Class prefix applied to `<html>`. Pass `""` to skip class application.
+   * 写到 `<html>` 上的 class 前缀；传 `""` 跳过类名应用。
+   *
    * @default "font-"
    */
   classPrefix?: string;
 }
 
+/** 直接使用 Context（一般通过 {@link useFont} 间接访问）。 */
 export const FontContext = React.createContext<FontContextValue | null>(null);
 
 /**
- * Provides the currently-active font to descendants, applying it to
- * `<html>` as a `font-${value}` class and (optionally) persisting it to
- * localStorage.
+ * 把当前字体注入到子树，并以 `font-${value}` 类名应用到 `<html>`，
+ * 同时（默认）持久化到 localStorage。
  *
- * Mount at the app root. Pair with the matching `:root.font-${value}`
- * CSS rules — the three defaults (`inter`, `manrope`, `system`) ship
- * with `@openconsole/atoms/styles.css`.
+ * 应挂在应用根部。配套的 CSS 规则 `:root.font-${value}` 在
+ * `@openconsole/atoms/styles.css` 中提供（覆盖三个默认值）。
  */
 export function FontProvider({
   children,
@@ -100,11 +109,10 @@ export function FontProvider({
 }
 
 /**
- * Read the active font and update it. Throws when called outside of a
- * `<FontProvider>`.
+ * 读取当前字体并提供 setter。在 {@link FontProvider} 外调用会抛错。
  *
- * @returns `{ font, setFont, options }` — current font, setter, and the
- *   list of available options (whatever was passed to the provider).
+ * @returns `{ font, setFont, options }` —— 当前字体、setter 与可选列表
+ *   （即传入 Provider 的 `options`）。
  */
 export function useFont(): FontContextValue {
   const context = React.useContext(FontContext);

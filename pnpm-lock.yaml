@@ -111,7 +111,7 @@ importers:
         specifier: ^2
         version: 2.6.2
       next:
-        specifier: ^15 || ^16
+        specifier: ^16
         version: 16.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
     devDependencies:
       '@openconsole/tsconfig':

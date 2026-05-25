@@ -14,42 +14,40 @@ import {
 
 import { type Crumb, useBreadcrumbs } from "../hooks/use-breadcrumbs";
 
+/** {@link Breadcrumbs} 的 props。 */
 export interface BreadcrumbsProps {
   /**
-   * Manually-provided crumb chain. When set, `labels` is ignored and the
-   * hook-derived chain is bypassed entirely. Use this for non-pathname-based
-   * breadcrumbs (e.g. wizards, modal flows).
+   * 手写的 crumb 链。设置后 `labels` 被忽略，也不再调用 hook 推导。
+   * 适用于非 pathname 派生的场景（向导步骤、模态流程等）。
    */
   items?: Crumb[];
   /**
-   * Per-path title override forwarded to `useBreadcrumbs` when `items` is
-   * not set. See `UseBreadcrumbsOptions["labels"]`.
+   * 按路径覆盖文本；只在未传 `items` 时生效，会转发给 `useBreadcrumbs`。
+   * 详见 {@link UseBreadcrumbsOptions.labels}。
    */
   labels?: Record<string, string>;
   /**
-   * Custom separator content (rendered inside `BreadcrumbSeparator`).
-   * Default: shadcn's built-in `ChevronRight` icon.
+   * 自定义分隔符内容（渲染在 `BreadcrumbSeparator` 内部）。
+   * 默认是 shadcn 内置的 `ChevronRight` 图标。
    */
   separator?: ReactNode;
   /**
-   * By default, intermediate crumbs (everything except first / last) are
-   * hidden on `< md` screens to keep the header compact. Set `true` to keep
-   * them visible at all sizes.
+   * 默认情况下中间 crumb（除首/尾外）在 `< md` 屏幕下隐藏，保持顶栏紧凑。
+   * 设为 `true` 让它们在所有尺寸下都可见。
    */
   showAllOnMobile?: boolean;
 }
 
 /**
- * Auto-derived breadcrumb navigation, typically slotted into `<Header
- * breadcrumbs={<Breadcrumbs />} />`.
+ * 自动从 pathname 派生的面包屑导航。常作为 `<Header breadcrumbs={<Breadcrumbs />} />`
+ * 的默认导航插槽。
  *
- * Reads `usePathname()` and renders one crumb per segment. Last crumb is
- * the current page (rendered as `BreadcrumbPage`, non-clickable);
- * intermediates are `<Link>`s. Empty pathnames render `null` (no chrome).
+ * 读取 `usePathname()`，每个 segment 渲染一条 crumb：尾项是当前页，渲染
+ * 为不可点击的 `BreadcrumbPage`；中间项是 `<Link>`。pathname 为空时返回
+ * `null`（不留视觉残影）。
  *
- * Customize titles via `labels` (per-path map). For non-pathname-based use
- * cases, pass `items` directly. For headless rendering with your own UI,
- * call `useBreadcrumbs()` instead.
+ * 通过 `labels` 自定义文本（按路径覆盖）；非 pathname 场景直接传 `items`；
+ * 要无头渲染自己的 UI，请改用 {@link useBreadcrumbs}。
  */
 export function Breadcrumbs({
   items: itemsProp,

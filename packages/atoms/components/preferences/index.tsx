@@ -36,9 +36,9 @@ import type { ImportedTheme, ThemePreset } from "./types";
 import { useTokens } from "./use-tokens";
 
 interface PreferencesProps {
-  /** Whether the drawer is open. */
+  /** 抽屉是否打开。 */
   open: boolean;
-  /** Called with the new open state when the user opens or dismisses. */
+  /** 用户开 / 关抽屉时回调新的 open 状态。 */
   onOpenChange: (open: boolean) => void;
 }
 
@@ -70,7 +70,7 @@ const INITIAL_STATE: State = {
   radius: DEFAULT_RADIUS,
 };
 
-// Mirrors `LayoutProvider`'s `DEFAULT_CONFIG`. Keep in sync.
+// 与 LayoutProvider 的 DEFAULT_CONFIG 保持一致，二者改动时务必同步。
 const DEFAULT_SIDEBAR = {
   variant: "inset",
   collapsible: "icon",
@@ -93,18 +93,16 @@ function reducer(state: State, action: Action): State {
 }
 
 /**
- * Settings drawer that slides in from the side opposite the sidebar.
- * Built-in tabs:
+ * 设置抽屉 —— 从侧边栏的对侧滑入。内置两个 tab：
  *
- * - **Theme**: shadcn / tweakcn preset pickers, per-token color editing
- *   via `<ColorPicker>`, radius selector, light/dark mode toggle, and a
- *   "paste CSS" Importer dialog for ad-hoc themes.
- * - **Layout**: live-preview controls for the sidebar variant,
- *   collapsible mode, and side (mirrors `LayoutProvider` state).
+ * - **Theme**：shadcn / tweakcn 主题预设下拉、按 token 的 `<ColorPicker>`
+ *   编辑、圆角选择、明暗模式切换，以及粘贴 CSS 临时主题的 Importer 对话框。
+ * - **Layout**：侧边栏变体 / 折叠模式 / 摆放位置的实时预览控件（映射
+ *   {@link LayoutProvider} 状态）。
  *
- * Requires `<ThemeProvider>`, `<FontProvider>`, and `<LayoutProvider>`
- * to be mounted above. `<Header>` opens this drawer by default — only
- * render `<Preferences>` directly when not using `<Header>`.
+ * 需要外层挂载 {@link ThemeProvider}、{@link FontProvider}、
+ * {@link LayoutProvider}。{@link Header} 默认会打开本抽屉 —— 不用 `<Header>`
+ * 时才需要直接渲染 `<Preferences>`。
  */
 export function Preferences({ open, onOpenChange }: PreferencesProps) {
   const {
@@ -122,7 +120,7 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
   const [activeTab, setActiveTab] = React.useState("theme");
   const [importerOpen, setImporterOpen] = React.useState(false);
 
-  // Handlers only dispatch; the effects below apply state to the DOM.
+  // 这些 handler 只负责 dispatch；下面的 effect 负责把 state 应用到 DOM。
   const selectShadcn = (_preset: ThemePreset, value: string) =>
     dispatch({ type: "applyShadcn", value });
   const selectTweakcn = (_preset: ThemePreset, value: string) =>
@@ -138,7 +136,7 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
     updateConfig(DEFAULT_SIDEBAR);
   };
 
-  // Apply preset/imported theme whenever the active source or dark mode changes.
+  // 当主题来源或明暗模式变化时，重新把 preset / imported 主题应用到 DOM。
   React.useEffect(() => {
     switch (state.source) {
       case "imported":
@@ -169,7 +167,7 @@ export function Preferences({ open, onOpenChange }: PreferencesProps) {
     applyImported,
   ]);
 
-  // Apply radius independently — orthogonal to the theme source.
+  // 圆角独立应用 —— 与主题来源正交，不需要互相触发。
   React.useEffect(() => {
     applyRadius(state.radius);
   }, [state.radius, applyRadius]);

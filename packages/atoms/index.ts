@@ -1,19 +1,24 @@
-// Custom higher-order blocks composed from @openconsole/shadcn primitives.
-//
-// Layout:
-//   - components/   Visual components (Breadcrumbs, ColorPicker, Errors,
-//                   Header, Preferences, Sidebar, ThemeSwitch). Flat
-//                   files and multi-file directories coexist at the
-//                   same level.
-//   - providers/    Context providers (FontProvider, LayoutProvider, ThemeProvider).
-//   - hooks/        Public hooks (useBreadcrumbs; useViewTransition is internal).
+/**
+ * `@openconsole/atoms` —— 基于 `@openconsole/shadcn` 拼装的业务级组件。
+ *
+ * 目录约定：
+ *
+ * - `components/`  视觉组件（Breadcrumbs / ColorPicker / Errors / Header /
+ *                  Preferences / Sidebar / ThemeSwitch）。扁平文件和多文件
+ *                  目录在同一层。
+ * - `providers/`   上下文 Provider（FontProvider / LayoutProvider /
+ *                  ThemeProvider）。
+ * - `hooks/`       公开 Hook（`useBreadcrumbs`；`useViewTransition` 仅内部用）。
+ *
+ * @module
+ */
 
 // Providers / context
 export * from "./providers/font-provider";
 export * from "./providers/layout-provider";
 export * from "./providers/theme-provider";
 
-// Hooks (public)
+// Hooks（公开）
 export * from "./hooks/use-breadcrumbs";
 
 // Components

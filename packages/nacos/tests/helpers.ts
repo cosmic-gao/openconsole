@@ -1,5 +1,9 @@
 /**
- * Test helpers — an in-memory Registry and a deterministic fetch mock.
+ * 测试帮助文件 —— 内存 Registry 与 Instance 工厂。
+ *
+ * 用 {@link FakeRegistry} 取代真正的 Nacos 服务，免去网络与 SDK 依赖。
+ *
+ * @module
  */
 import type {
   Instance,
@@ -7,9 +11,18 @@ import type {
   Registry,
 } from "../core/types";
 
+/**
+ * 内存版 {@link Registry}：保留实例 / 配置的当前快照，并维护订阅者集合。
+ *
+ * 暴露 `setInstances` / `setConfig` 给测试用例主动推送，模拟注册中心
+ * 的 watch / observe 回调。
+ */
 export class FakeRegistry implements Registry {
+  /** `watch()` 调用次数，方便断言重订阅行为。 */
   watchCalls = 0;
+  /** 设为 true 时让 `watch()` 抛错，模拟订阅失败。 */
   watchShouldFail = false;
+  /** `unobserve()` 调用次数，方便断言 Config.stop() 清理订阅。 */
   unobserveCalls = 0;
 
   private services = new Map<string, Instance[]>();
@@ -20,7 +33,7 @@ export class FakeRegistry implements Registry {
   async ready() {}
   async close() {}
 
-  /** Test setter: seed instances and notify subscribers. */
+  /** 测试 setter：写入实例列表并通知订阅者。 */
   setInstances(service: string, instances: Instance[], group = "DEFAULT_GROUP") {
     const key = `${group}::${service}`;
     this.services.set(key, instances);
@@ -28,7 +41,7 @@ export class FakeRegistry implements Registry {
     if (subs) for (const s of subs) s(instances);
   }
 
-  /** Test setter: push a config update. */
+  /** 测试 setter：写入配置并通知订阅者。 */
   setConfig(dataId: string, content: string, group = "DEFAULT_GROUP") {
     const key = `${group}::${dataId}`;
     this.configs.set(key, content);
@@ -89,6 +102,7 @@ export class FakeRegistry implements Registry {
   }
 }
 
+/** 快速构造测试用 {@link Instance}，缺省字段填充健康可调用。 */
 export function instance(
   service: string,
   ip: string,

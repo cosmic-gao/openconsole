@@ -31,12 +31,20 @@ import {
 } from "@openconsole/shadcn";
 import type { MenuGroup, MenuItem } from "./types";
 
+/** 类型守卫所需的「父级项」形态：children 至少有一项。 */
 type Parent = MenuItem & { children: MenuItem[] };
 
+/** 判断一项是否是父级（带 children）。 */
 function isParent(item: MenuItem): item is Parent {
   return Array.isArray(item.children) && item.children.length > 0;
 }
 
+/**
+ * 判断本项是否「激活」。
+ *
+ * - 叶子项：href 与当前 pathname 完全相等。
+ * - 父级项：children 中任一项 href 匹配当前 pathname。
+ */
 function isActive(pathname: string, item: MenuItem): boolean {
   if (item.href && pathname === item.href) return true;
   return item.children?.some((c) => c.href === pathname) ?? false;
@@ -64,6 +72,13 @@ function NavBadge({
   );
 }
 
+/**
+ * 渲染分组菜单。每个 group 是一个 `SidebarGroup`，可选 label。
+ *
+ * 一级项：叶子直接渲染；带 children 的项根据当前是否折叠：
+ * 展开状态 → 内联可折叠子菜单（`<Submenu>`）；
+ * 折叠（仅图标）状态 → 弹出右侧 flyout（`<Flyout>`）。
+ */
 export function Menu({ groups }: { groups: MenuGroup[] }) {
   return (
     <>
@@ -121,8 +136,8 @@ function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
 function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
   const { setOpenMobile } = useSidebar();
   const active = isActive(pathname, item);
-  // Controlled `open` so navigating between routes can re-expand the matching
-  // branch (defaultOpen only fires once on mount).
+  // 受控的 `open`：路由切换时让命中分支重新展开（defaultOpen 只在 mount
+  // 时生效一次）。
   const [open, setOpen] = React.useState(active);
   React.useEffect(() => {
     if (active) setOpen(true);

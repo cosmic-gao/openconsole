@@ -1,22 +1,29 @@
 /**
- * Http — service-aware fetch.
+ * 服务感知的 HTTP 调用层。
  *
- * Pass `nacos://service/path` and the client resolves an instance via
- * Discovery + Balancer, then issues a plain `fetch`. Plain http/https URLs
- * pass through unchanged so one surface covers internal + external calls.
+ * 调用方传 `nacos://service/path`，本模块会经过 {@link Discovery} +
+ * 负载均衡器解析到具体实例，再用原生 `fetch` 发请求。原生 `http(s)://`
+ * URL 原样穿透，于是内部 RPC 与外部 HTTP 调用共用同一个 API。
  *
- * Concerns layered here:
- *   - URL rewrite (`nacos://` → `http://ip:port`)
- *   - Timeout via AbortController, combined with the caller's signal
- *   - Retry (re-picks per attempt; re-clones the body per attempt)
- *   - Plugin pipeline (onRequest / onResponse / onError)
+ * 本层依次负责：
+ * - URL 改写：`nacos://` → `http://ip:port`
+ * - 超时：通过 AbortController 实现，与调用方传入的 signal 合并
+ * - 重试：每次都重新挑实例，body 多次序列化重发
+ * - 插件管线：`onRequest` / `onResponse` / `onError`
+ *
+ * @module
  */
 import type { Discovery } from "./discovery";
 import { Plugins, context } from "./plugin";
 import type { Balancer, FetchOptions, Hint, Retry } from "./types";
 
+/** Nacos 逻辑 URL 的协议前缀。 */
 export const PROTOCOL = "nacos:";
 
+/**
+ * 默认重试策略：不重试。需要重试时调用方传入 `{ attempts: N }` 即可，
+ * `when` 默认认为「网络异常或 5xx 可重试」。
+ */
 const DEFAULT_RETRY: Retry = {
   attempts: 1,
   delays: [],
@@ -24,16 +31,30 @@ const DEFAULT_RETRY: Retry = {
     Boolean(error) || (response !== undefined && response.status >= 500),
 };
 
+/** {@link Http} 构造参数。 */
 export interface HttpOptions {
   discovery: Discovery;
   plugins: Plugins;
+  /** 默认请求超时（毫秒）。 */
   timeout?: number;
+  /** 默认重试策略。 */
   retry?: Retry;
 }
 
+/**
+ * 服务感知的 fetch 实现。由 {@link create} 注入到 {@link Client.http}，
+ * 业务方通常通过 `client.fetch()` / `client.service()` 间接调用。
+ */
 export class Http {
   constructor(private readonly opts: HttpOptions) {}
 
+  /**
+   * 发起一次请求。
+   *
+   * - `nacos://service/path` 会先解析实例再发请求；
+   * - 原生 URL 直接转发；
+   * - 重试 / 超时 / 插件管线对两种情况都生效。
+   */
   async fetch(
     input: string | URL | Request,
     init: FetchOptions = {},
@@ -57,8 +78,7 @@ export class Http {
     const when = retry.when ?? DEFAULT_RETRY.when!;
     const baseInit = strip(init);
 
-    // Streaming bodies can only be read once; refuse to retry instead of
-    // silently corrupting attempt 2.
+    // 流式 body 只能消费一次，开启重试时拒绝它，免得第二次尝试拿到空 body。
     if (attempts > 1) {
       if (baseInit.body && isStreaming(baseInit.body)) {
         throw new Error(
@@ -87,7 +107,7 @@ export class Http {
 
       let request: Request;
       if (input instanceof Request && !logical) {
-        // Clone preserves the body and signal across retries.
+        // 显式 clone() 保留 body 与 signal，重试时仍可重发。
         request = new Request(input.clone(), baseInit);
       } else {
         request = new Request(url, baseInit);
@@ -124,7 +144,12 @@ export class Http {
     throw new Error("[nacos] fetch loop exited without resolution");
   }
 
-  /** Resolve a `nacos://` URL to a concrete `http(s)://ip:port/path` once. */
+  /**
+   * 把 `nacos://service/path` 解析为 `http(s)://ip:port/path`。
+   *
+   * 协议选择优先级：`init.scheme` > `?scheme=` query 参数 > `http`。
+   * `?scheme=` 解析后会从 URL 中移除，避免泄露到下游。
+   */
   async resolve(
     url: string,
     opts: {
@@ -143,7 +168,7 @@ export class Http {
     });
     if (!picked) throw new NoInstanceError(service);
     const queryScheme = parsed.searchParams.get("scheme")?.toLowerCase();
-    // Explicit `init.scheme` wins; `?scheme=` is the legacy fallback.
+    // 显式 init.scheme 优先；?scheme= 作为遗留兼容入口。
     const resolved = opts.scheme ?? queryScheme;
     const scheme = resolved === "https" ? "https:" : "http:";
     parsed.searchParams.delete("scheme");
@@ -153,6 +178,7 @@ export class Http {
   }
 }
 
+/** 服务无可用实例时抛出。 */
 export class NoInstanceError extends Error {
   constructor(public readonly service: string) {
     super(`[nacos] no healthy instance for service: ${service}`);
@@ -160,6 +186,7 @@ export class NoInstanceError extends Error {
   }
 }
 
+/** 单次请求超时时抛出。 */
 export class TimeoutError extends Error {
   constructor(public readonly timeout: number) {
     super(`[nacos] request timed out after ${timeout}ms`);
@@ -167,11 +194,20 @@ export class TimeoutError extends Error {
   }
 }
 
+/** {@link combineSignals} 返回值。 */
 interface CombinedSignal {
+  /** 合并后的信号；无超时且无调用方信号时为 undefined。 */
   signal: AbortSignal | undefined;
+  /** 清理定时器与监听器，必须在请求结束时（finally）调用。 */
   cleanup: () => void;
 }
 
+/**
+ * 合并调用方 signal 与本地超时 signal。
+ *
+ * 优先使用原生 `AbortSignal.any`（Node 20+），不可用时手工把两个 signal
+ * 的 abort 事件转发到统一的 AbortController。
+ */
 function combineSignals(
   requestSignal: AbortSignal | undefined,
   timeout: number | undefined,
@@ -192,7 +228,7 @@ function combineSignals(
     };
   }
 
-  // Prefer the native combinator when available (Node 20+, modern browsers).
+  // 优先使用原生 AbortSignal.any（Node 20+ / 现代浏览器）。
   const anyFn = (
     AbortSignal as unknown as {
       any?: (signals: AbortSignal[]) => AbortSignal;
@@ -205,7 +241,7 @@ function combineSignals(
     };
   }
 
-  // Manual fallback: forward the first abort to a combined controller.
+  // 兜底：把任一信号的 abort 事件转发到 combined 控制器。
   const combined = new AbortController();
   const forward = (e: Event) => {
     const target = e.target as AbortSignal;
@@ -228,18 +264,21 @@ function combineSignals(
   };
 }
 
+/** 是否是 ReadableStream，避免重试时读取已耗尽的流。 */
 function isStreaming(body: BodyInit | null): boolean {
   return (
     typeof ReadableStream !== "undefined" && body instanceof ReadableStream
   );
 }
 
+/** 从 FetchOptions 中剥离 Nacos 私有字段，剩下纯 RequestInit。 */
 function strip(init: FetchOptions): RequestInit {
   const { balancer, hint, timeout, retry, group, scheme, ...rest } = init;
   void [balancer, hint, timeout, retry, group, scheme];
   return rest;
 }
 
+/** Promise 化的 setTimeout；ms 缺省 / <= 0 时立即返回。 */
 function sleep(ms?: number): Promise<void> {
   if (!ms || ms <= 0) return Promise.resolve();
   return new Promise((r) => setTimeout(r, ms));

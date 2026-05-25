@@ -11,8 +11,12 @@ const HEX8 = /^#[0-9a-f]{8}$/i;
 const expandHex3 = (v: string) =>
   `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
 
-// Convert any CSS color to `#RRGGBB` for `<input type="color">`. The canvas
-// fallback lets the browser parse oklch/hsl/named colors for us.
+/**
+ * 把任意 CSS 颜色转换为 `#RRGGBB`，以匹配 `<input type="color">` 的要求。
+ *
+ * 直接命中 3/6/8 位 hex 时本地转换；否则借助 canvas 让浏览器解析
+ * oklch / hsl / 命名色，再读回 `fillStyle` 拿到规范化形式。
+ */
 function hex(value: string): string | null {
   const trimmed = value.trim();
   if (HEX6.test(trimmed)) return trimmed.toLowerCase();
@@ -40,13 +44,26 @@ function hex(value: string): string | null {
   }
 }
 
+/** {@link ColorPicker} 的 props。 */
 export interface ColorPickerProps {
+  /** 文本标签，例如 "Primary"。 */
   label: string;
+  /** 绑定的 CSS 变量名，例如 `--primary`。 */
   cssVar: string;
+  /** 当前值；可以是任何 CSS 颜色（hex / oklch / hsl / 名称）。 */
   value: string;
+  /** 变更回调：`(cssVar, value)`，调用方负责把新值写回 DOM 或 store。 */
   onChange: (cssVar: string, value: string) => void;
 }
 
+/**
+ * 带原生取色器的色块 + 文本输入双行编辑器。常作为 Preferences 抽屉里
+ * 「品牌色」分组中每一项的渲染单元。
+ *
+ * - 色块按钮内嵌一个透明的 `<input type="color">`，点击触发系统取色面板。
+ * - 文本框允许直接粘贴非 hex 值（oklch、hsl、命名色），由 {@link hex}
+ *   解析后再喂给取色器；解析失败时落到 `:root` 的计算值。
+ */
 export function ColorPicker({
   label,
   cssVar,
@@ -59,8 +76,8 @@ export function ColorPicker({
     setLocalValue(value);
   }, [value]);
 
-  // Native picker requires #RRGGBB. Fall back to the computed :root value
-  // when the bound value isn't directly convertible (e.g. an unknown format).
+  // 原生取色器只接受 #RRGGBB。如果绑定值无法直接转换（未知格式），就回退
+  // 到读取 `:root` 上的计算值。
   const swatchColor = React.useMemo(() => {
     const fromValue = hex(localValue);
     if (fromValue) return fromValue;

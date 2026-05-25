@@ -23,6 +23,7 @@ import {
 } from "@openconsole/shadcn";
 import type { AccountMenuItem, User } from "./types";
 
+/** 从姓名提取最多 2 个首字母作为头像 fallback；全空时返回 `"?"`。 */
 const initialsOf = (name: string) => {
   const initials = name
     .split(/\s+/)
@@ -52,6 +53,13 @@ function AccountIdentity({ user }: { user: User }) {
   );
 }
 
+/**
+ * 侧边栏底部账号卡片。
+ *
+ * `user.menu` 为空时渲染为静态卡片；非空时变成下拉触发器，下拉里每项
+ * 按 {@link AccountMenuItem} 描述渲染（支持 link / 回调、分隔符、
+ * destructive 样式）。
+ */
 export function Account({ user }: { user: User }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const items = user.menu;

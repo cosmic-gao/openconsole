@@ -1,69 +1,77 @@
 import type { LinkProps } from "next/link";
 
 /**
- * Top-of-sider brand mark — logo, name, and an optional subtitle.
+ * 侧边栏顶部品牌区 —— logo、名称、可选副标题。
  */
 export interface Brand {
+  /** 品牌名（如产品 / workspace 名）。 */
   name: string;
-  /** lucide-react icon name in PascalCase (e.g. "Command"). */
+  /** `lucide-react` 图标名，PascalCase（例如 `"Command"`）。 */
   logo: string;
-  /** Subtitle below the name (e.g. plan, workspace tier). */
+  /** 名称下方的副标题（例如套餐 / workspace 等级）。 */
   description?: string;
 }
 
 /**
- * An action shown inside the account dropdown (profile, billing, sign-out…).
+ * 出现在账号下拉菜单中的一项操作（个人资料、账单、登出……）。
  *
- * Provide either `href` (renders a `<Link>`) or `onSelect` (renders a button).
- * Set `separator: true` to draw a divider **before** the item — handy for
- * visually grouping (e.g. account actions vs. sign-out).
+ * `href`（渲染为 `<Link>`）和 `onSelect`（渲染为按钮）二选一。
+ * `separator: true` 会在本项之**前**画一条分割线 —— 用于视觉分组
+ * （例如把账号操作和登出按钮区分开）。
  */
 export interface AccountMenuItem {
+  /** 显示文本。 */
   label: string;
-  /** lucide-react icon name (e.g. "Settings"). */
+  /** `lucide-react` 图标名，例如 `"Settings"`。 */
   icon?: string;
+  /** 链接地址；与 `onSelect` 互斥。 */
   href?: LinkProps["href"];
+  /** 点击回调；与 `href` 互斥。 */
   onSelect?: () => void;
-  /** Draw a `DropdownMenuSeparator` immediately above this item. */
+  /** 是否在本项之前画一条 `DropdownMenuSeparator`。 */
   separator?: boolean;
-  /** Apply destructive (red) styling — typical for "Sign out", "Delete". */
+  /** 是否使用 destructive（红色）样式 —— 常用于 "Sign out" / "Delete"。 */
   destructive?: boolean;
 }
 
 /**
- * Bottom-of-sider account card.
+ * 侧边栏底部账号卡片。
  *
- * Without `menu`: renders as a static card.
- * With `menu`: the card becomes a dropdown trigger.
+ * 不传 `menu`：渲染为静态卡片。
+ * 传了 `menu`：卡片变成下拉触发器。
  */
 export interface User {
+  /** 用户名（同时用于生成 fallback 头像缩写）。 */
   name: string;
+  /** 邮箱（卡片副标题）。 */
   email: string;
-  /** Image URL. Falls back to initials when missing. */
+  /** 头像图片 URL；缺失时回退到姓名首字母。 */
   avatar?: string;
-  /** When provided (non-empty), the account block becomes a dropdown trigger. */
+  /** 非空时账号块变成下拉触发器，每项渲染为一行菜单。 */
   menu?: AccountMenuItem[];
 }
 
 /**
- * Recursive menu item. Use `href` for a leaf link, `children` for a parent.
- * A parent with `children` and no `href` acts as a collapsible group.
+ * 递归菜单项。`href` 表示叶子链接；`children` 表示父级分组。
+ * 有 `children` 没 `href` 的项作为可折叠分组渲染。
  */
 export interface MenuItem {
+  /** 显示文本。 */
   label: string;
-  /** lucide-react icon name (e.g. "LayoutDashboard"). */
+  /** `lucide-react` 图标名，例如 `"LayoutDashboard"`。 */
   icon?: string;
-  /** Route. Omit when this item has `children` and is a parent. */
+  /** 路由地址；父级项可省略。 */
   href?: LinkProps["href"];
-  /** Nested items (one level deep is rendered; deeper nesting is ignored). */
+  /** 嵌套子项；只渲染一层，更深层级会被忽略。 */
   children?: MenuItem[];
-  /** Small pill rendered after the label. */
+  /** 渲染在 label 后的小徽章。 */
   badge?: string;
+  /** 徽章配色，仅支持 `violet`（默认）与 `green`。 */
   badgeColor?: "violet" | "green";
 }
 
 /**
- * A labeled section of menu items. Omit `label` for an unlabeled section.
+ * 带标题的菜单分组。省略 `label` 即匿名分组。
  */
 export interface MenuGroup {
   label?: string;

@@ -17,6 +17,12 @@ import { useLayout } from "../../providers/layout-provider";
 
 import type { Brand as BrandData } from "./types";
 
+/**
+ * 侧边栏顶部品牌区。
+ *
+ * 渲染 logo + name + 可选 description；折叠模式（`collapsible !== "none"`）
+ * 下额外渲染一个收起按钮（`side="right"` 时图标自动镜像）。
+ */
 export function Brand({ brand }: { brand: BrandData }) {
   const { toggleSidebar } = useSidebar();
   const { config } = useLayout();

@@ -7,8 +7,9 @@ import { Label, Separator, cn, useSidebar } from "@openconsole/shadcn";
 import { useLayout } from "../../providers/layout-provider";
 import { collapsibleOptions, sideOptions, sidebarVariants } from "./data";
 
-// ---- Visual primitives -----------------------------------------------------
+// ===== 可视化基础元件 ========================================================
 
+/** 一组宽度递减的灰色横条，模拟侧边栏菜单项的视觉密度。 */
 const Bars = () => (
   <>
     <div className="h-0.5 w-full bg-foreground/60 rounded" />
@@ -89,8 +90,9 @@ function Section({
   );
 }
 
-// ---- Per-variant previews --------------------------------------------------
+// ===== 三种属性的小预览 ======================================================
 
+/** 侧边栏 variant 预览（sidebar / floating / inset）。 */
 function VariantPreview({ value }: { value: "sidebar" | "floating" | "inset" }) {
   const sidebarCls = cn(
     "w-3 shrink-0 bg-muted flex flex-col gap-0.5 p-1",
@@ -117,6 +119,7 @@ function VariantPreview({ value }: { value: "sidebar" | "floating" | "inset" }) 
   );
 }
 
+/** 折叠模式预览（offcanvas / icon / none）。 */
 function CollapsiblePreview({ value }: { value: "offcanvas" | "icon" | "none" }) {
   return (
     <div className="flex h-12 rounded border bg-background">
@@ -151,6 +154,7 @@ function CollapsiblePreview({ value }: { value: "offcanvas" | "icon" | "none" })
   );
 }
 
+/** 摆放位置预览（left / right）。 */
 function SidePreview({ value }: { value: "left" | "right" }) {
   const bars = (
     <div
@@ -180,8 +184,14 @@ function SidePreview({ value }: { value: "left" | "right" }) {
   );
 }
 
-// ---- Main component --------------------------------------------------------
+// ===== 主组件 ================================================================
 
+/**
+ * Preferences 抽屉的 Layout 标签页。
+ *
+ * 提供 variant / collapsible / side 三类设置，每类带可点击的实时预览卡片，
+ * 选中后立刻通过 {@link useLayout} 写回 {@link LayoutProvider} 状态。
+ */
 export function Layout() {
   const { config, updateConfig } = useLayout();
   const { toggleSidebar, state: sidebarState } = useSidebar();
@@ -198,7 +208,7 @@ export function Layout() {
 
   const setCollapsible = (collapsible: "offcanvas" | "icon" | "none") => {
     updateConfig({ collapsible });
-    // Auto-collapse when switching to icon mode while expanded.
+    // 从展开状态切换到 icon 模式时自动收起，让用户立刻看到效果。
     if (collapsible === "icon" && sidebarState === "expanded") toggleSidebar();
   };
 
