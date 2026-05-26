@@ -1,375 +1,280 @@
-# Self-Hosting Next.js
+# Self-Hosting Next.js(与本骨架对齐)
 
-Deploy Next.js outside of Vercel with confidence.
+把统一骨架部署到 Vercel 之外的环境(裸机 / k8s / Docker / OpenNext)。本文与骨架的实际配置对齐 —— 不是通用 Next.js 自托管文档。
 
-## Quick Start: Standalone Output
+> 关键事实:
+> - 骨架已开 `output: "standalone"`(`next.config.ts`)
+> - 骨架已挂 `cacheHandler: "./cache-handler.mjs"`(用 `@neshca/cache-handler` + Redis,**不要**自己写一个 CommonJS class)
+> - 包管理器是 `pnpm`(`package.json` engines 强制),Node ≥ `22.11`
+> - **没有** `docker/docker-compose.yaml` —— Postgres / Redis / Nacos 都是外部依赖
 
-For Docker or any containerized deployment, use standalone output:
+---
 
-```js
-// next.config.js
-module.exports = {
-  output: 'standalone'
-};
-```
-
-This creates a minimal `standalone` folder with only production dependencies:
-
-```
-.next/
-├── standalone/
-│   ├── server.js          # Entry point
-│   ├── node_modules/      # Only production deps
-│   └── .next/             # Build output
-└── static/                # Must be copied separately
-```
-
-## Docker Deployment
-
-### Dockerfile
+## 标准 Dockerfile(对齐骨架)
 
 ```dockerfile
-FROM node:20-alpine AS base
+# syntax=docker/dockerfile:1.7
 
-# Install dependencies
-FROM base AS deps
+# ============================================================
+# Stage 1: deps —— 缓存依赖层
+# ============================================================
+FROM node:22.11-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
 
-# Build
-FROM base AS builder
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+# ============================================================
+# Stage 2: builder —— 构建 standalone
+# ============================================================
+FROM node:22.11-alpine AS builder
 WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
 
-# Production
-FROM base AS runner
+# Drizzle 迁移(可选,通常在容器外跑;放这里防止漏)
+# RUN pnpm db:migrate
+
+RUN pnpm build
+
+# ============================================================
+# Stage 3: runner —— 最小生产镜像
+# ============================================================
+FROM node:22.11-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# 非 root 用户
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-# Copy standalone output
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# standalone 已经把所有 production deps 打进 .next/standalone/
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+# cache-handler.mjs 是单独文件,standalone 不一定打进去 —— 手动拷
+COPY --from=builder --chown=nextjs:nodejs /app/cache-handler.mjs ./cache-handler.mjs
 
 USER nextjs
 
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+
+# 健康检查接到骨架的 /api/health
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3000/api/health || exit 1
 
 CMD ["node", "server.js"]
 ```
 
-### Docker Compose
+**镜像大小**:本骨架 + standalone 大约 200-300 MB(alpine + Node 22 + Next runtime + production deps)。
 
-```yaml
-version: '3.8'
+---
 
-services:
-  web:
-    build: .
-    ports:
-      - '3000:3000'
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3000/api/health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-```
+## 部署前 env 注入
 
-## PM2 Deployment
-
-For traditional server deployments:
-
-```js
-// ecosystem.config.js
-module.exports = {
-  apps: [
-    {
-      name: 'nextjs',
-      script: '.next/standalone/server.js',
-      instances: 'max',
-      exec_mode: 'cluster',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000
-      }
-    }
-  ]
-};
-```
+容器启动时必须有以下 env(参考骨架 `.env.local`):
 
 ```bash
-npm run build
-pm2 start ecosystem.config.js
+# 必填
+DATABASE_URL=postgres://...
+REDIS_URL=redis://...
+NEXT_PUBLIC_AUTH_URL=https://login.example.com
+NEXT_PUBLIC_APP_URL=https://app.example.com
+
+# 可选 —— Nacos
+NACOS_PROVIDER_ENABLED=true
+NACOS_SERVER=nacos.internal:8848
+NACOS_NAMESPACE=public
+NACOS_USERNAME=...
+NACOS_PASSWORD=...
+NACOS_PROVIDER_SERVICE=<your-service-name>
 ```
 
-## ISR and Cache Handlers
+> **不要**把 `NEXT_PUBLIC_*` 当作运行时变量传 —— Next 会在 `pnpm build` 时把它们烤进 client bundle。`NEXT_PUBLIC_*` 必须在 **build 之前**就定好(通过 build-args 或 build-time env)。
 
-### The Problem
+如果确实需要运行时可变的公开值,放个 `/api/config` route:
 
-ISR (Incremental Static Regeneration) uses filesystem caching by default. This **breaks with multiple instances**:
-
-- Instance A regenerates page → saves to its local disk
-- Instance B serves stale page → doesn't see Instance A's cache
-- Load balancer sends users to random instances → inconsistent content
-
-### Solution: Custom Cache Handler
-
-Next.js 14+ supports custom cache handlers for shared storage:
-
-```js
-// next.config.js
-module.exports = {
-  cacheHandler: require.resolve('./cache-handler.js'),
-  cacheMaxMemorySize: 0 // Disable in-memory cache
-};
-```
-
-#### Redis Cache Handler Example
-
-```js
-// cache-handler.js
-const Redis = require('ioredis');
-
-const redis = new Redis(process.env.REDIS_URL);
-const CACHE_PREFIX = 'nextjs:';
-
-module.exports = class CacheHandler {
-  constructor(options) {
-    this.options = options;
-  }
-
-  async get(key) {
-    const data = await redis.get(CACHE_PREFIX + key);
-    if (!data) return null;
-
-    const parsed = JSON.parse(data);
-    return {
-      value: parsed.value,
-      lastModified: parsed.lastModified
-    };
-  }
-
-  async set(key, data, ctx) {
-    const cacheData = {
-      value: data,
-      lastModified: Date.now()
-    };
-
-    // Set TTL based on revalidate option
-    if (ctx?.revalidate) {
-      await redis.setex(CACHE_PREFIX + key, ctx.revalidate, JSON.stringify(cacheData));
-    } else {
-      await redis.set(CACHE_PREFIX + key, JSON.stringify(cacheData));
-    }
-  }
-
-  async revalidateTag(tags) {
-    // Implement tag-based invalidation
-    // This requires tracking which keys have which tags
-  }
-};
-```
-
-#### S3 Cache Handler Example
-
-```js
-// cache-handler.js
-const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
-
-const s3 = new S3Client({ region: process.env.AWS_REGION });
-const BUCKET = process.env.CACHE_BUCKET;
-
-module.exports = class CacheHandler {
-  async get(key) {
-    try {
-      const response = await s3.send(
-        new GetObjectCommand({
-          Bucket: BUCKET,
-          Key: `cache/${key}`
-        })
-      );
-      const body = await response.Body.transformToString();
-      return JSON.parse(body);
-    } catch (err) {
-      if (err.name === 'NoSuchKey') return null;
-      throw err;
-    }
-  }
-
-  async set(key, data, ctx) {
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: `cache/${key}`,
-        Body: JSON.stringify({
-          value: data,
-          lastModified: Date.now()
-        }),
-        ContentType: 'application/json'
-      })
-    );
-  }
-};
-```
-
-## What Works vs What Needs Setup
-
-| Feature              | Single Instance | Multi-Instance      | Notes                       |
-| -------------------- | --------------- | ------------------- | --------------------------- |
-| SSR                  | Yes             | Yes                 | No special setup            |
-| SSG                  | Yes             | Yes                 | Built at deploy time        |
-| ISR                  | Yes             | Needs cache handler | Filesystem cache breaks     |
-| Image Optimization   | Yes             | Yes                 | CPU-intensive, consider CDN |
-| Middleware           | Yes             | Yes                 | Runs on Node.js             |
-| Edge Runtime         | Limited         | Limited             | Some features Node-only     |
-| `revalidatePath/Tag` | Yes             | Needs cache handler | Must share cache            |
-| `next/font`          | Yes             | Yes                 | Fonts bundled at build      |
-| Draft Mode           | Yes             | Yes                 | Cookie-based                |
-
-## Image Optimization
-
-Next.js Image Optimization works out of the box but is CPU-intensive.
-
-### Option 1: Built-in (Simple)
-
-Works automatically, but consider:
-
-- Set `deviceSizes` and `imageSizes` in config to limit variants
-- Use `minimumCacheTTL` to reduce regeneration
-
-```js
-// next.config.js
-module.exports = {
-  images: {
-    minimumCacheTTL: 60 * 60 * 24, // 24 hours
-    deviceSizes: [640, 750, 1080, 1920] // Limit sizes
-  }
-};
-```
-
-### Option 2: External Loader (Recommended for Scale)
-
-Offload to Cloudinary, Imgix, or similar:
-
-```js
-// next.config.js
-module.exports = {
-  images: {
-    loader: 'custom',
-    loaderFile: './lib/image-loader.js'
-  }
-};
-```
-
-```js
-// lib/image-loader.js
-export default function cloudinaryLoader({ src, width, quality }) {
-  const params = ['f_auto', 'c_limit', `w_${width}`, `q_${quality || 'auto'}`];
-  return `https://res.cloudinary.com/demo/image/upload/${params.join(',')}${src}`;
-}
-```
-
-## Environment Variables
-
-### Build-time vs Runtime
-
-```js
-// Available at build time only (baked into bundle)
-NEXT_PUBLIC_API_URL=https://api.example.com
-
-// Available at runtime (server-side only)
-DATABASE_URL=postgresql://...
-API_SECRET=...
-```
-
-### Runtime Configuration
-
-For truly dynamic config, don't use `NEXT_PUBLIC_*`. Instead:
-
-```tsx
+```ts
 // app/api/config/route.ts
 export async function GET() {
   return Response.json({
-    apiUrl: process.env.API_URL,
-    features: process.env.FEATURES?.split(',')
+    features: process.env.FEATURES?.split(",") ?? [],
   });
 }
 ```
 
-## OpenNext: Serverless Without Vercel
+---
 
-[OpenNext](https://open-next.js.org/) adapts Next.js for AWS Lambda, Cloudflare Workers, etc.
+## k8s manifest 速查
 
-```bash
-npx create-sst@latest
-# or
-npx @opennextjs/aws build
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <PROJECT_NAME>
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: <PROJECT_NAME>
+  template:
+    metadata:
+      labels:
+        app: <PROJECT_NAME>
+    spec:
+      containers:
+        - name: app
+          image: <your-registry>/<PROJECT_NAME>:<tag>
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: <PROJECT_NAME>-secrets    # DATABASE_URL / REDIS_URL / NACOS_*
+            - configMapRef:
+                name: <PROJECT_NAME>-config     # NEXT_PUBLIC_APP_URL / 非敏感 env
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 1000m
 ```
 
-Supports:
+---
 
-- AWS Lambda + CloudFront
-- Cloudflare Workers
-- Netlify Functions
-- Deno Deploy
+## Cache Handler —— 不要自己写
 
-## Health Check Endpoint
+骨架的 `cache-handler.mjs` 已经用 `@neshca/cache-handler` + `redis@4` 实现了跨实例共享的 ISR / `'use cache'` 失效广播。**不要**:
 
-Always include a health check for load balancers:
+- 自己写一个 CommonJS class 风格的 `cache-handler.js`(过时模式)
+- 用 `lru-cache` 替换它(失去跨实例失效)
+- 直接连 Redis 跳过 `@neshca/cache-handler`(失去 tag 失效的正确实现)
 
-```tsx
-// app/api/health/route.ts
-export async function GET() {
-  try {
-    // Optional: check database connection
-    // await db.$queryRaw`SELECT 1`;
+跨实例验证:
 
-    return Response.json({ status: 'healthy' }, { status: 200 });
-  } catch (error) {
-    return Response.json({ status: 'unhealthy' }, { status: 503 });
-  }
+```bash
+# 起 3 个实例(假设各自连同一个 REDIS_URL)
+PORT=3001 node .next/standalone/server.js &
+PORT=3002 node .next/standalone/server.js &
+PORT=3003 node .next/standalone/server.js &
+
+# 在 3001 写一条数据(走 Server Action),触发 updateTag("notes:list")
+curl -X POST http://localhost:3001/.../create-note -d ...
+
+# 3002 / 3003 立刻应该看到新数据
+curl http://localhost:3002/notes
+curl http://localhost:3003/notes
+```
+
+不一致就检查 `REDIS_URL` 是否指向同一个端点、`cache-handler.mjs` 的 `keyPrefix` 是否一致。
+
+---
+
+## ISR / Cache Components 多实例注意事项
+
+| 行为 | 单实例 | 多实例 |
+| --- | --- | --- |
+| SSR | ✓ | ✓ |
+| SSG / `generateStaticParams` | ✓ | ✓(构建时定) |
+| `'use cache'` + `cacheTag` + `updateTag` | ✓ | ✓ **必须配 `cache-handler.mjs`**(骨架已配) |
+| `revalidatePath` / `revalidateTag`(老 API) | ✓ | ✓(走 cache handler) |
+| Image Optimization | ✓ | ✓(CPU 较重,大流量考虑外部 CDN loader) |
+| `next/font` | ✓ | ✓(build 时打包) |
+| Draft Mode | ✓ | ✓(cookie 驱动) |
+
+---
+
+## Image Optimization
+
+骨架默认走 Next 内置图片优化(`<Image>`)。流量大时考虑:
+
+### 限制变体大小
+
+```ts
+// next.config.ts
+const nextConfig: NextConfig = {
+  // ... 已有配置
+  images: {
+    minimumCacheTTL: 60 * 60 * 24,
+    deviceSizes: [640, 750, 1080, 1920],
+  },
+};
+```
+
+### 走外部 loader(Cloudinary / Imgix)
+
+```ts
+// next.config.ts
+images: {
+  loader: "custom",
+  loaderFile: "./lib/image-loader.ts",
+},
+```
+
+```ts
+// lib/image-loader.ts
+export default function cloudinaryLoader({ src, width, quality }: {
+  src: string; width: number; quality?: number;
+}) {
+  const params = ["f_auto", "c_limit", `w_${width}`, `q_${quality ?? "auto"}`];
+  return `https://res.cloudinary.com/<your-cloud>/image/upload/${params.join(",")}${src}`;
 }
 ```
 
-## Pre-Deployment Checklist
+---
 
-1. **Build locally first**: `npm run build` - catch errors before deploy
-2. **Test standalone output**: `node .next/standalone/server.js`
-3. **Set `output: 'standalone'`** for Docker
-4. **Configure cache handler** for multi-instance ISR
-5. **Set `HOSTNAME="0.0.0.0"`** for containers
-6. **Copy `public/` and `.next/static/`** - not included in standalone
-7. **Add health check endpoint**
-8. **Test ISR revalidation** after deployment
-9. **Monitor memory usage** - Node.js defaults may need tuning
+## OpenNext —— Serverless 部署
 
-## Testing Cache Handler
+[OpenNext](https://open-next.js.org/) 适配 Next 到 AWS Lambda / Cloudflare Workers / Netlify 等。骨架的 `cacheHandler` + `output: "standalone"` 配置与 OpenNext 兼容。注意:
 
-**Critical**: Test your cache handler on every Next.js upgrade:
+- Lambda 冷启动会触发 `instrumentation.ts` 的 Nacos `init()`,可能让首次响应变慢。可以加 `NACOS_PROVIDER_ENABLED=false` 关掉 provider 注册保留服务发现。
+- Cloudflare Workers 不支持 Node 完整 API,某些 npm 包不可用 —— 跑前先用 OpenNext 的 cloudflare adapter 验证。
 
-```bash
-# Start multiple instances
-PORT=3001 node .next/standalone/server.js &
-PORT=3002 node .next/standalone/server.js &
+---
 
-# Trigger ISR revalidation
-curl http://localhost:3001/api/revalidate?path=/posts
+## 部署前检查清单
 
-# Verify both instances see the update
-curl http://localhost:3001/posts
-curl http://localhost:3002/posts
-# Should return identical content
-```
+| 项 | 验证 |
+| --- | --- |
+| `pnpm build` 通过且无 warning | `pnpm build` |
+| Standalone 可独立运行 | `node .next/standalone/server.js` |
+| `.env` 有所有必填变量 | `cat .env \| grep -E "DATABASE_URL\|REDIS_URL\|NEXT_PUBLIC_"` |
+| `cache-handler.mjs` 的 `keyPrefix` 是项目名,不是默认 | 检查 `keyPrefix: "<PROJECT_NAME>:cache:"` |
+| `images.remotePatterns` 含所有外部图片域 | `grep remotePatterns next.config.ts` |
+| `HOSTNAME="0.0.0.0"` 在容器 env 里 | k8s manifest / Dockerfile |
+| 健康检查 `/api/health` 接 LB readiness | `curl <pod>/api/health` 返回 `{"status":"ok"}` |
+| Nacos 注册(若启用) | 上 nacos 控制台看实例 |
+| 跨实例 cache 失效 | 多副本 → 改一条数据 → 所有副本 read-your-writes |
+
+---
+
+## 与其它文档的关系
+
+| 主题 | 看哪 |
+| --- | --- |
+| `cache-handler.mjs` 实现细节 | [`../../redis-development/SKILL.md`](../../../redis-development/SKILL.md) §2 |
+| `next.config.ts` 每个字段 | [`../configs.md`](../configs.md) |
+| 启动前 / Code Review 完整 checklist | [`../checklist.md`](../checklist.md) |
+| Server Action 多实例语义 | [`../data-layer.md`](../data-layer.md) |

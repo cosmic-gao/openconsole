@@ -1,6 +1,8 @@
 # Section Definitions
 
-This file defines the rule categories for Redis best practices. Rules are automatically assigned to sections based on their filename prefix.
+This file defines the rule categories for the **trimmed** Redis best practices set used by this scaffold. Rules are automatically assigned to sections based on their filename prefix.
+
+> Originally 11 sections / 29 rules (Redis Inc.'s upstream set). 4 sections (RQE, Vector, Semantic Caching, Clustering) plus 2 rules (`conn-client-cache`, `json-partial-updates`) were dropped because the scaffold doesn't use those features — see `../AGENTS.md` for the move-out rationale.
 
 ---
 
@@ -18,33 +20,16 @@ This file defines the rule categories for Redis best practices. Rules are automa
 
 ## 4. JSON Documents (json)
 **Impact:** MEDIUM
-**Description:** Using Redis JSON for nested structures, partial updates, and integration with RQE.
+**Description:** Choosing between JSON, Hash, and String for structured data. (The scaffold prefers Hash for flat objects in Node.js — see `json-vs-hash.md`.)
 
-## 5. Redis Query Engine (rqe)
-**Impact:** HIGH
-**Description:** FT.CREATE, FT.SEARCH, FT.AGGREGATE, index design, field types, and query optimization.
-
-## 6. Vector Search & RedisVL (vector)
-**Impact:** HIGH
-**Description:** Vector indexes, HNSW vs FLAT, hybrid search, and RAG patterns with RedisVL.
-
-## 7. Semantic Caching (semantic-cache)
-**Impact:** MEDIUM
-**Description:** LangCache for LLM response caching, distance thresholds, and cache strategies.
-
-## 8. Streams & Pub/Sub (stream)
+## 5. Streams & Pub/Sub (stream)
 **Impact:** MEDIUM
 **Description:** Choosing between Streams and Pub/Sub for messaging patterns.
 
-## 9. Clustering & Replication (cluster)
-**Impact:** MEDIUM
-**Description:** Hash tags for key colocation, read replicas, and cluster-aware patterns.
-
-## 10. Security (security)
+## 6. Security (security)
 **Impact:** HIGH
 **Description:** Authentication, ACLs, TLS, and network security.
 
-## 11. Observability (observe)
+## 7. Observability (observe)
 **Impact:** MEDIUM
-**Description:** SLOWLOG, INFO, MEMORY commands, monitoring metrics, and Redis Insight.
-
+**Description:** SLOWLOG, INFO, MEMORY commands, monitoring metrics.

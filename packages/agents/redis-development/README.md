@@ -37,18 +37,16 @@ A structured repository for creating and maintaining Redis development guideline
 ## Creating a New Rule
 
 1. Copy `rules/_template.md` to `rules/prefix-description.md`
-2. Choose the appropriate area prefix:
+2. Choose the appropriate area prefix (this scaffold uses 7 sections — see `rules/_sections.md`):
    - `data-` for Data Structures & Keys
    - `ram-` for Memory & Expiration
    - `conn-` for Connection & Performance
    - `json-` for JSON Documents
-   - `rqe-` for Redis Query Engine
-   - `vector-` for Vector Search & RedisVL
-   - `semantic-cache-` for Semantic Caching
    - `stream-` for Streams & Pub/Sub
-   - `cluster-` for Clustering & Replication
    - `security-` for Security
    - `observe-` for Observability
+
+   > Original Redis Inc. set had 4 more sections (RQE, Vector, Semantic Caching, Clustering). The scaffold doesn't use those features — see `AGENTS.md` for the rationale. If you ever introduce vector search or move to Redis Cluster, restore the relevant prefixes here AND copy the rule files back from the upstream repo.
 3. Fill in the frontmatter and content
 4. Ensure you have clear examples with explanations
 5. Run `npm run build` (in the build package) to regenerate AGENTS.md
