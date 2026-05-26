@@ -15,7 +15,7 @@
 
 // Providers / context
 export * from "./providers/font-provider";
-export * from "./providers/layout-provider";
+export * from "./providers/layout";
 export * from "./providers/theme-provider";
 
 // Hooks（公开）

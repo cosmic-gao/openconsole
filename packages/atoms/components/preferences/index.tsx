@@ -25,7 +25,7 @@ import {
   TooltipTrigger,
 } from "@openconsole/shadcn";
 
-import { useLayout } from "../../providers/layout-provider";
+import { useLayout } from "../../providers/layout";
 
 import "./circular-transition.css";
 import { shadcnThemes, tweakcnThemes } from "./data";

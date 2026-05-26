@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@openconsole/shadcn";
 
-import { useLayout } from "../../providers/layout-provider";
+import { useLayout } from "../../providers/layout";
 
 import type { Brand as BrandData } from "./types";
 

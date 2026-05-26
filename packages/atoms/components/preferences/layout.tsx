@@ -4,10 +4,8 @@ import * as React from "react";
 
 import { Label, Separator, cn, useSidebar } from "@openconsole/shadcn";
 
-import { useLayout } from "../../providers/layout-provider";
+import { useLayout } from "../../providers/layout";
 import { collapsibleOptions, sideOptions, sidebarVariants } from "./data";
-
-// ===== 可视化基础元件 ========================================================
 
 /** 一组宽度递减的灰色横条，模拟侧边栏菜单项的视觉密度。 */
 const Bars = () => (
@@ -90,7 +88,6 @@ function Section({
   );
 }
 
-// ===== 三种属性的小预览 ======================================================
 
 /** 侧边栏 variant 预览（sidebar / floating / inset）。 */
 function VariantPreview({ value }: { value: "sidebar" | "floating" | "inset" }) {
@@ -183,8 +180,6 @@ function SidePreview({ value }: { value: "left" | "right" }) {
     </div>
   );
 }
-
-// ===== 主组件 ================================================================
 
 /**
  * Preferences 抽屉的 Layout 标签页。

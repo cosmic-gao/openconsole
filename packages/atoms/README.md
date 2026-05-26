@@ -43,8 +43,8 @@ import {
   ThemeProvider,
   FontProvider,
   LayoutProvider,
+  SidebarProvider,
 } from "@openconsole/atoms";
-import { SidebarProvider } from "@openconsole/shadcn";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -62,6 +62,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 ```
+
+> **重要**：`<LayoutProvider>` 与 `<SidebarProvider>` 是**异步服务端组件**
+> —— 它们会在服务端读 cookie 把持久化状态还原后再渲染，保证首屏 HTML
+> 就是最终态，**消除刷新瞬间的闪烁**。务必从 `@openconsole/atoms`
+> 而不是 `@openconsole/shadcn` 引入 `SidebarProvider`。详情见
+> [状态持久化与防闪烁](#状态持久化与防闪烁)。
 
 ### Dashboard 骨架
 
@@ -221,6 +227,60 @@ export default function Page() {
 />
 ```
 
+## 状态持久化与防闪烁
+
+后台类应用的「设置」状态（侧边栏展开 / 折叠、布局 variant、摆放位置、明暗主题、字体）一旦有持久化但实现不当，刷新瞬间会先以默认值闪一下再翻到真实值。原因是「客户端 `useEffect` 读 localStorage → 翻转 state」这条路径只能在 hydration 之后跑。
+
+atoms 的解法：**在服务端就把状态还原好，HTML 首屏即是最终态。**
+
+| 状态                  | 持久化介质              | 还原时机                          | 实现                          |
+| --------------------- | ----------------------- | --------------------------------- | ----------------------------- |
+| 明暗主题              | localStorage            | hydration 前的 `<head>` 内嵌脚本   | `next-themes` 自带           |
+| 字体（Inter / Manrope / System） | localStorage   | hydration 前的 `<head>` 内嵌脚本   | 见下方「字体防闪烁脚本」      |
+| 侧边栏展开 / 折叠     | cookie `sidebar_state`  | 服务端读 cookie → `defaultOpen`    | `<SidebarProvider>` (atoms)   |
+| 布局 variant / collapsible / side | cookie `openconsole-layout` | 服务端读 cookie → `initial`       | `<LayoutProvider>` (atoms)    |
+
+### 字体防闪烁脚本
+
+`<FontProvider>` 用 localStorage 持久化，需要在 `<head>` 内嵌一段同步脚本，让 `<html>` 在 React 挂载前就拿到正确的字体类名：
+
+```tsx
+// app/layout.tsx
+<html lang="zh-CN" className="font-inter" suppressHydrationWarning>
+  <head>
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `
+          (function() {
+            try {
+              var font = localStorage.getItem('openconsole-font');
+              if (font && ['inter', 'manrope', 'system'].includes(font)) {
+                document.documentElement.classList.remove('font-inter');
+                document.documentElement.classList.add('font-' + font);
+              }
+            } catch (e) {}
+          })();
+        `,
+      }}
+    />
+  </head>
+  ...
+</html>
+```
+
+### 为什么 LayoutProvider / SidebarProvider 用 cookie 而不是 localStorage？
+
+cookie 在 HTTP 请求里就传给服务端了，服务端能直接读到，在渲染首屏 HTML 时就把 `<Sidebar variant="floating" side="right">` 这样的 props 写到正确的值。localStorage 只有客户端能读，需要等 hydration 后才能翻状态 —— 那一瞬间一定是闪烁的。
+
+成本是 cookie 会跟所有同站请求一起发，但 layout 配置 + 侧边栏开关合起来不到 100 字节，可以忽略。
+
+### 关闭持久化
+
+```tsx
+<LayoutProvider storage={null}>   {/* 不读不写 cookie */}
+<SidebarProvider storage={null}>  {/* 不读 cookie（shadcn 仍会写） */}
+```
+
 ## Provider 与 Hook
 
 ### `<ThemeProvider>`
@@ -244,14 +304,25 @@ const { font, setFont, options } = useFont();
 
 ### `<LayoutProvider>` + `useLayout()`
 
+异步**服务端**组件。在服务端读 cookie 把持久化配置喂给客户端，HTML 首屏直接渲染为最终态 —— **没有闪烁**。
+
 ```tsx
 <LayoutProvider defaultConfig={{ variant: "inset", collapsible: "icon", side: "left" }}>
   ...
 </LayoutProvider>
 
 const { config, updateConfig } = useLayout();
-updateConfig({ side: "right" }); // 部分合并
+updateConfig({ side: "right" }); // 部分合并 + 自动写入 cookie
 ```
+
+props：
+
+| prop            | 类型                       | 默认                  | 作用                                                |
+| --------------- | -------------------------- | --------------------- | --------------------------------------------------- |
+| `defaultConfig` | `Partial<LayoutConfig>`    | -                     | 在 atoms 内置默认值之上的覆盖，优先级低于 cookie    |
+| `storage`       | `string \| null`           | `"openconsole-layout"`| 持久化 cookie 名；传 `null` 关闭持久化              |
+
+合并顺序：`DEFAULT_LAYOUT_CONFIG` < `defaultConfig` < cookie。
 
 字段定义：
 
@@ -262,6 +333,29 @@ interface LayoutConfig {
   side: "left" | "right";
 }
 ```
+
+### `<SidebarProvider>`
+
+异步**服务端**组件，包装 shadcn 的 `SidebarProvider`：在服务端读
+`sidebar_state` cookie 算出 `defaultOpen`，把展开 / 收起状态在首屏渲染时
+就准确还原 —— 解决「刷新瞬间侧边栏先展开再收起」的闪烁。
+
+```tsx
+// 从 atoms 引入（不要从 shadcn 引入）
+import { SidebarProvider } from "@openconsole/atoms";
+
+<SidebarProvider>{children}</SidebarProvider>
+```
+
+props（在 shadcn `SidebarProvider` 的基础上多两个）：
+
+| prop          | 类型                | 默认             | 作用                                              |
+| ------------- | ------------------- | ---------------- | ------------------------------------------------- |
+| `defaultOpen` | `boolean`           | 读 cookie 解析    | 显式覆盖；设置后跳过 cookie 读取                   |
+| `storage`     | `string \| null`    | `"sidebar_state"` | cookie 读取名；传 `null` 关闭服务端读取            |
+
+> 注意：shadcn 的客户端 cookie 写入是硬编码 `sidebar_state` 的，所以
+> 修改 `storage` 只影响**读取**端 —— 一般保留默认即可。
 
 ### `useBreadcrumbs(options?)`
 

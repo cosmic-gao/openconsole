@@ -10,7 +10,7 @@ import {
   SidebarRail,
 } from "@openconsole/shadcn";
 
-import { useLayout } from "../../providers/layout-provider";
+import { useLayout } from "../../providers/layout";
 
 import { Account } from "./account";
 import { Brand } from "./brand";

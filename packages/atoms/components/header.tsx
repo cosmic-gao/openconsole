@@ -14,7 +14,7 @@ import {
   useSidebar,
 } from "@openconsole/shadcn";
 
-import { useLayout } from "../providers/layout-provider";
+import { useLayout } from "../providers/layout";
 
 import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";

@@ -95,9 +95,7 @@ export function context(service?: string, attempt = 0): Context {
   return { service, attempt, startedAt: Date.now() };
 }
 
-// ============================================================================
 // 内置插件
-// ============================================================================
 
 /** {@link logger} 的可选参数。 */
 export interface LoggerOptions {

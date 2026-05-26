@@ -247,7 +247,7 @@ consumer: { timeout: 10_000 }                           // 全局
 client().fetch("nacos://svc/x", { timeout: 2_000 })    // 单次覆盖
 ```
 
-超时通过 `AbortController` 实现,会与调用方传入的 `signal` 合并(优先用原生 `AbortSignal.any`,Node < 20 回退到手工合并)。
+超时通过 `AbortController` 实现,会与调用方传入的 `signal` 用 `AbortSignal.any` 合并。
 
 ## 插件
 
