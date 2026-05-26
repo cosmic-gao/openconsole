@@ -1,6 +1,10 @@
 # Query Patterns
 
-Advanced querying techniques, subqueries, CTEs, and raw SQL in Drizzle ORM.
+Advanced querying techniques, subqueries, CTEs, and raw SQL in Drizzle ORM. All examples assume the scaffold's setup: PostgreSQL via `drizzle-orm/postgres-js` + `postgres`, behind pgbouncer transaction mode on port 6432.
+
+> ⚠️ **Two things this file deliberately omits, because they conflict with the unified scaffold:**
+> - **Prepared statements** (`.prepare()`) — pgbouncer transaction mode does not share sessions, breaking `PREPARE` / `EXECUTE`. See the "Prepared Statements — DO NOT USE" section below.
+> - **MySQL / SQLite syntax** — the scaffold is Postgres-only. Drizzle's API is portable but the examples here use `drizzle-orm/pg-core` exclusively.
 
 ## Subqueries
 
@@ -305,36 +309,11 @@ const numberedUsers = await db
   .from(users);
 ```
 
-## Prepared Statements
+## Prepared Statements — DO NOT USE
 
-### Reusable Queries
-
-```typescript
-// Prepare once, execute many times
-const getUserById = db
-  .select()
-  .from(users)
-  .where(eq(users.id, sql.placeholder('id')))
-  .prepare('get_user_by_id');
-
-// Execute with different parameters
-const user1 = await getUserById.execute({ id: 1 });
-const user2 = await getUserById.execute({ id: 2 });
-
-// Complex prepared statement
-const searchUsers = db
-  .select()
-  .from(users)
-  .where(
-    and(
-      like(users.name, sql.placeholder('name')),
-      eq(users.role, sql.placeholder('role'))
-    )
-  )
-  .prepare('search_users');
-
-const admins = await searchUsers.execute({ name: '%John%', role: 'admin' });
-```
+> ⚠️ **The unified scaffold runs Postgres behind pgbouncer in transaction mode**, which does NOT preserve session state across statements. Drizzle's `.prepare()` API depends on `PREPARE` / `EXECUTE` round-trips that share a session, so prepared statements **silently break or hang** under pgbouncer transaction mode.
+>
+> The scaffold's `lib/db/index.ts` already passes `prepare: false` to `postgres-js` for this reason. Do not call `.prepare()` in business code. If you genuinely need PREPARE — e.g. you're running a one-off batch script that bypasses pgbouncer and talks to Postgres directly on port 5432 — do it outside the app process.
 
 ## Batch Operations
 

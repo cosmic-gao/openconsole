@@ -1,13 +1,13 @@
 ---
 name: ui
-description: >
-  @openconsole/shadcn + @openconsole/atoms UI 组件使用规范。
+description: |
+  公司内部 Next.js 项目的 UI 组件使用规范,自包含完整定义。基础原语来自 `@openconsole/shadcn`(60+ shadcn/ui 组件 + 主题 token + `cn()`),业务级组件来自 `@openconsole/atoms`(`Header` / `Sidebar` / `Breadcrumbs` / `Preferences` / `ColorPicker` / `ThemeSwitch` + 5 个错误页 + 4 个防闪烁 Provider)。唯一图标库是 `lucide-react`。
 
-  基础组件来自 @openconsole/shadcn（Button, Card, Dialog、Sidebar 等 60+ 组件），
-  高阶组件来自 @openconsole/atoms（ThemeSwitch, Preferences, Sidebar, Header, Breadcrumbs 等）。
+  必须在以下场景触发,即使用户没说出 skill 名:用 UI 组件 / 加 Button / 加 Dialog / 加 Sheet / 加 Drawer / 加 Card / 加 Table / 加 Tabs / 加 Form / 加 Avatar / 加 Badge / 加 Skeleton / 加 Alert / 加 Empty / 加 Command / 改 sidebar / 加 Header / 加 Breadcrumbs / 加 Preferences / 加 ColorPicker / 加 ThemeSwitch / 主题切换 / 明暗模式 / dark mode / 改主题色 / 加品牌色 / 加字体 / Inter / Manrope / Geist / 防闪烁 / SidebarProvider / LayoutProvider 闪一下 / cookie 防闪烁 / 加图标 / 用 lucide / 加错误页 / NotFound / Unauthorized / Forbidden / ServerError / Maintenance / 加 data-icon / size-* / cn() / Tailwind class / semantic token / @theme inline。
 
-  触发场景：使用 UI 组件、表单布局、主题适配、布局组合、UI 设计评审。
-  禁止直接下载 shadcn 组件或使用其他 UI 库。
+  **禁止**:`pnpm add shadcn-ui` / `npx shadcn add` / 拷贝 shadcn 源码到 `components/ui/` / 用 MUI / antd / Chakra / Mantine / react-icons / heroicons / 自己写 `cn()` / 写 hex 字面量颜色 / 在项目里二次覆盖 `--primary` token。
+
+  全局架构约束见同目录 `AGENTS.md`;通用 Next 写法走 `nextjs-best-practices` skill。
 ---
 
 # UI 组件规范
@@ -155,5 +155,5 @@ description: >
 - [rules/composition.md](./rules/composition.md) — Groups、Card、Avatar、Alert、Empty、Toast
 - [rules/icons.md](./rules/icons.md) — data-icon、图标传递
 - [rules/foundation.md](./rules/foundation.md) — Provider 组合、Layout 结构、atoms 高阶组件 API
-- [rules/theme.md](./rules/theme.md) — 品牌主色 #17b3a3、字体、明暗主题、布局、防闪烁(opentemplate 合并)
-- [rules/library-whitelist.md](./rules/library-whitelist.md) — UI 库白名单 + 黑名单 + 决策树 + FAQ(opentemplate 合并)
+- [rules/theme.md](./rules/theme.md) — 品牌主色 #17b3a3、字体、明暗主题、布局、防闪烁
+- [rules/library-whitelist.md](./rules/library-whitelist.md) — UI 库白名单 + 黑名单 + 决策树 + FAQ

@@ -44,7 +44,7 @@ Comprehensive performance optimization guide for React and Next.js applications,
 4. [Client-Side Data Fetching](#4-client-side-data-fetching) — **MEDIUM-HIGH**
    - 4.1 [Deduplicate Global Event Listeners](#41-deduplicate-global-event-listeners)
    - 4.2 [Use Passive Event Listeners for Scrolling Performance](#42-use-passive-event-listeners-for-scrolling-performance)
-   - 4.3 [Use SWR for Automatic Deduplication](#43-use-swr-for-automatic-deduplication)
+   - 4.3 [Use TanStack Query for Automatic Deduplication](#43-use-tanstack-query-for-automatic-deduplication)
    - 4.4 [Version and Minimize localStorage Data](#44-version-and-minimize-localstorage-data)
 5. [Re-render Optimization](#5-re-render-optimization) — **MEDIUM**
    - 5.1 [Calculate Derived State During Rendering](#51-calculate-derived-state-during-rendering)
@@ -1081,7 +1081,7 @@ Automatic deduplication and efficient data fetching patterns reduce redundant ne
 
 **Impact: LOW (single listener for N components)**
 
-Use `useSWRSubscription()` to share global event listeners across component instances.
+Share a single DOM listener across N consumers via a module-level singleton — no extra dependency, no third-party hook.
 
 **Incorrect: N instances = N listeners**
 
@@ -1099,57 +1099,63 @@ function useKeyboardShortcut(key: string, callback: () => void) {
 }
 ```
 
-When using the `useKeyboardShortcut` hook multiple times, each instance will register a new listener.
+Every consumer of `useKeyboardShortcut` registers its own listener.
 
 **Correct: N instances = 1 listener**
 
 ```tsx
-import useSWRSubscription from 'swr/subscription';
+"use client";
 
-// Module-level Map to track callbacks per key
-const keyCallbacks = new Map<string, Set<() => void>>();
+import { useEffect } from "react";
 
-function useKeyboardShortcut(key: string, callback: () => void) {
-  // Register this callback in the Map
+// Module-level singleton: one DOM listener regardless of consumer count.
+const callbacks = new Map<string, Set<() => void>>();
+let attached = false;
+
+function rootHandler(event: KeyboardEvent) {
+  if (!event.metaKey) return;
+  const set = callbacks.get(event.key);
+  if (set) for (const cb of set) cb();
+}
+
+function attachOnce() {
+  if (attached) return;
+  attached = true;
+  window.addEventListener("keydown", rootHandler);
+}
+
+function detachIfEmpty() {
+  if (callbacks.size > 0) return;
+  attached = false;
+  window.removeEventListener("keydown", rootHandler);
+}
+
+export function useKeyboardShortcut(key: string, callback: () => void) {
   useEffect(() => {
-    if (!keyCallbacks.has(key)) {
-      keyCallbacks.set(key, new Set());
+    attachOnce();
+    let set = callbacks.get(key);
+    if (!set) {
+      set = new Set();
+      callbacks.set(key, set);
     }
-    keyCallbacks.get(key)!.add(callback);
+    set.add(callback);
 
     return () => {
-      const set = keyCallbacks.get(key);
-      if (set) {
-        set.delete(callback);
-        if (set.size === 0) {
-          keyCallbacks.delete(key);
-        }
-      }
+      set!.delete(callback);
+      if (set!.size === 0) callbacks.delete(key);
+      detachIfEmpty();
     };
   }, [key, callback]);
-
-  useSWRSubscription('global-keydown', () => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && keyCallbacks.has(e.key)) {
-        keyCallbacks.get(e.key)!.forEach((cb) => cb());
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  });
 }
 
 function Profile() {
-  // Multiple shortcuts will share the same listener
-  useKeyboardShortcut('p', () => {
-    /* ... */
-  });
-  useKeyboardShortcut('k', () => {
-    /* ... */
-  });
-  // ...
+  // Multiple shortcuts share one DOM listener
+  useKeyboardShortcut("p", () => { /* … */ });
+  useKeyboardShortcut("k", () => { /* … */ });
 }
 ```
+
+The same pattern works for `scroll`, `online`/`offline`, `visibilitychange`, `resize`, or any `IntersectionObserver`.
 
 ### 4.2 Use Passive Event Listeners for Scrolling Performance
 
@@ -1195,11 +1201,11 @@ useEffect(() => {
 
 **Don't use passive when:** implementing custom swipe gestures, custom zoom controls, or any listener that needs `preventDefault()`.
 
-### 4.3 Use SWR for Automatic Deduplication
+### 4.3 Use TanStack Query for Automatic Deduplication
 
 **Impact: MEDIUM-HIGH (automatic deduplication)**
 
-SWR enables request deduplication, caching, and revalidation across component instances.
+TanStack Query v5 enables request deduplication, caching, and revalidation across component instances. **It is the only client-side cache library allowed by this template — no SWR, no Apollo Client.**
 
 **Incorrect: no deduplication, each instance fetches**
 
@@ -1217,35 +1223,48 @@ function UserList() {
 **Correct: multiple instances share one request**
 
 ```tsx
-import useSWR from 'swr';
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+
+import { userQueries } from "@/features/users/queries/options";
 
 function UserList() {
-  const { data: users } = useSWR('/api/users', fetcher);
+  const { data: users } = useQuery(userQueries.list());
 }
 ```
 
-**For immutable data:**
+`userQueries.list()` is a `queryOptions(...)` factory whose `queryFn` is a Server Action — see [`tanstack-query` skill](../../tanstack-query/SKILL.md). Multiple components calling the same query share one in-flight request and one cache entry.
+
+**For immutable / config data:**
 
 ```tsx
-import { useImmutableSWR } from '@/lib/swr';
-
-function StaticContent() {
-  const { data } = useImmutableSWR('/api/config', fetcher);
-}
+const { data } = useQuery({
+  ...configQueries.app(),
+  staleTime: Infinity,        // never go stale
+  refetchOnWindowFocus: false,
+});
 ```
 
 **For mutations:**
 
 ```tsx
-import { useSWRMutation } from 'swr/mutation';
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { updateUser } from "@/features/users/actions";
+import { userKeys } from "@/features/users/queries/keys";
 
 function UpdateButton() {
-  const { trigger } = useSWRMutation('/api/user', updateUser);
-  return <button onClick={() => trigger()}>Update</button>;
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: updateUser,
+    onSuccess: () => qc.invalidateQueries({ queryKey: userKeys.all() }),
+  });
+  return <button onClick={() => mutation.mutate({ /* … */ })}>Update</button>;
 }
 ```
 
-Reference: [https://swr.vercel.app](https://swr.vercel.app)
+Reference: [TanStack Query v5 docs](https://tanstack.com/query/latest)
 
 ### 4.4 Version and Minimize localStorage Data
 
@@ -3297,8 +3316,7 @@ function SearchInput({ onSearch }: { onSearch: (q: string) => void }) {
 
 1. [https://react.dev](https://react.dev)
 2. [https://nextjs.org](https://nextjs.org)
-3. [https://swr.vercel.app](https://swr.vercel.app)
-4. [https://github.com/shuding/better-all](https://github.com/shuding/better-all)
-5. [https://github.com/isaacs/node-lru-cache](https://github.com/isaacs/node-lru-cache)
-6. [https://vercel.com/blog/how-we-optimized-package-imports-in-next-js](https://vercel.com/blog/how-we-optimized-package-imports-in-next-js)
-7. [https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast](https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast)
+3. [https://tanstack.com/query/latest](https://tanstack.com/query/latest)
+4. [https://github.com/isaacs/node-lru-cache](https://github.com/isaacs/node-lru-cache)
+5. [https://vercel.com/blog/how-we-optimized-package-imports-in-next-js](https://vercel.com/blog/how-we-optimized-package-imports-in-next-js)
+6. [https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast](https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast)

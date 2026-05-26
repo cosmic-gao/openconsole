@@ -13,11 +13,11 @@
 | 加新 Server Action / `'use cache'` | [`data-layer.md`](./data-layer.md) |
 | 加新数据库表 | [`data-layer.md`](./data-layer.md) Drizzle 段 |
 | 调外部 BFF / 拼请求 | [`data-layer.md`](./data-layer.md) envelope 段 |
-| 鉴权 / 跳转 | [`auth-flow.md`](./auth-flow.md) |
+| 鉴权 / 跳转 | [`../../nextjs-auth-callback/references/auth-flow.md`](../../nextjs-auth-callback/references/auth-flow.md) |
 | 加错误页 / 自定义 404/401/403/500 | [`error-pages.md`](./error-pages.md) |
 | 改 sidebar 菜单 | [`configs.md`](./configs.md) sidebar.ts 段 |
-| 改主题色 / 字体 | [`theme.md`](./theme.md) |
-| 加 UI 组件 | [`ui-rules.md`](./ui-rules.md) |
+| 改主题色 / 字体 | [`../../ui/rules/theme.md`](../../ui/rules/theme.md) |
+| 加 UI 组件 | [`../../ui/rules/library-whitelist.md`](../../ui/rules/library-whitelist.md) |
 | 加 env 变量 | [`configs.md`](./configs.md) env.ts 段 |
 
 ---
@@ -211,9 +211,9 @@
 3. `references/scaffold.md` —— 文件蓝本
 4. `references/directory-structure.md` —— 目录边界
 5. `references/configs.md` —— 配置文件语义
-6. `references/ui-rules.md` —— UI 严格白名单
-7. `references/theme.md` —— 主题色 / 字体 / 布局
-8. `references/auth-flow.md` —— 登录链路
+6. `../ui/rules/library-whitelist.md` —— UI 严格白名单
+7. `../ui/rules/theme.md` —— 主题色 / 字体 / 布局
+8. `../nextjs-auth-callback/references/auth-flow.md` —— 登录链路
 9. `references/data-layer.md` —— 数据流
 10. `references/error-pages.md` —— 错误页
 11. `references/features.md` —— 加新 feature

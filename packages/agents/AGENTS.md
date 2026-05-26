@@ -1,35 +1,34 @@
 # AI Coding Standards
 
-公司内部所有 Next.js 项目的**统一开发规范** —— 所有 AI agent 必须遵循。本文是
-「宪法」,负责描述强约束;具体到怎么写代码、怎么搭骨架、怎么接登录、怎么用 UI
-组件,分发到下面四个 skill。
+公司内部所有 Next.js 项目的**统一开发规范** —— 所有 AI agent 必须遵循。本目录就是「项目宪法」与「模板蓝本」:AI 通过这套 skill 应当能**完整搭出一个统一的 Next.js 应用骨架**(空目录 → 可运行),并在其上做后续业务开发。**本目录不依赖任何外部参考仓库** —— 所有结构、配置、代码片段都在 skill 内部完整给出。
 
-| 场景 | Skill |
+## 七个 skill —— 按用户意图路由
+
+| 用户在做什么 | 触发哪个 skill |
 | --- | --- |
-| 从零初始化 / 写 page / 写 Server Action / RSC 边界 / 数据层 / 错误页 / 加 feature | [`skill:nextjs-best-practices`](./nextjs-best-practices/SKILL.md) |
-| 登录 / 鉴权 / 会话 / SSO 回调 | [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md) |
-| UI 组件使用 / 主题 / 布局 / 防闪烁 / `@openconsole/{atoms,shadcn}` | [`skill:ui`](./ui/SKILL.md) |
-| TanStack Query 客户端数据获取 | [`skill:tanstack-query`](./tanstack-query/SKILL.md) |
-| 表单 + zod + shadcn Form | [`skill:react-hook-form`](./react-hook-form/SKILL.md) |
-| Drizzle ORM —— schema / migrations / query patterns / `_cached.ts` | [`skill:drizzle-orm`](./drizzle-orm/SKILL.md) |
-| Redis —— `lib/redis/` 应用层 + `cache-handler.mjs` cache backend + 数据结构选择 + RQE | [`skill:redis-development`](./redis-development/SKILL.md) |
-| React 组合 / 性能 / 重渲优化 | [`skill:vercel-composition-patterns`](./vercel-composition-patterns/SKILL.md) |
+| 从零初始化项目 / 写 page / 写 Server Action / RSC 边界 / 错误页 / 加 feature 切片 / nuqs / 性能 / RSC 优化 / metadata / 字体 / hydration / async params | [`skill:nextjs-best-practices`](./nextjs-best-practices/SKILL.md) |
+| 接外部登录回调 / `proxy.ts` 重定向 / `SsoCallback` / `setSession` / `getSession` / 鉴权守卫 / continue cookie / 登录跳转 / RBAC / logout | [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md) |
+| 用 `@openconsole/shadcn` / `@openconsole/atoms` / 主题切换 / Sidebar / Header / Breadcrumbs / Preferences / 表单组件 / 图标 / 防闪烁 / 布局 / 错误页 UI | [`skill:ui`](./ui/SKILL.md) |
+| TanStack Query —— queryKey 工厂 / queryOptions / `useSuspenseQuery` / `useMutation` / `initialData` / 乐观更新 / Server Action 当 queryFn | [`skill:tanstack-query`](./tanstack-query/SKILL.md) |
+| 表单 —— `react-hook-form` + `zod` + shadcn `<Form>` / `useForm` / `zodResolver` / 多步表单 / Sheet / Dialog form / 提交 + `useMutation` | [`skill:react-hook-form`](./react-hook-form/SKILL.md) |
+| 数据库 —— Drizzle ORM / `postgres-js` / 加表 / 迁移 / `db.query.*` / `_cached.ts` / `updateTag` 失效 / pgbouncer / DATABASE_CASING | [`skill:drizzle-orm`](./drizzle-orm/SKILL.md) |
+| Redis —— `lib/redis/` 应用层(rate limit / pub-sub / 临时状态) / `cache-handler.mjs` Next 共享缓存后端 / ioredis 单例 / TTL / Hash / 事务 | [`skill:redis-development`](./redis-development/SKILL.md) |
 
-权威实现参考:`E:\opencode\oepntemplate`(企业内部模板,任何分歧以这个仓库为准)。
+> 元 skill:[`skill:skill-creator`](./skill-creator/SKILL.md) —— 当用户希望**新增 / 修改 / 评估**本目录下的 skill 本身时使用。
 
 ---
 
-## 0. 五条硬规则(最常违反)
+## 0. 五条硬规则(90% 违规都集中在这里)
 
-> 90% 的违规都集中在这里。Agent 写 / review 代码前先把这五条过一遍。
+> Agent 在写 / review 代码前,先把这五条过一遍。
 
 1. **UI 库白名单**:只允许从 `@openconsole/atoms` 与 `@openconsole/shadcn` 导入组件,**禁止** `pnpm add shadcn-ui` / `npx shadcn add` / 拷贝 shadcn 源码到 `components/ui/`。详见 [`skill:ui`](./ui/rules/library-whitelist.md)。
 
-2. **目录约定**:`app/` 只放路由,业务代码全部进 `features/<domain>/`。`lib/` 是基建(db / redis / query / request / logger)。**没有** `src/` / `shared/` / `components/`。详见 [`skill:nextjs-best-practices`](./nextjs-best-practices/references/directory-structure.md)。
+2. **目录约定**:`app/` 只放路由,业务代码全部进 `features/<domain>/`,基建在 `lib/`。**没有** `src/` / `shared/` / `components/` / `services/` / `pages/`。详见 [`skill:nextjs-best-practices`](./nextjs-best-practices/references/directory-structure.md)。
 
-3. **登录流向固定**:未带 token 访问受保护路由 → `proxy.ts` 重定向到外部 SSO → SSO 把 token 拼到 hash 回 `/` → `<SsoCallback />` 调 `setSession` server action 写 cookie → `window.location.replace(next)` 跳转。**禁止**自己写 `getServerSession` / 手动读 cookie / 自实现 token 校验。详见 [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md)。
+3. **登录流向固定**:未带 token 访问受保护路由 → `proxy.ts` 重定向到外部登录页 → 登录页把 token 拼到 hash 回 `/` → `<SsoCallback />` 调 `setSession` server action 写 cookie → `window.location.replace(next)` 跳转。**禁止**自己写 `getServerSession` / 手动读 cookie / 自实现 token 校验。详见 [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md)。
 
-4. **数据层用 Cache Components**:`'use cache'` + `cacheTag` 在 `features/<domain>/_cached.ts`,Server Action 在 `features/<domain>/actions.ts` 里调 `updateTag(...)` 失效。`'use cache'` 函数里**禁用** cookies / headers / Date.now() / Math.random()。详见 [`skill:nextjs-best-practices`](./nextjs-best-practices/references/data-layer.md)。
+4. **数据层用 Cache Components**:`'use cache'` + `cacheTag` 在 `features/<domain>/_cached.ts`,Server Action 在 `features/<domain>/actions.ts` 里调 `updateTag(...)` 失效。`'use cache'` 函数里**禁用** cookies / headers / Date.now() / Math.random()。详见 [`skill:nextjs-best-practices`](./nextjs-best-practices/references/data-layer.md) + [`skill:drizzle-orm`](./drizzle-orm/SKILL.md)。
 
 5. **主题色 `#17b3a3`(oklch teal)**:已经写进 `@openconsole/shadcn/styles.css`,**不要**在项目里二次覆盖 `--primary`。要换品牌色就修 `@openconsole/shadcn`(影响所有项目)或在自己项目 `globals.css` 里通过 `@theme inline` 覆盖,绝不能写散落的 `style="color: ..."`。详见 [`skill:ui`](./ui/rules/theme.md)。
 
@@ -39,14 +38,14 @@
 
 | 类别 | 包 | 版本 | 备注 |
 | --- | --- | --- | --- |
-| 框架 | `next` | `16.2.6` | App Router + Cache Components 启用 |
+| 框架 | `next` | `16.2.6` | App Router + `cacheComponents: true` + `reactCompiler: true` |
 | React | `react` / `react-dom` | `19.2.6` | Compiler 已启用 |
 | 语言 | `typescript` | `^6.0.3` | `strict: true` + `verbatimModuleSyntax: true` |
-| 样式 | `tailwindcss` | `^4.3.0` | v4 zero-config,入口 `globals.css` |
+| 样式 | `tailwindcss` | `^4.3.0` | v4 zero-config,入口 `app/globals.css` |
 | PostCSS | `@tailwindcss/postcss` | `^4.3.0` | 唯一 PostCSS 插件 |
-| UI 原语 | `@openconsole/shadcn` | `0.2.1+` | shadcn/ui 全集 + 主题 token |
-| UI 业务级 | `@openconsole/atoms` | `0.2.1+` | Header / Sidebar / Preferences / Provider |
-| Nacos 客户端 | `@openconsole/nacos` | `0.2.1+` | 零配置,读 `NACOS_*` env |
+| UI 原语 | `@openconsole/shadcn` | `0.2.2+` | shadcn/ui 全集 + 主题 token |
+| UI 业务级 | `@openconsole/atoms` | `0.2.2+` | Header / Sidebar / Preferences / Provider / 错误页 |
+| Nacos 客户端 | `@openconsole/nacos` | `0.2.2+` | 零配置,读 `NACOS_*` env |
 | 图标 | `lucide-react` | `^1.16.0` | 唯一图标库 |
 | 主题切换 | `next-themes` | `^0.4.6` | 已被 atoms 的 `<ThemeProvider>` 包装 |
 | Toast | `sonner` | `^2.0.7` | 通过 `@openconsole/shadcn` 的 `<Toaster>` 挂载 |
@@ -56,10 +55,11 @@
 | 表单 | `react-hook-form` | `^7.76.0` | + `@hookform/resolvers@^5.2.2` |
 | 校验 | `zod` | `^4.4.3` | 客户端 + Server Action 双校验 |
 | HTTP | `ofetch` | `^1.5.1` | BFF 调用,封装在 `lib/request/` |
-| ORM | `drizzle-orm` | `^0.45.2` | + `drizzle-kit@^0.31.10` |
-| Postgres 客户端 | `postgres` | `^3.4.9` | 通过 pgbouncer 连接 |
-| Redis 客户端 | `ioredis` | `^5.10.1` | 应用层使用 |
-| Next cache backend | `@neshca/cache-handler` | `^1.9.0` | + `redis@^4.7.0`,生产专用 |
+| ORM | `drizzle-orm` | `^0.45.2` | + `drizzle-kit@^0.31.10`,驱动选 `drizzle-orm/postgres-js` |
+| Postgres 客户端 | `postgres` | `^3.4.9` | 通过 pgbouncer transaction mode 连接(6432) |
+| Redis 客户端(应用层) | `ioredis` | `^5.10.1` | `lib/redis/` 单例 |
+| Redis 客户端(cache backend) | `redis` | `^4.7.0` | 仅由 `@neshca/cache-handler` 使用,不要在业务代码里 import |
+| Next cache backend | `@neshca/cache-handler` | `^1.9.0` | 生产专用,dev 自动 fallback 到 LRU |
 | 进度条 | `nextjs-toploader` | `^3.9.17` | 顶部进度条 |
 | Env 校验 | `@t3-oss/env-nextjs` | `^0.13.11` | `env.ts` 唯一入口 |
 | Server 守护 | `server-only` | `^0.0.1` | 标记仅服务端文件 |
@@ -77,6 +77,7 @@
 - 其它日期库(moment / dayjs)
 - 其它 HTTP 客户端(axios)—— 用 `ofetch`
 - 其它 ORM(Prisma / TypeORM)
+- 其它 Postgres 驱动(`pg` / `node-postgres`)—— 用 `postgres`(driver-name `postgres-js`)
 
 要新增依赖前先在 PR 描述里说明为什么现有依赖不够。
 
@@ -89,7 +90,7 @@
 ├── app/                                # App Router —— 只放路由 + special files
 │   ├── layout.tsx                      # 根布局:html / body / 全局 Provider 链
 │   ├── globals.css                     # Tailwind v4 入口 + 业务字体变量
-│   ├── page.tsx                        # `/` —— SsoCallback 接收 token fragment
+│   ├── page.tsx                        # `/` —— <SsoCallback /> 接收 token fragment
 │   ├── error.tsx                       # segment-level error boundary
 │   ├── global-error.tsx                # root error boundary(渲染自己的 <html>)
 │   ├── not-found.tsx                   # `notFound()` 触发
@@ -109,18 +110,25 @@
 │       └── health/route.ts             # k8s liveness/readiness probe
 │
 ├── features/                           # 业务领域切片 —— 业务代码全部在这
-│   └── <domain>/
+│   ├── auth/                           # 鉴权(模板预置)
+│   │   ├── actions.ts                  # setSession Server Action + getMe
+│   │   ├── schemas.ts                  # Credentials / User zod schemas
+│   │   ├── types.ts
+│   │   ├── components/sso-callback.tsx
+│   │   ├── contexts/auth-context.tsx   # <AuthProvider> + useQuery(getMe)
+│   │   ├── hooks/use-auth.ts
+│   │   ├── queries/{keys,options}.ts
+│   │   └── server/session.ts           # getSession() + getSessionHeaders()
+│   └── <domain>/                       # 业务 feature
 │       ├── actions.ts                  # "use server" —— Server Actions
-│       ├── _cached.ts                  # "use cache" 包装的读 —— 不能读 cookies/headers
-│       ├── schemas.ts                  # zod schemas(单一事实来源)
-│       ├── types.ts                    # 从 schemas 派生的类型
+│       ├── _cached.ts                  # "use cache" 包装的读
+│       ├── schemas.ts                  # zod schemas
+│       ├── types.ts
 │       ├── components/
-│       ├── contexts/                   # 该 feature 的 React Context(可选)
-│       ├── hooks/                      # 自定义 hooks(可选)
-│       ├── queries/                    # TanStack Query 选项 + key
-│       │   ├── keys.ts
-│       │   └── options.ts
-│       └── server/                     # 仅服务端工具(非 Server Action)
+│       ├── contexts/                   # 可选
+│       ├── hooks/                      # 可选
+│       ├── queries/{keys,options}.ts
+│       └── server/                     # 可选,仅服务端工具
 │
 ├── lib/                                # 基建 —— 跨 feature 复用
 │   ├── db/                             # Drizzle 客户端 + schema
@@ -170,13 +178,13 @@
 
 ## 3. 项目初始化(空目录搭骨架)
 
-所有新项目**必须**通过 [`skill:nextjs-best-practices/references/scaffold.md`](./nextjs-best-practices/references/scaffold.md) 生成统一骨架,**不得**使用 `npx create-next-app` 或其它方式。骨架包含:
+所有新项目**必须**通过 [`skill:nextjs-best-practices/references/scaffold.md`](./nextjs-best-practices/references/scaffold.md) 生成统一骨架,**不得**使用 `npx create-next-app` 或其它方式。scaffold 内含 66 个文件的完整代码蓝本(参数化的 `<PROJECT_NAME>` 由用户在 SKILL.md Step 1 填入),包括:
 
-- 66 个文件的完整代码蓝本
-- 统一的 Provider 嵌套链(`ThemeProvider` / `FontProvider` / `NuqsAdapter` / `LayoutProvider` / `SidebarProvider`)
-- 统一的 Dashboard layout(Sidebar + Header)
+- 统一的 Provider 嵌套链(`NuqsAdapter` → `ThemeProvider` → `FontProvider` → `QueryProvider`)
+- 统一的 Dashboard layout(`AuthProvider` → `LayoutProvider` → `SidebarProvider` → `Sidebar` + `Header`)
 - 统一的错误页(5 个 special files + (errors) 路由组)
 - 统一的本地依赖容器(pgbouncer + nacos)
+- 一份示范 feature(`features/notes`)展示 Cache Components + Drizzle + TanStack Query + react-hook-form 完整闭环
 
 详细的逐文件内容、配置语义、何时改、不准改什么 —— 见 [`skill:nextjs-best-practices`](./nextjs-best-practices/SKILL.md) 入口与 `references/`。
 
@@ -187,7 +195,7 @@
 所有项目必须使用 `@openconsole/atoms` 提供的 Provider 管理主题、字体、布局:
 
 - 根布局必须嵌套:`NuqsAdapter` > `ThemeProvider` > `FontProvider` > `QueryProvider` > `NextTopLoader` + `Toaster`
-- Dashboard 布局必须嵌套:`LayoutProvider` > `SidebarProvider`(都从 **atoms** 引入,不是 shadcn) > `Sidebar` + `SidebarInset`
+- Dashboard 布局必须嵌套:`AuthProvider` > `LayoutProvider` > `SidebarProvider`(都从 **atoms** 引入,不是 shadcn) > `Sidebar` + `SidebarInset`
 - `LayoutProvider` / `SidebarProvider` 是服务端组件,在服务端读 cookie 还原状态,首屏 HTML 即终态 → **没有闪烁**
 - 图标**必须**使用 `lucide-react`:组件代码里 import 真组件;配置文件传 PascalCase 字符串
 
@@ -197,12 +205,12 @@
 
 ## 5. 登录 / 鉴权
 
-所有项目共享同一套 SSO 鉴权机制:
+所有项目共享同一套外部登录回调机制:
 
 - 状态读取:RSC / Server Action 用 `getSession()` from `@/features/auth/server/session`(基于 `React.cache` + `cookies()`)
 - 未授权访问:`unauthorized()` from `next/navigation`,触发 `app/unauthorized.tsx`
 - 守卫:Server Action 操作用户数据前必须检查 session
-- 回调流程:`proxy.ts` → 外部 SSO → `/#token=...` → `<SsoCallback />` → `setSession` server action → `window.location.replace(next)`
+- 回调流程:`proxy.ts` → 外部登录页 → `/#token=...&tenant_code=...` → `<SsoCallback />` → `setSession` server action → `window.location.replace(next)`
 
 **禁止**:`getServerSession` / 手动读 cookie / 自实现 token 校验。
 
@@ -215,13 +223,20 @@
 - **服务端读**:`features/<domain>/_cached.ts`(`'use cache'` + `cacheTag`)
 - **服务端写**:`features/<domain>/actions.ts`(`'use server'`,调 `updateTag(...)` 失效)
 - **客户端读**:TanStack Query,queryFn 调 Server Action,初始数据通过 `initialData` 喂入
+- **客户端写**:`useMutation`,mutationFn 调 Server Action,`onSuccess` 用 `setQueryData` 直接更新 cache
+- **数据库**:`lib/db/` Drizzle + Postgres-js,通过 pgbouncer 6432
+- **应用层 Redis**:`lib/redis/` ioredis 单例(rate limiting / pub-sub / 临时状态)
 - **BFF**:`lib/request/`(`ofetch` + envelope `{code,data,msg}` + `safeUnwrap`)
 - **跨服务**:`@openconsole/nacos` 的 `client().fetch("nacos://service/path")`
 
 **禁止**:SWR / axios / 自己拼 `Authorization: Bearer ${token}`(用 `getSessionHeaders()` 自动注入) / 在 `app/api/<entity>/route.ts` 写业务 CRUD(用 Server Action)。
 
-详见 [`skill:nextjs-best-practices/references/data-layer.md`](./nextjs-best-practices/references/data-layer.md)。
-具体到 ORM 写法见 [`skill:drizzle-orm`](./drizzle-orm/SKILL.md);Redis 数据结构 / 性能见 [`skill:redis-development`](./redis-development/SKILL.md)。
+详见:
+- [`skill:nextjs-best-practices/references/data-layer.md`](./nextjs-best-practices/references/data-layer.md) —— 数据层全景
+- [`skill:tanstack-query`](./tanstack-query/SKILL.md) —— 客户端缓存
+- [`skill:react-hook-form`](./react-hook-form/SKILL.md) —— 表单
+- [`skill:drizzle-orm`](./drizzle-orm/SKILL.md) —— ORM
+- [`skill:redis-development`](./redis-development/SKILL.md) —— Redis
 
 ---
 
@@ -252,8 +267,8 @@ Nacos 相关 env(`NACOS_*`)是例外:`@openconsole/nacos` 直接读 `process.env
 
 ```bash
 pnpm install                                                # 装包
-docker compose -f docker/docker-compose.yaml up -d         # 本地 Postgres + Redis + Nacos
-pnpm db:push                                                # 数据库迁移(dev)
+docker compose -f docker/docker-compose.yaml up -d         # 本地 pgbouncer + nacos(Redis 由各机部署)
+pnpm db:push                                                # 数据库迁移(dev 直推)
 pnpm dev                                                    # 开发服(localhost:3000)
 pnpm build                                                  # 生产构建
 pnpm start                                                  # 启动生产
@@ -272,7 +287,7 @@ curl http://localhost:3000/api/health                       # 健康检查
 
 ---
 
-## 9. Agent 规则
+## 9. Agent 路由速查
 
 1. 进入项目首先读取本文档
 2. 严格遵循目录结构;偏离需在 PR 描述说明
@@ -283,7 +298,11 @@ curl http://localhost:3000/api/health                       # 健康检查
 7. 不知道怎么接登录 → [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md)
 8. 不知道怎么写 Server Action / Cache Components → [`skill:nextjs-best-practices/references/data-layer.md`](./nextjs-best-practices/references/data-layer.md)
 9. 不知道怎么加新 feature → [`skill:nextjs-best-practices/references/features.md`](./nextjs-best-practices/references/features.md)
-10. 提交前 / Review 前 → [`skill:nextjs-best-practices/references/checklist.md`](./nextjs-best-practices/references/checklist.md)
+10. 不知道怎么用 TanStack Query → [`skill:tanstack-query`](./tanstack-query/SKILL.md)
+11. 不知道怎么写表单 → [`skill:react-hook-form`](./react-hook-form/SKILL.md)
+12. 不知道怎么写 ORM / 加表 / 查询 → [`skill:drizzle-orm`](./drizzle-orm/SKILL.md)
+13. 不知道怎么用 Redis(应用层 or cache backend) → [`skill:redis-development`](./redis-development/SKILL.md)
+14. 提交前 / Review 前 → [`skill:nextjs-best-practices/references/checklist.md`](./nextjs-best-practices/references/checklist.md)
 
 ---
 
@@ -297,3 +316,5 @@ curl http://localhost:3000/api/health                       # 健康检查
 - [ofetch](https://github.com/unjs/ofetch)
 - [nuqs](https://nuqs.dev/)
 - [react-hook-form + zod](https://react-hook-form.com/get-started#SchemaValidation)
+- [ioredis](https://github.com/redis/ioredis)
+- [@neshca/cache-handler](https://caching-tools.github.io/next-shared-cache/)

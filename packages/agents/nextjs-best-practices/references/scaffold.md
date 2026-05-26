@@ -1,10 +1,12 @@
 # Scaffold —— 完整文件蓝图
 
-> 从空目录到可运行的 opentemplate,逐文件 Write。每个 `###` 标题就是文件路径,
+> 从空目录到可运行的统一 Next.js 应用,逐文件 Write。每个 `###` 标题就是文件路径,
 > 下方代码块就是该文件的**完整**内容。除特别注明的占位符外,**一字不改**。
 >
 > 三个值由用户在 SKILL.md Step 1 填入:`<PROJECT_NAME>` / `<SERVICE_NAME>` /
 > `<DEFAULT_REDIRECT>`(默认 `/dashboard`)。
+> 占位符里出现的 `<PROJECT_NAME>` 都要替换;`<SERVICE_NAME>` 用于 Nacos 注册 / docker
+> 容器名;`<DEFAULT_REDIRECT>` 用于 `config/site.ts` 的 `defaultRedirect`。
 
 ---
 
@@ -113,7 +115,7 @@
 │
 └── public/
     ├── favicon.png                            [66] (二进制,任意 32×32 png)
-    └── loading.json                           [67] (Lottie 动画 JSON,从模板拷贝)
+    └── loading.json                           [67] (可选 Lottie 动画 JSON)
 ```
 
 ---
@@ -542,7 +544,7 @@ export const onRequestError: Instrumentation.onRequestError = async (
 
 ## [11] `cache-handler.mjs`
 
-> 把 `keyPrefix` 中的 `opentemplate:cache:` 替换为 `<PROJECT_NAME>:cache:`。
+> `keyPrefix` 使用项目名作前缀,确保多个项目共用同一个 Redis 时不会互相串数据。
 
 ```js
 // Custom Next.js cache handler — backs Cache Components (`'use cache'`),
@@ -2316,12 +2318,13 @@ CREATE TABLE "notes" (
 
 ## [64] `drizzle/meta/0000_snapshot.json`
 
-> 由 drizzle-kit 生成,内容较长。**建议**:跑 `pnpm db:generate` 让工具产生,
-> 不要手写。或直接从模板拷过来(`E:/opencode/oepntemplate/drizzle/meta/`)。
+> 由 drizzle-kit 生成,内容较长。**做法**:不要手写,跑 `pnpm db:generate` 让工具基于
+> 当前 `lib/db/schema/*.ts` 自动产生(同时会生成 `0000_<random>.sql` 与
+> `_journal.json`)。提交进 git。
 
 ## [65] `docker/docker-compose.yaml`
 
-> `container_name` 中 `opentemplate-*` 替换为 `<PROJECT_NAME>-*`。
+> 起本地 pgbouncer + nacos。`container_name` 用项目名作前缀避免多项目冲突。
 
 ```yaml
 # 启动:  docker compose -f docker/docker-compose.yaml up -d
@@ -2381,13 +2384,7 @@ volumes:
 
 ## [67] `public/loading.json`
 
-`app/loading.tsx` 用的 Lottie 动画源文件。直接从模板拷贝:
-
-```
-E:/opencode/oepntemplate/public/loading.json
-```
-
-或者从 [LottieFiles](https://lottiefiles.com/free-animations/loading) 下载任意 Lottie JSON 替换。文件名要与 `app/loading.tsx` 里的 `src="/loading.json"` 对齐。
+`app/loading.tsx` 用的 Lottie 动画源文件(可选)。从 [LottieFiles](https://lottiefiles.com/free-animations/loading) 下载任意符合品牌色的 Lottie JSON 放进 `public/` 即可,文件名要与 `app/loading.tsx` 里的 `src="/loading.json"` 对齐。不想用 Lottie 也可以把 `app/loading.tsx` 改成静态 `<Skeleton>` 屏。
 
 ---
 

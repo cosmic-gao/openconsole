@@ -1,7 +1,7 @@
-# Auth Flow —— SSO 登录跳转完整链路
+# Auth Flow —— 外部登录回调完整链路
 
-> 模板的鉴权完全 cookie-based,无需 NextAuth / Clerk 等库。token 由外部 SSO 颁发,
-> 模板只负责接 callback、写 cookie、读 session。链路固定,不要自创实现。
+> 统一骨架的鉴权完全 cookie-based,无需 NextAuth / Clerk 等库。token 由外部登录页颁发,
+> 骨架只负责接 callback、写 cookie、读 session。链路固定,不要自创实现。
 
 ---
 
@@ -248,7 +248,7 @@ export async function createOrder(input: unknown) {
 }
 ```
 
-模板里**没有**预置 protect()(看 features/notes 用的就是直接调 getSession,因为 notes 当前没鉴权),需要时按以上模式加。
+骨架里**没有**预置 protect()(`features/notes` 示范 feature 当前没鉴权,直接调 `getSession`),需要时按以上模式加进 `features/auth/server/guard.ts`。
 
 ---
 
@@ -283,16 +283,16 @@ export default function DashboardPage() {
 }
 ```
 
-模板的 `/dashboard/page.tsx` 用的是方案 2。
+骨架的 `/dashboard/page.tsx` 用的是方案 2。
 
 ---
 
-## SSO 跳转环境变量
+## 跳转环境变量
 
-| 变量 | 值 | 含义 |
+| 变量 | 示例值 | 含义 |
 | --- | --- | --- |
-| `NEXT_PUBLIC_AUTH_URL` | `https://appstg.mspbots.ai` | SSO 站根 URL |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` / `https://app.example.com` | 本应用根 URL(SSO 跳回的目标) |
+| `NEXT_PUBLIC_AUTH_URL` | `https://login.example.com` | 外部登录站根 URL |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` / `https://app.example.com` | 本应用根 URL(登录站跳回的目标) |
 | `COOKIE_TOKEN` | 默认 `token` | token cookie 名 |
 | `COOKIE_TENANT_CODE` | 默认 `tenant_code` | tenant cookie 名 |
 | `COOKIE_CONTINUE` | 默认 `continue` | 原路径暂存 cookie 名 |
@@ -303,15 +303,15 @@ export default function DashboardPage() {
 
 ## 安全考虑(已经处理好,**不要破坏**)
 
-| 风险 | 模板的防御 |
+| 风险 | 骨架的防御 |
 | --- | --- |
-| Open redirect | `resolve()` 函数检查 continue cookie:必须 / 开头、不能是 scheme-relative、URL 解析 host 必须是 sentinel,可疑就回退 |
+| Open redirect | `resolve()` 函数检查 continue cookie:必须 `/` 开头、不能是 scheme-relative、URL 解析 host 必须是 sentinel,可疑就回退 |
 | XSS 窃取 token | cookie 是 `httpOnly` —— JS 读不到 |
 | CSRF | cookie 是 `SameSite: lax` —— 跨站请求不带 cookie |
 | token 留在 history / Referer | callback 完成立刻 `history.replaceState(null, "", pathname)` 清掉 hash |
 | 同一请求里多次读 cookie | `getSession` 用 `React.cache()` 去重 |
 | 服务端代码混进 client bundle | `session.ts` 第一行 `import "server-only"` |
-| SSO 站故障 / 网络挂 | TanStack Query 的 retry policy —— 401 不重试,其它 1 次 |
+| 登录站故障 / 网络挂 | TanStack Query 的 retry policy —— 401 不重试,其它 1 次 |
 
 ---
 
@@ -375,5 +375,7 @@ client 触发:
 
 ## 跨 skill
 
-- 实现细节级别的 SSO 接入(token 格式、刷新策略、SSO 站协议):查 [`nextjs-auth-callback`](../nextjs-auth-callback/SKILL.md)
-- TanStack Query 怎么用(retry / key 设计):查 [`tanstack-query`](../tanstack-query/SKILL.md)
+- 全局架构(目录约定、技术栈、五条硬规则):查 [`../../AGENTS.md`](../../AGENTS.md)
+- 通用 Next 写法(Server Action 三件套、Cache Components、错误页):查 [`nextjs-best-practices`](../../nextjs-best-practices/SKILL.md)
+- TanStack Query 怎么用(retry / key 设计):查 [`tanstack-query`](../../tanstack-query/SKILL.md)
+- UI 错误页(`Unauthorized` / `Forbidden`):查 [`ui`](../../ui/SKILL.md)

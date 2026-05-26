@@ -1,11 +1,17 @@
 ---
 name: tanstack-query
-description: TanStack Query v5 在 opentemplate 中的标准用法 —— 目录结构、QueryClient 设置、queryKey 工厂、queryOptions 模式、queryFn 调 Server Action、useSuspenseQuery + initialData、useMutation 乐观更新。触发场景:客户端数据获取、缓存管理、乐观更新、useSuspenseQuery、useMutation、queryOptions 配置。
+description: |
+  公司内部 Next.js 项目的 TanStack Query v5 使用规范,自包含完整定义 —— 目录结构、QueryClient 设置、queryKey 工厂、queryOptions 模式、queryFn 调 Server Action、`useSuspenseQuery` + `initialData`、`useMutation` 乐观更新、缓存失效、prefetch。
+
+  必须在以下场景触发,即使用户没说出 skill 名:客户端数据获取 / TanStack Query / @tanstack/react-query / useQuery / useSuspenseQuery / useMutation / useQueryClient / queryOptions / queryKey / queryFn / initialData / setQueryData / invalidateQueries / removeQueries / prefetchQuery / 乐观更新 / optimistic update / onMutate / 缓存管理 / staleTime / gcTime / v5 迁移 / isPending / placeholderData / HydrationBoundary。
+
+  全局架构见同目录 `AGENTS.md`;通用 Next 写法走 `nextjs-best-practices` skill;表单 + mutation 走 `react-hook-form` skill。
 ---
 
-# TanStack Query v5 在 opentemplate 中的标准用法
+# TanStack Query v5 标准用法
 
-> 权威实现参考:`features/notes/`(`E:/opencode/oepntemplate/features/notes/`)。
+> 统一骨架的客户端数据缓存层。本 skill 自包含完整规范:基础设施层(`lib/query/`)、业务层(`features/<domain>/queries/`)、queryFn ↔ Server Action 桥接、Server Component 预取 + Client `initialData` 闭环 —— 全部在本文里给出可直接拷贝的代码。
+>
 > 全局架构见 [`../AGENTS.md`](../AGENTS.md);项目骨架见
 > [`../nextjs-best-practices/references/scaffold.md`](../nextjs-best-practices/references/scaffold.md)。
 
@@ -130,7 +136,7 @@ import { QueryProvider } from "@/lib/query";
 
 ## queryFn 调 Server Action(不是 fetch)
 
-opentemplate 的核心约定:**queryFn 调本 domain 的 Server Action**,Server Action 内部转发到 `_cached.ts` 或直接业务逻辑。**不**让客户端直接 `ofetch("/api/...")`。
+统一骨架的核心约定:**queryFn 调本 domain 的 Server Action**,Server Action 内部转发到 `_cached.ts` 或直接业务逻辑。**不**让客户端直接 `ofetch("/api/...")`。
 
 为什么:Server Action 是 RPC 端点,统一签名;查询和变更都用同一组函数;鉴权 / 缓存失效 / Cache Components 都在 Server Action 一层处理。
 
@@ -207,7 +213,7 @@ export async function createNote(input: unknown) {
 
 ### 默认用 `useSuspenseQuery` + `initialData`(RSC 预取 → Client 消费)
 
-opentemplate 的核心数据流:
+统一骨架的核心数据流:
 
 ```
 RSC: await listNotes() → initialData

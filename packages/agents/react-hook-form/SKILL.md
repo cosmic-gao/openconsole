@@ -1,7 +1,13 @@
 ---
 name: react-hook-form
 description: |
-  Form state management with react-hook-form + @hookform/resolvers/zod + @openconsole/shadcn Form components. Use whenever the user is building, validating, or debugging a form in this template — create/edit pages, sheet-based inline forms, multi-step wizards, file uploads. Triggers on "build a form", "form validation", "useForm", "zodResolver", "form submission", "FormField", "react-hook-form". Replaces the upstream `tanstack-form` skill — this template does NOT use TanStack Form.
+  公司内部 Next.js 项目的表单规范,自包含完整定义。表单一律走 `react-hook-form` + `@hookform/resolvers/zod` + `@openconsole/shadcn` 的 `<Form>` 系列(`FormField` / `FormItem` / `FormLabel` / `FormControl` / `FormMessage`),提交通过 `useMutation` 调 Server Action,zod schema 是单一事实来源(客户端 `zodResolver` 校验,Server Action `Schema.parse(input)` 再次校验)。
+
+  必须在以下场景触发,即使用户没说出 skill 名:写表单 / 加表单 / 表单校验 / form / useForm / zodResolver / FormField / FormItem / FormControl / FormLabel / FormMessage / Controller / handleSubmit / form.reset / formState / isDirty / isSubmitting / mode onBlur / onChange / 多步表单 / multi-step form / Sheet form / Dialog form / 提交后跳转 / 表单 mutation / 客户端校验失败 / 服务端 zod 校验 / 数字输入 coerce / 表单默认值 / defaultValues / 字段联动校验 / refine / superRefine。
+
+  **替代说明**:不使用 TanStack Form / Formik / Final Form。
+
+  全局架构见同目录 `AGENTS.md`;Server Action 三件套(zod / 鉴权 / `updateTag`)见 `nextjs-best-practices` skill;表单触发的 mutation 见 `tanstack-query` skill。
 ---
 
 # React Hook Form + Zod + shadcn Form
@@ -21,7 +27,7 @@ description: |
 
 ## The canonical pattern
 
-权威实现:`features/notes/components/note-form.tsx`(opentemplate)。模板里
+权威实现:`features/notes/components/note-form.tsx`(统一骨架)。模板里
 用的是 Dialog 形式,逻辑相同。
 
 ```tsx
@@ -129,7 +135,7 @@ export function NoteForm({ initial }: { initial?: Note }) {
 Zod schema 是单一事实来源 —— 同一个 schema 在客户端经 `zodResolver` 校验、在 Server Action 内经 `Schema.parse(input)` 校验。
 
 ```ts
-// features/notes/schemas.ts(opentemplate 模板原样)
+// features/notes/schemas.ts(统一骨架 模板原样)
 import { z } from "zod";
 
 export const NoteInput = z.object({

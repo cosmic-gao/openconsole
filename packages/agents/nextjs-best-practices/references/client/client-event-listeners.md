@@ -2,12 +2,14 @@
 title: Deduplicate Global Event Listeners
 impact: LOW
 impactDescription: single listener for N components
-tags: client, swr, event-listeners, subscription
+tags: client, event-listeners, subscription
 ---
 
 ## Deduplicate Global Event Listeners
 
-Use `useSWRSubscription()` to share global event listeners across component instances.
+When several component instances all register the same global listener (window keydown, scroll, online/offline, intersection observer), you end up with N listeners doing N times the work. Move the listener to module scope and let each hook register a callback into a shared registry — one DOM listener, many callbacks.
+
+The template forbids SWR; this is a plain module-level singleton pattern, no extra dependency.
 
 **Incorrect (N instances = N listeners):**
 
@@ -25,54 +27,60 @@ function useKeyboardShortcut(key: string, callback: () => void) {
 }
 ```
 
-When using the `useKeyboardShortcut` hook multiple times, each instance will register a new listener.
+Each consumer of `useKeyboardShortcut` registers its own listener.
 
 **Correct (N instances = 1 listener):**
 
 ```tsx
-import useSWRSubscription from 'swr/subscription';
+"use client";
 
-// Module-level Map to track callbacks per key
-const keyCallbacks = new Map<string, Set<() => void>>();
+import { useEffect } from "react";
 
-function useKeyboardShortcut(key: string, callback: () => void) {
-  // Register this callback in the Map
+// Module-level singleton: one DOM listener regardless of consumer count.
+const callbacks = new Map<string, Set<() => void>>();
+let attached = false;
+
+function rootHandler(event: KeyboardEvent) {
+  if (!event.metaKey) return;
+  const set = callbacks.get(event.key);
+  if (set) for (const cb of set) cb();
+}
+
+function attachOnce() {
+  if (attached) return;
+  attached = true;
+  window.addEventListener("keydown", rootHandler);
+}
+
+function detachIfEmpty() {
+  if (callbacks.size > 0) return;
+  attached = false;
+  window.removeEventListener("keydown", rootHandler);
+}
+
+export function useKeyboardShortcut(key: string, callback: () => void) {
   useEffect(() => {
-    if (!keyCallbacks.has(key)) {
-      keyCallbacks.set(key, new Set());
+    attachOnce();
+    let set = callbacks.get(key);
+    if (!set) {
+      set = new Set();
+      callbacks.set(key, set);
     }
-    keyCallbacks.get(key)!.add(callback);
+    set.add(callback);
 
     return () => {
-      const set = keyCallbacks.get(key);
-      if (set) {
-        set.delete(callback);
-        if (set.size === 0) {
-          keyCallbacks.delete(key);
-        }
-      }
+      set!.delete(callback);
+      if (set!.size === 0) callbacks.delete(key);
+      detachIfEmpty();
     };
   }, [key, callback]);
-
-  useSWRSubscription('global-keydown', () => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && keyCallbacks.has(e.key)) {
-        keyCallbacks.get(e.key)!.forEach((cb) => cb());
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  });
 }
 
 function Profile() {
-  // Multiple shortcuts will share the same listener
-  useKeyboardShortcut('p', () => {
-    /* ... */
-  });
-  useKeyboardShortcut('k', () => {
-    /* ... */
-  });
-  // ...
+  // Multiple shortcuts share one DOM listener
+  useKeyboardShortcut("p", () => { /* … */ });
+  useKeyboardShortcut("k", () => { /* … */ });
 }
 ```
+
+The same pattern works for `scroll`, `online`/`offline`, `visibilitychange`, `resize`, or any `IntersectionObserver` — keep one observer at module scope and let hooks subscribe via a `Map` / `Set`.

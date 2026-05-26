@@ -170,7 +170,7 @@ export function UserCard({ user, icon }: { user: User; icon?: string }) {
 
 ### 示例 2:三个项目都用「价格输入框」
 
-→ 走 [`ui`](../ui/SKILL.md) skill,加到 `@openconsole/atoms` 或者 `@openconsole/shadcn`:
+→ 走 [`ui`](../SKILL.md) skill,加到 `@openconsole/atoms` 或者 `@openconsole/shadcn`:
 
 1. 在 `packages/atoms/components/price-input.tsx` 实现
 2. `packages/atoms/index.ts` re-export

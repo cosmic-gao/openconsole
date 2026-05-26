@@ -1,33 +1,31 @@
 {
   "name": "drizzle-orm",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "category": "toolchain",
   "toolchain": "typescript",
-  "framework": null,
+  "framework": "next",
   "tags": [
     "drizzle",
     "orm",
-    "database",
-    "sql",
-    "postgresql",
-    "mysql",
-    "sqlite",
+    "postgres",
+    "postgres-js",
+    "pgbouncer",
+    "cache-components",
+    "openconsole-template",
     "typescript",
     "type-safety"
   ],
-  "entry_point_tokens": 75,
-  "full_tokens": 14767,
-  "author": "claude-mpm-skills",
+  "author": "openconsole",
   "license": "MIT",
   "subcategory": "data",
   "requires": [
     "typescript-core"
   ],
   "related": [
-    "database-migration",
-    "nextjs-core"
+    "nextjs-best-practices",
+    "nextjs-auth-callback",
+    "redis-development"
   ],
-  "updated": "2025-11-30",
-  "source_path": "toolchains/typescript/data/drizzle/SKILL.md",
-  "repository": "https://github.com/bobmatnyc/claude-mpm-skills"
+  "updated": "2026-05-26",
+  "notes": "Self-contained Drizzle ORM skill for the unified Next.js app scaffold. Uses drizzle-orm/postgres-js + postgres package (not pg/node-postgres), pgbouncer transaction mode, DATABASE_CASING auto-mapping, _cached.ts + Server Action split for Cache Components integration. Postgres-only — no MySQL/SQLite drift. Generic Drizzle knowledge lives in references/ for deep dives."
 }

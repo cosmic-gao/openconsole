@@ -1,7 +1,11 @@
 ---
 name: nextjs-best-practices
 description: |
-  **公司所有内部 Next.js 项目通用**的编码规范、代码片段范式、踩坑指南（基于 Next.js 16.2.6 + React 19.2.6 + @openconsole/{shadcn,atoms}）。无论用户怎么描述——做项目、加路由、写组件、写 Server Action、调 cookie、加环境变量、写 form、加图表、改 sidebar、调 metadata、调字体、加 features 切片、性能优化、bundle 分析、'use cache'、async params、hydration 错误、RSC 边界——只要在内部项目里**从零初始化**或**写/改/审查代码**就触发此 skill。全局核心架构约束见根目录 `AGENTS.md`；登录回调走 `nextjs-auth-callback` skill。
+  公司内部 Next.js 项目的统一编码规范与可复制蓝本(Next.js 16.2.6 + React 19.2.6 + Cache Components + @openconsole/{shadcn,atoms})。该 skill 自包含完整的项目骨架定义 —— **从空目录搭出统一应用结构**(`references/scaffold.md` 内含 66 个文件的逐行代码蓝本),也负责**后续业务开发**(路由 / page / layout / Server Action / `_cached.ts` / nuqs / 错误页 / metadata / hydration / RSC 边界 / 性能 / bundle)。
+
+  必须在以下场景触发,即使用户没说出 skill 名:做项目 / 新建 Next 应用 / 搭骨架 / 初始化项目 / 加路由 / 加页面 / 写 RSC / 写 Server Action / 写 Cache Components / 用 `'use cache'` / 用 `cacheTag` / 用 `updateTag` / 写 `_cached.ts` / 加 feature 切片 / 加 nuqs / 加 metadata / 改 sidebar 数据 / 改字体 / 性能优化 / hydration mismatch / RSC 边界出错 / async params 报错 / Suspense bailout / 写 error 页 / `notFound()` / `unauthorized()` / `forbidden()` / 加 health check / 加 instrumentation。
+
+  全局核心约束见同目录 `AGENTS.md`;外部登录回调走 `nextjs-auth-callback` skill;UI 组件用法走 `ui` skill;TanStack Query 客户端缓存走 `tanstack-query` skill;表单走 `react-hook-form` skill;ORM 写法走 `drizzle-orm` skill;Redis 走 `redis-development` skill。
 ---
 
 # Next.js Best Practices — 内部项目通用编码规范
@@ -701,7 +705,7 @@ app/(dashboard)/<name>/
 | 外部登录回调 | [`../nextjs-auth-callback/SKILL.md`](../nextjs-auth-callback/SKILL.md) |
 | UI 组件 / 主题 / 防闪烁 | [`../ui/SKILL.md`](../ui/SKILL.md) |
 
-### 项目骨架 + 强约束(opentemplate 系列,合并自原 opentemplate skill)
+### 项目骨架 + 强约束
 
 | 文件 | 何时查 |
 | --- | --- |

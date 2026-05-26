@@ -196,4 +196,4 @@ toast('文件已删除。', {
 | `<div className="animate-pulse">` + 样式化 divs | `<Skeleton className="h-4 w-3/4" />` |
 | `<span className="rounded-full bg-green-100 ...">` | `<Badge variant="secondary">` |
 
-atoms vs primitives 边界详见 [atoms-usage.md](./atoms-usage.md)。
+atoms vs primitives 边界详见 [foundation.md](./foundation.md)。
