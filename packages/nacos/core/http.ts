@@ -13,6 +13,7 @@
  *
  * @module
  */
+import { markDynamic } from "./connection";
 import type { Discovery } from "./discovery";
 import { Plugins, context } from "./plugin";
 import type { Balancer, FetchOptions, Hint, Retry } from "./types";
@@ -59,6 +60,12 @@ export class Http {
     input: string | URL | Request,
     init: FetchOptions = {},
   ): Promise<Response> {
+    // 第一步:把当前 Server Component 路由标记为 dynamic,让 Next.js 16
+    // `cacheComponents` 模式接受后续的 `Date.now()` / `Math.random()`
+    // (timing instrumentation、TTL、负载均衡)。非 Next 环境 / 非请求作用域
+    // 下软降级,详见 `./connection.ts`。
+    await markDynamic();
+
     const raw =
       typeof input === "string"
         ? input

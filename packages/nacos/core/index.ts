@@ -92,6 +92,7 @@ export {
   type ForwardOptions,
 } from "./plugin";
 export { loadEnvOptions, DEFAULT_SERVER } from "./env";
+export { markDynamic } from "./connection";
 
 /**
  * Nacos 客户端句柄。由 {@link create} 构造，{@link init} / {@link client}

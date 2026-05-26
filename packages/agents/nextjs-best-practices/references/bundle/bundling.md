@@ -161,22 +161,14 @@ next experimental-analyze --output
 
 Reference: https://nextjs.org/docs/app/guides/package-bundling
 
-## Migrating from Webpack to Turbopack
+## Bundler config (Turbopack)
 
-Turbopack is the default bundler in Next.js 16+. If you have custom webpack config, migrate to Turbopack-compatible alternatives:
+The scaffold uses Turbopack (Next.js 16 default). Don't add a `webpack` key to `next.config.ts` — use `transpilePackages` / `serverExternalPackages` instead:
 
-```js
-// next.config.js
-module.exports = {
-  // Good: Works with Turbopack
-  serverExternalPackages: ['package'],
-  transpilePackages: ['package'],
-
-  // Bad: Webpack-only - migrate away from this
-  webpack: (config) => {
-    // custom webpack config
-  }
+```ts
+// next.config.ts
+const nextConfig: NextConfig = {
+  serverExternalPackages: ['some-native-pkg'],
+  transpilePackages: ['@openconsole/shadcn', '@openconsole/atoms'],
 };
 ```
-
-Reference: https://nextjs.org/docs/app/building-your-application/upgrading/from-webpack-to-turbopack

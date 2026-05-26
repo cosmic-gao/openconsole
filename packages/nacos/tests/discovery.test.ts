@@ -91,4 +91,38 @@ describe("Discovery", () => {
     const list = await d.list("svc");
     expect(list).toHaveLength(2);
   });
+
+  it("coalesces concurrent list() calls into a single registry hit", async () => {
+    // 防冷启动 thundering herd:N 个并发请求只允许一次真正打到注册中心。
+    const reg = new FakeRegistry();
+    reg.setInstances("svc", [instance("svc", "10.0.0.1", 80)]);
+    reg.listDelayMs = 30; // 让请求真的重叠
+    const d = new Discovery({ registry: reg });
+
+    const results = await Promise.all([
+      d.list("svc"),
+      d.list("svc"),
+      d.list("svc"),
+      d.list("svc"),
+      d.list("svc"),
+    ]);
+
+    expect(reg.listCalls).toBe(1);
+    expect(reg.watchCalls).toBe(1);
+    for (const r of results) {
+      expect(r.map((i) => i.ip)).toEqual(["10.0.0.1"]);
+    }
+  });
+
+  it("does NOT coalesce across different services or groups", async () => {
+    const reg = new FakeRegistry();
+    reg.setInstances("a", [instance("a", "10.0.0.1", 80)]);
+    reg.setInstances("b", [instance("b", "10.0.0.2", 80)]);
+    reg.setInstances("a", [instance("a", "10.0.0.3", 80)], "other");
+    reg.listDelayMs = 10;
+    const d = new Discovery({ registry: reg });
+
+    await Promise.all([d.list("a"), d.list("b"), d.list("a", "other")]);
+    expect(reg.listCalls).toBe(3);
+  });
 });

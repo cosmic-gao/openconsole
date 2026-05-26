@@ -124,25 +124,24 @@ export class Config {
   }
 
   /**
-   * 主动触发 Next.js 的 `revalidateTag(tag)`，让对应 cache tag 的 RSC
+   * 主动触发 Next.js 的 `revalidateTag(tag)`,让对应 cache tag 的 RSC
    * 分段在下次请求时重新渲染。
    *
-   * 未在 Next.js 环境（动态 import 失败）或未配置 `tag` 时为空操作。
+   * 未在 Next.js 环境(动态 import 失败 / 老版本无 `revalidateTag` 导出)
+   * 或未配置 `tag` 时为空操作。模块解析结果缓存在文件作用域,避免每次
+   * 配置变更都重新 `await import()`。
    */
   async revalidate(): Promise<void> {
     const tag = this.options.tag;
     if (!tag) return;
+    const fn = await loadRevalidateTag();
+    if (!fn) return;
     try {
-      const mod = (await import("next/cache").catch(() => null)) as
-        | { revalidateTag?: unknown }
-        | null;
-      const fn = mod?.revalidateTag;
-      if (typeof fn !== "function") return;
-      // `{ expire: 0 }` 在 Next 15 上会被忽略，在 Next 16 上表示「立刻失效」，
+      // `{ expire: 0 }` 在 Next 15 上会被忽略,在 Next 16 上表示「立刻失效」,
       // 同样的调用形态在两个版本上行为一致。
-      (fn as (...args: unknown[]) => void)(tag, { expire: 0 });
+      fn(tag, { expire: 0 });
     } catch {
-      /* 未在 Next.js 中运行，忽略 */
+      /* revalidateTag 在请求作用域之外可能抛错,忽略 */
     }
   }
 
@@ -160,9 +159,30 @@ export class Config {
 }
 
 /**
+ * 缓存解析过的 `next/cache.revalidateTag` 函数引用。`undefined` = 未探测,
+ * `null` = 不可用(非 Next 环境 / 老版本)。
+ */
+type RevalidateTagFn = (tag: string, opts?: { expire?: number }) => void;
+let cachedRevalidateTag: RevalidateTagFn | null | undefined;
+
+async function loadRevalidateTag(): Promise<RevalidateTagFn | null> {
+  if (cachedRevalidateTag !== undefined) return cachedRevalidateTag;
+  try {
+    const mod = (await import("next/cache")) as {
+      revalidateTag?: RevalidateTagFn;
+    };
+    cachedRevalidateTag =
+      typeof mod.revalidateTag === "function" ? mod.revalidateTag : null;
+  } catch {
+    cachedRevalidateTag = null;
+  }
+  return cachedRevalidateTag;
+}
+
+/**
  * 把 Nacos 拉到的原始内容解析为 JS 对象。
  *
- * 非 JSON（YAML / properties / 纯文本）原样保留为字符串并打印一条 warning，
+ * 非 JSON(YAML / properties / 纯文本)原样保留为字符串并打印一条 warning,
  * 调用方可在 `on()` 回调中自行 post-process。
  */
 function parse(raw: string | null | undefined, dataId: string): unknown {

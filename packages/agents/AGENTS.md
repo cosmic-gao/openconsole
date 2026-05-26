@@ -43,9 +43,9 @@
 | 语言 | `typescript` | `^6.0.3` | `strict: true` + `verbatimModuleSyntax: true` |
 | 样式 | `tailwindcss` | `^4.3.0` | v4 zero-config,入口 `app/globals.css` |
 | PostCSS | `@tailwindcss/postcss` | `^4.3.0` | 唯一 PostCSS 插件 |
-| UI 原语 | `@openconsole/shadcn` | `0.2.2+` | shadcn/ui 全集 + 主题 token |
-| UI 业务级 | `@openconsole/atoms` | `0.2.2+` | Header / Sidebar / Preferences / Provider / 错误页 |
-| Nacos 客户端 | `@openconsole/nacos` | `0.2.2+` | 零配置,读 `NACOS_*` env |
+| UI 原语 | `@openconsole/shadcn` | `latest` | shadcn/ui 全集 + 主题 token。scaffold 与所有依赖说明都按 latest 走,不固定具体 minor 版本 |
+| UI 业务级 | `@openconsole/atoms` | `latest` | Header / Sidebar / Preferences / Provider / 错误页 |
+| Nacos 客户端 | `@openconsole/nacos` | `latest` | 零配置,读 `NACOS_*` env;`server-only` 守护 + Cache Components 友好(`markDynamic` 在 `Http.fetch` / `Discovery.list` 入口标记 dynamic) |
 | 图标 | `lucide-react` | `^1.16.0` | 唯一图标库 |
 | 主题切换 | `next-themes` | `^0.4.6` | 已被 atoms 的 `<ThemeProvider>` 包装 |
 | Toast | `sonner` | `^2.0.7` | 通过 `@openconsole/shadcn` 的 `<Toaster>` 挂载 |

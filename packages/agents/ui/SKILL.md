@@ -133,7 +133,14 @@ description: |
 | 需求 | 使用 |
 |---|---|
 | 按钮 / 操作 | `Button` + variant |
-| 表单输入 | `Input`, `Select`, `Combobox`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider` |
+| 表单输入 | `Input`, `Select`, `Switch`, `Checkbox`, `RadioGroup`, `Textarea`, `InputOTP`, `Slider`, `NativeSelect`(无 JS 也工作) |
+| 可搜索下拉 | **不是一个组件** —— 自己拼 `Popover` + `Command`(参见 `forms.md` "可搜索下拉"段) |
+| 按钮组 | `ButtonGroup`, `ButtonGroupSeparator`, `ButtonGroupText`(横向 / 纵向连排按钮) |
+| 列表项 | `Item`, `ItemGroup`, `ItemMedia`, `ItemContent`, `ItemActions`, `ItemHeader`, `ItemFooter`, `ItemTitle`, `ItemDescription`, `ItemSeparator`(非表格的列表 UI) |
+| 键盘快捷键 | `Kbd`, `KbdGroup`(显示 `⌘K` 等,常在 menu / command 里) |
+| 媒体比例 | `AspectRatio`(锁定图片 / 视频 / iframe 的长宽比) |
+| RTL / LTR 方向 | `DirectionProvider`, `useDirection`(需要双向布局时) |
+| Icon 渲染 | `<Icon name="LayoutDashboard" />`(把 lucide 字符串名查表渲染;`Sidebar` 内部用) |
 | 2-5 个选项切换 | `ToggleGroup` + `ToggleGroupItem` |
 | 数据展示 | `Table`, `Card`, `Badge`, `Avatar`, `Skeleton`, `Progress` |
 | 导航 | `Sidebar`, `NavigationMenu`, `Breadcrumb`, `Tabs`, `Pagination`, `Menubar` |

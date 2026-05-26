@@ -151,12 +151,27 @@ export interface RetryInput {
 
 /** 插件钩子的运行上下文。 */
 export interface Context {
-  /** 逻辑服务名；直接 http(s):// 调用时为 undefined。 */
+  /** 逻辑服务名;直接 http(s):// 调用时为 undefined。 */
   service?: string;
-  /** 当前重试次数，从 0 开始。 */
+  /** 当前重试次数,从 0 开始。 */
   attempt: number;
-  /** 请求开始时间（`Date.now()`）。 */
+  /**
+   * 请求开始的**墙钟时间**(`Date.now()`),适合写到日志 / metric label。
+   *
+   * ⚠️ 不要用 `Date.now() - context.startedAt` 算耗时 —— 墙钟受 NTP 调整,
+   * 跨调整窗口的减法可能得到负数或离谱值。算耗时请用 {@link startedAtPerf}。
+   */
   startedAt: number;
+  /**
+   * 单调时钟读数(`performance.now()`),专用于算 elapsed time:
+   *
+   * ```ts
+   * const ms = performance.now() - context.startedAtPerf;
+   * ```
+   *
+   * 与 `startedAt` 不同,这是相对单调递增的时基,不受系统时间调整影响。
+   */
+  startedAtPerf: number;
 }
 
 /** `onRequest` 钩子收到的入参。 */

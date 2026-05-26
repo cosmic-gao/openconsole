@@ -311,18 +311,132 @@ const { init } = await import("@openconsole/nacos");
 await init();   // 零配置,读 NACOS_* env
 ```
 
-### 调其它服务
+### 调其它服务 —— **永远显式声明 headers**
 
 ```ts
+"use server";
+
+import { client } from "@openconsole/nacos";
+import { z } from "zod";
+
+import { safeUnwrap } from "@/lib/request";
+
+const UserSchema = z.object({ id: z.string(), name: z.string() });
+
+export async function getUser() {
+  return safeUnwrap(
+    UserSchema,
+    client().service("user-service").get<unknown>("/users/me", {
+      headers: { accept: "application/json" },   // ← 必须显式,见下方规则 ①
+    }),
+  );
+}
+
+export async function createOrder(body: unknown) {
+  return safeUnwrap(
+    OrderSchema,
+    client().service("order-service").post<unknown>("/orders", body, {
+      headers: {
+        accept: "application/json",              // ← 必须显式
+        "content-type": "application/json",     // ← POST/PUT 必须显式
+      },
+    }),
+  );
+}
+```
+
+### 必读规则
+
+#### ① 永远显式 `headers: { accept: "application/json" }`
+
+`@openconsole/nacos` 的 `forward()` 插件默认透传所有上游请求头给下游 `nacos://`
+调用 —— 这里有个隐藏炸弹:**Server Action 的上游请求头里 `Accept` 是
+`text/x-component`(RSC 二进制流格式)**,会原样转发给下游 Spring / Express
+服务,而它们没有这个 converter,直接 HTTP **406 Not Acceptable**。
+
+```
+浏览器 GET /page      → Accept: text/html, */*;q=0.8   → 下游能产 JSON ✅
+浏览器 POST /page     → Accept: text/x-component       → 下游 406 ❌  (Server Action)
+```
+
+解决:在调用点显式设 Accept(`forward()` 看到调用方已设的头不会覆盖):
+
+| 方法 | 必设的 headers |
+| --- | --- |
+| `get(path, { headers })` | `accept: application/json` |
+| `post(path, body, { headers })` | `accept` + `content-type: application/json` |
+| `put(path, body, { headers })` | `accept` + `content-type: application/json` |
+| `del(path, { headers })` | `accept: application/json` |
+
+#### ② Cache Components 由客户端自动处理
+
+nacos 客户端的 plugin pipeline、discovery TTL、负载均衡用到了 `Date.now()` /
+`Math.random()`。Next.js 16 `cacheComponents` 模式要求任何这些调用之前先读
+dynamic data(`cookies()` / `headers()` / `connection()` / `searchParams`),
+否则路由会被拒绝渲染。
+
+**`@openconsole/nacos` 客户端在 `Http.fetch` / `Discovery.list` 入口自动调用
+`connection()`,把路由标记为 dynamic** —— 业务代码不需要再手动碰任何 dynamic
+API,直接调 `client().fetch(...)` / `client().service(...).get(...)` 即可。
+
+如果你写了自定义插件或者直接访问 `client.discovery.cache` 等内部 API,可以
+显式调一次:
+
+```ts
+import { markDynamic } from "@openconsole/nacos";
+
+await markDynamic();
+// 之后的 Date.now() / Math.random() 都安全
+```
+
+`markDynamic()` 在非 Next 环境 / 非请求作用域内是 no-op,跨环境调用零风险。
+
+### 想全局一刀切?两条偏方
+
+**A. init 时把 Accept 从 forward 里 exclude 掉:**
+
+```ts
+// instrumentation.ts
+import { init, forward, logger } from "@openconsole/nacos";
+
+await init({
+  plugins: [forward({ exclude: ["accept"] }), logger()],
+});
+```
+
+下游 Spring 走自己的 default content negotiation(默认 JSON)。代价:失去
+透传 `Accept-Language` 之类合理用例。
+
+**B. 包一层 `lib/nacos.ts` 默认带头:**
+
+```ts
+import "server-only";
 import { client } from "@openconsole/nacos";
 
-// 服务感知 URL —— 自动解析实例 + 负载均衡 + 重试
-const res = await client().fetch("nacos://user-service/users/me");
-const user = await res.json();
+const JSON_HEADERS = { accept: "application/json" } as const;
+const JSON_BODY_HEADERS = {
+  accept: "application/json",
+  "content-type": "application/json",
+} as const;
 
-// 或 fluent service helper
-const orders = await client().service("order-service").get<Order[]>("/orders");
+export function jsonService(name: string) {
+  const svc = client().service(name);
+  return {
+    get: <T>(path: string, init: RequestInit = {}) =>
+      svc.get<T>(path, { ...init, headers: { ...JSON_HEADERS, ...init.headers } }),
+    post: <T>(path: string, body: unknown, init: RequestInit = {}) =>
+      svc.post<T>(path, body, { ...init, headers: { ...JSON_BODY_HEADERS, ...init.headers } }),
+    put: <T>(path: string, body: unknown, init: RequestInit = {}) =>
+      svc.put<T>(path, body, { ...init, headers: { ...JSON_BODY_HEADERS, ...init.headers } }),
+    del: <T>(path: string, init: RequestInit = {}) =>
+      svc.del<T>(path, { ...init, headers: { ...JSON_HEADERS, ...init.headers } }),
+  };
+}
 ```
+
+业务侧:`jsonService("opennacos").post("/orders", body)` —— 干净。
+
+但模板默认走显式声明,不引入 helper —— 简单、可读、和 ofetch 风格一致。
 
 详见 `@openconsole/nacos` 的 README(`packages/nacos/README.md`)。
 
@@ -477,7 +591,7 @@ client onSuccess
 | 在 client 端拿数据 | `useSuspenseQuery(noteQueries.list())` | `features/<domain>/components/*.tsx` |
 | 写完失效缓存 | `updateTag("...")` 在 action 里 | `actions.ts` |
 | 调外部 BFF | `safeUnwrap(Schema, request("/path"))` | feature 里 |
-| 调其它内部服务 | `client().fetch("nacos://service/path")` | feature 里 |
+| 调其它内部服务 | `await cookies(); svc.get("/p", { headers: { accept: "application/json" } })` (POST/PUT 加 `content-type`) | feature 里 |
 | 应用层用 Redis | `redis.set / get / pub / sub` | feature 里 |
 
 ---

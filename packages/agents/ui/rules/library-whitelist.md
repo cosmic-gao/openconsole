@@ -44,6 +44,94 @@ import {
 import { LayoutDashboard, Settings, NotebookPen } from "lucide-react";
 ```
 
+### shadcn 完整导出清单(`@openconsole/shadcn` latest)
+
+按字母序,所有都可以从根 `@openconsole/shadcn` 平铺导入:
+
+| 组件 / 工具 | 用途简述 |
+| --- | --- |
+| `Accordion` 系列 | 折叠面板 |
+| `Alert` / `AlertTitle` / `AlertDescription` | 横幅提示 |
+| `AlertDialog` 系列 | 销毁性确认对话框 |
+| `AspectRatio` | 锁定长宽比的容器(图片 / 视频 / iframe) |
+| `Avatar` / `AvatarImage` / `AvatarFallback` | 头像 |
+| `Badge` | 状态徽章 |
+| `Breadcrumb` 系列 | 面包屑(底层原语;atoms 的 `<Breadcrumbs>` 是它的智能封装) |
+| `Button` / `buttonVariants` | 按钮 |
+| `ButtonGroup` / `ButtonGroupSeparator` / `ButtonGroupText` | 连排按钮组 |
+| `Calendar` | 日历(react-day-picker) |
+| `Card` 系列 | 卡片 |
+| `Carousel` 系列 | 走马灯(embla) |
+| `Chart` / `ChartContainer` / `ChartTooltip` 等 | recharts 主题集成 |
+| `Checkbox` | 复选框 |
+| `Collapsible` 系列 | 单段折叠 |
+| `Command` 系列(`CommandInput` / `CommandItem` / `CommandGroup` …) | 命令面板(cmdk),组合 `Popover` 即 Combobox |
+| `ContextMenu` 系列 | 右键菜单 |
+| `Dialog` 系列 | 模态对话框 |
+| `DirectionProvider` / `useDirection` | RTL / LTR(需要双向布局再用) |
+| `Drawer` 系列(vaul) | 移动端友好的底部抽屉 |
+| `DropdownMenu` 系列 | 下拉菜单 |
+| `Empty` 系列(`EmptyHeader` / `EmptyMedia` / …) | 空状态 |
+| `Field` 系列(`FieldGroup` / `FieldLabel` / `FieldSet` …) | 表单字段布局,**所有 form 的标准容器** |
+| `Form` 系列(`FormField` / `FormItem` / `FormControl` / `FormMessage` …) | react-hook-form 集成 |
+| `HoverCard` 系列 | 悬停信息卡 |
+| `Icon` | `<Icon name="LayoutDashboard" />` —— 字符串到 lucide 组件的查表渲染(供 RSC ↔ Client 边界用) |
+| `Input` | 单行文本输入 |
+| `InputGroup` / `InputGroupInput` / `InputGroupAddon` 等 | 输入框 + 前缀 / 后缀 / 按钮组合 |
+| `InputOTP` 系列 | OTP / 验证码 |
+| `Item` 系列(`ItemGroup` / `ItemMedia` / `ItemContent` / `ItemActions` …) | 非表格列表 UI(列表项 + 头像 + 操作) |
+| `Kbd` / `KbdGroup` | 键盘快捷键(如显示 `⌘K`) |
+| `Label` | 表单 label(`<FormLabel>` 内部用) |
+| `Menubar` 系列 | 桌面应用风格菜单栏 |
+| `NativeSelect` | 原生 HTML `<select>`,无 JS 也能用 |
+| `NavigationMenu` 系列 | 顶部导航菜单 |
+| `Pagination` 系列 | 分页 |
+| `Popover` 系列 | 浮动定位面板 |
+| `Progress` | 进度条 |
+| `RadioGroup` / `RadioGroupItem` | 单选 |
+| `Resizable` 系列(react-resizable-panels) | 可拖拽分隔的面板 |
+| `ScrollArea` / `ScrollBar` | 自定义滚动条 |
+| `Select` 系列 | 自定义下拉 |
+| `Separator` | 分隔线 —— **替代** `<hr>` / `border-t` div |
+| `Sheet` 系列 | 侧滑面板 |
+| `Sidebar` 系列(底层原语) | shadcn 原生侧边栏 —— **不要直接用**,用 atoms 的 `<Sidebar>` |
+| `Skeleton` | 加载占位 —— **替代** `animate-pulse` div |
+| `Slider` | 范围 / 数值滑块 |
+| `Toaster` | sonner 容器(根 layout 已挂) |
+| `Spinner` | 加载转圈 |
+| `Switch` | 布尔切换(更适合设置页) |
+| `Table` 系列 | 表格 |
+| `Tabs` 系列 | 标签页 |
+| `Textarea` | 多行文本输入 |
+| `Toggle` | 切换按钮 |
+| `ToggleGroup` / `ToggleGroupItem` | 2-7 选项切换 |
+| `Tooltip` 系列 | 悬停提示 |
+| **工具函数** | `cn(...)` —— `clsx + tailwind-merge` 合并 className |
+| **hook** | `useIsMobile()` —— 视口 < md 检测 |
+
+> shadcn 没有单独的 `Combobox` —— 用 `Popover` + `Command` 组合,见 [`forms.md`](./forms.md) "可搜索下拉"段。
+
+### atoms 完整导出清单(`@openconsole/atoms` latest)
+
+| 导出 | 类型 | 用途 |
+| --- | --- | --- |
+| `Header` | 组件 | 粘性顶部栏,默认含面包屑 + `ThemeSwitch` + `Preferences` 触发 |
+| `Sidebar` | 组件 | 三段式侧边栏(brand / menu / account) |
+| `Breadcrumbs` | 组件 | 路径派生面包屑 |
+| `Preferences` | 组件 | 设置抽屉(Theme / Layout / Font 标签页) |
+| `ColorPicker` | 组件 | CSS 变量绑定颜色输入 |
+| `ThemeSwitch` | 组件 | View Transitions 圆形展开的主题切换按钮 |
+| `Unauthorized` / `Forbidden` / `NotFound` / `ServerError` / `Maintenance` | 5 个错误页组件 | 用于 `app/{unauthorized,forbidden,not-found,error,global-error}.tsx` |
+| `ThemeProvider` | Provider | 包装 `next-themes`(根 layout) |
+| `FontProvider` | Provider | 字体偏好(localStorage 持久化) |
+| `LayoutProvider` | **Server Provider** | 侧边栏 variant / collapsible / side(cookie 持久化 + 服务端读 + 首屏防闪烁) |
+| `SidebarProvider` | **Server Provider** | 侧边栏展开 / 收起(cookie 持久化 + 服务端读 + 首屏防闪烁) |
+| `useBreadcrumbs` | hook | headless 面包屑数据 |
+| `useLayout` | hook | 读 / 写 `LayoutProvider` 配置 |
+| `useFont` | hook | 读 / 写 `FontProvider` 当前字体 |
+
+> ⚠️ `LayoutProvider` / `SidebarProvider` 必须从 `@openconsole/atoms` 引入,**不要**从 `@openconsole/shadcn` —— shadcn 原版的 `SidebarProvider` 只在客户端写 cookie,服务端没有读取,首屏会出现「先展开再收起」的闪烁。
+
 ---
 
 ## 黑名单(永远禁止)

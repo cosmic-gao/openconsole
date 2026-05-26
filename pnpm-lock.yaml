@@ -113,6 +113,9 @@ importers:
       next:
         specifier: ^16
         version: 16.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
     devDependencies:
       '@openconsole/tsconfig':
         specifier: workspace:*
@@ -2604,6 +2607,9 @@ packages:
   serialize-json@1.0.3:
     resolution: {integrity: sha512-TJvXOXSUEH4Lh2FNy1mYzNkUyBG7Ti5fRKGAbcpaDX3mLq23aT/5unC+cIFc5JTDi4/BHTaYLhynrboCCYrFaQ==}
     engines: {node: '>= 4.0.0'}
+
+  server-only@0.0.1:
+    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
 
   sharp@0.34.5:
     resolution: {integrity: sha512-Ou9I5Ft9WNcCbXrU9cMgPBcCK8LiwLqcbywW3t4oDV37n1pzpuNLsYiAV8eODnjbtQlSDwZ2cUEeQz4E54Hltg==}
@@ -5161,6 +5167,8 @@ snapshots:
       utility: 1.18.0
     transitivePeerDependencies:
       - supports-color
+
+  server-only@0.0.1: {}
 
   sharp@0.34.5:
     dependencies:

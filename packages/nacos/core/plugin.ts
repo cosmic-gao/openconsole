@@ -92,7 +92,14 @@ export class Plugins {
  * @param attempt 当前重试次数，从 0 开始
  */
 export function context(service?: string, attempt = 0): Context {
-  return { service, attempt, startedAt: Date.now() };
+  return {
+    service,
+    attempt,
+    // 墙钟时间:适合日志时间戳 / metric label。
+    startedAt: Date.now(),
+    // 单调时钟:算 elapsed time 用这个,不受 NTP 调整影响。
+    startedAtPerf: performance.now(),
+  };
 }
 
 // 内置插件
@@ -124,13 +131,14 @@ export function logger(opts: LoggerOptions = {}): Plugin {
     name: "logger",
     onResponse({ request, response, context }) {
       if (!success && response.ok) return;
-      const ms = Date.now() - context.startedAt;
+      // 用单调时钟算耗时,跨 NTP 调整窗口也不会得到负数 / 离谱值。
+      const ms = Math.round(performance.now() - context.startedAtPerf);
       const tag = `[nacos:${context.service ?? "direct"}]`;
       const line = `${tag} ${request.method} ${request.url} -> ${response.status} (${ms}ms)`;
       response.ok ? log.info(line) : log.warn(line);
     },
     onError({ request, error, context }) {
-      const ms = Date.now() - context.startedAt;
+      const ms = Math.round(performance.now() - context.startedAtPerf);
       const tag = `[nacos:${context.service ?? "direct"}]`;
       log.error(`${tag} ${request.method} ${request.url} threw after ${ms}ms`, error);
     },
@@ -269,13 +277,31 @@ export function forward(opts: ForwardOptions = {}): Plugin {
 /**
  * 安全读取 Next.js 上游请求头。
  *
- * 不在请求作用域时 `next/headers.headers()` 会抛错，这里捕获后返回 null
+ * 不在请求作用域时 `next/headers.headers()` 会抛错,这里捕获后返回 null
  * 让上层判断「没有上游」。
+ *
+ * 模块解析结果缓存在文件作用域:首次 import 之后直接复用,避免每条
+ * `nacos://` 请求都走一次 `await import()` 的 microtask + ESM 解析。
  */
+let cachedHeadersFn:
+  | (() => Headers | Promise<Headers>)
+  | null
+  | undefined;
+
 async function readUpstream(): Promise<Headers | null> {
+  if (cachedHeadersFn === undefined) {
+    try {
+      const mod = (await import("next/headers")) as {
+        headers?: () => Headers | Promise<Headers>;
+      };
+      cachedHeadersFn = typeof mod.headers === "function" ? mod.headers : null;
+    } catch {
+      cachedHeadersFn = null;
+    }
+  }
+  if (!cachedHeadersFn) return null;
   try {
-    const { headers } = await import("next/headers");
-    return await headers();
+    return await cachedHeadersFn();
   } catch {
     return null;
   }

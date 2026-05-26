@@ -30,17 +30,18 @@
 
 设置页使用 `Field orientation="horizontal"`。视觉隐藏标签使用 `FieldLabel className="sr-only"`。
 
-**选择表单控件：**
+**选择表单控件:**
 
 - 简单文本输入 → `Input`
 - 预定义选项下拉 → `Select`
-- 可搜索下拉 → `Combobox`
-- 原生 HTML select（无 JS）→ `native-select`
-- 布尔切换 → `Switch`（设置页）或 `Checkbox`（表单）
+- 可搜索下拉 → **`Popover` + `Command` 组合**(shadcn 没有单独的 `Combobox` 组件,见下方"可搜索下拉"段)
+- 原生 HTML select(无 JS) → `NativeSelect`
+- 布尔切换 → `Switch`(设置页)或 `Checkbox`(表单)
 - 少数选项单选 → `RadioGroup`
 - 2-5 个选项切换 → `ToggleGroup` + `ToggleGroupItem`
-- OTP/验证码 → `InputOTP`
+- OTP / 验证码 → `InputOTP`
 - 多行文本 → `Textarea`
+- 数字调节 → `Input type="number"` 或 `Slider`
 
 ---
 
@@ -167,6 +168,64 @@ import { ToggleGroup, ToggleGroupItem } from '@openconsole/shadcn'
   </FieldGroup>
 </FieldSet>
 ```
+
+---
+
+## 可搜索下拉(Combobox)—— 用 Popover + Command 组合
+
+> shadcn 没有单独的 `Combobox` 组件,标准做法是用 `Popover` 套 `Command`:
+
+```tsx
+import {
+  Button,
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@openconsole/shadcn";
+import { Check, ChevronsUpDown } from "lucide-react";
+
+export function Combobox({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" className="w-full justify-between">
+          {options.find((o) => o.value === value)?.label ?? "请选择…"}
+          <ChevronsUpDown data-icon="inline-end" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0">
+        <Command>
+          <CommandInput placeholder="搜索…" />
+          <CommandEmpty>无结果</CommandEmpty>
+          <CommandGroup>
+            {options.map((o) => (
+              <CommandItem
+                key={o.value}
+                value={o.value}
+                onSelect={() => onChange(o.value)}
+              >
+                <Check data-icon="inline-start" className={value === o.value ? "" : "invisible"} />
+                {o.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+```
+
+要放进 `react-hook-form` 的 `<FormField>`,把上面 `value` / `onChange` 接到 `field` 即可。
 
 ---
 

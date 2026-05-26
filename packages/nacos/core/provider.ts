@@ -26,16 +26,20 @@ interface DetectedIp {
 /**
  * 自动探测对外 IP。
  *
- * 优先级（从高到低）：
+ * 优先级(从高到低):
  * 1. `NACOS_HOST_IP`
- * 2. `POD_IP`（K8s Downward API）
+ * 2. `POD_IP`(K8s Downward API)
  * 3. `HOST_IP`
- * 4. `NACOS_PREFER_INTERFACE` 指定的网卡
+ * 4. `NACOS_PREFER_INTERFACE` 指定的网卡(先 IPv4,后 IPv6)
  * 5. 第一个非内网 IPv4
- * 6. 兜底 `127.0.0.1`
+ * 6. 第一个非内网、非 link-local 的 IPv6(`fe80::` 跳过 —— 不能跨节点路由)
+ * 7. 兜底 `127.0.0.1`
  *
- * 多网卡机器**强烈建议**显式设置 `NACOS_HOST_IP` 或 `NACOS_PREFER_INTERFACE`，
+ * 多网卡机器**强烈建议**显式设置 `NACOS_HOST_IP` 或 `NACOS_PREFER_INTERFACE`,
  * 否则每次启动可能选到不同 IP。
+ *
+ * IPv6 兜底:IPv4 仍然是首选(大多数 Nacos 部署默认 IPv4),只是在 IPv6-only
+ * 网络下不再被迫退到 `127.0.0.1` 注册成无效实例。
  */
 function detectIp(): DetectedIp {
   if (process.env.NACOS_HOST_IP)
@@ -47,7 +51,7 @@ function detectIp(): DetectedIp {
 
   const ifaces = os.networkInterfaces();
 
-  // 显式指定网卡（"eth0" / "en0" 等）。
+  // 显式指定网卡("eth0" / "en0" 等);先匹配 IPv4,没有再 IPv6。
   const preferred = process.env.NACOS_PREFER_INTERFACE;
   if (preferred && ifaces[preferred]) {
     for (const addr of ifaces[preferred] ?? []) {
@@ -55,10 +59,14 @@ function detectIp(): DetectedIp {
         return { ip: addr.address, source: `iface:${preferred}` };
       }
     }
+    for (const addr of ifaces[preferred] ?? []) {
+      if (isUsableIPv6(addr)) {
+        return { ip: addr.address, source: `iface:${preferred}:ipv6` };
+      }
+    }
   }
 
-  // 取遍历到的第一个非内网 IPv4。多网卡时顺序不稳定，必要时用上面两个
-  // 环境变量固定。
+  // 第一遍:任意非内网 IPv4。
   for (const [name, list] of Object.entries(ifaces)) {
     for (const addr of list ?? []) {
       if (addr.family === "IPv4" && !addr.internal) {
@@ -67,7 +75,27 @@ function detectIp(): DetectedIp {
     }
   }
 
+  // 第二遍:任意非内网、非 link-local 的 IPv6 —— IPv6-only 部署的安全网。
+  for (const [name, list] of Object.entries(ifaces)) {
+    for (const addr of list ?? []) {
+      if (isUsableIPv6(addr)) {
+        return { ip: addr.address, source: `iface:${name}:ipv6` };
+      }
+    }
+  }
+
   return { ip: "127.0.0.1", source: "fallback" };
+}
+
+/**
+ * IPv6 地址是否能作为服务注册地址使用。
+ *
+ * Link-local(`fe80::/10`)只在同一段链路内有效,不能跨节点路由 ——
+ * 注册到 Nacos 上消费者无法用它发请求,排除掉。
+ */
+function isUsableIPv6(addr: os.NetworkInterfaceInfo): boolean {
+  if (addr.family !== "IPv6" || addr.internal) return false;
+  return !addr.address.toLowerCase().startsWith("fe80:");
 }
 
 /** 运行时快照，供 `stop()` 反注册时用。 */

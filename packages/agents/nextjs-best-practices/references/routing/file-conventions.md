@@ -93,7 +93,7 @@ Prefix with `_` to exclude from routing.
 
 ## Proxy (Edge middleware)
 
-In Next.js 16+, the edge middleware file is called `proxy.ts` (it was renamed from `middleware.ts`; the old name is no longer supported).
+The edge middleware file is `proxy.ts` at the project root. Function name must be `proxy` (or default-exported); the `config` export carries the route matcher.
 
 ```ts
 // proxy.ts (root of project)
@@ -110,13 +110,7 @@ export const config = {
 };
 ```
 
-Key points:
-
-- The function must be named `proxy` (or default-exported).
-- The config export is still `config` (same as the old `middleware.ts`).
-- This template's `proxy.ts` lives at the project root —— 完整内容见 [`../scaffold.md`](../scaffold.md) 第 [9] 项。
-
-**Migration from older Next versions**: `npx @next/codemod@canary middleware-to-proxy .` auto-renames file + function.
+Scaffold ships a complete `proxy.ts`(SSO redirect + trace-id minting) —— 完整内容见 [`../scaffold/root.md`](../scaffold/root.md) 第 [9] 项。
 
 ## File Conventions Reference
 

@@ -20,10 +20,17 @@ import type {
 export class FakeRegistry implements Registry {
   /** `watch()` 调用次数，方便断言重订阅行为。 */
   watchCalls = 0;
+  /** `list()` 调用次数，方便断言 cache / coalescing 行为。 */
+  listCalls = 0;
   /** 设为 true 时让 `watch()` 抛错，模拟订阅失败。 */
   watchShouldFail = false;
   /** `unobserve()` 调用次数，方便断言 Config.stop() 清理订阅。 */
   unobserveCalls = 0;
+  /**
+   * 让 `list()` 在返回前等待这么多毫秒。让多个并发 list() 真正重叠,
+   * 才能验证 Discovery 的请求合并(coalescing)行为。
+   */
+  listDelayMs = 0;
 
   private services = new Map<string, Instance[]>();
   private configs = new Map<string, string>();
@@ -53,6 +60,10 @@ export class FakeRegistry implements Registry {
   async deregister(_instance: Instance, _opts?: RegisterOptions) {}
 
   async list(service: string, group = "DEFAULT_GROUP") {
+    this.listCalls++;
+    if (this.listDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, this.listDelayMs));
+    }
     return this.services.get(`${group}::${service}`) ?? [];
   }
 

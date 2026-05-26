@@ -203,7 +203,7 @@ pnpm dev
 | BFF 调用 + envelope 拆解 | `request` + `safeUnwrap(Schema, ...)` | `@/lib/request` | scaffold 自带 |
 | 数据库 | `db` + Drizzle | `@/lib/db` | scaffold 自带 |
 | 应用层 Redis | `redis` | `@/lib/redis` | scaffold 自带 |
-| 调其它内部服务 | `client().fetch("nacos://service/path")` | `@openconsole/nacos` | npm |
+| 调其它内部服务 | `client().service("svc").get("/p", { headers: { accept: "application/json" } })`(详见 data-layer.md §5,POST/PUT 还要加 `content-type`,且调用前先 `await cookies()`) | `@openconsole/nacos` | npm |
 | 日志 | `scoped(tag)` | `@/lib/logger` | scaffold 自带 |
 | Toast | `toast()` | `sonner` | npm |
 | UI 基础原语(Button、Input、Dialog 等) | exports | `@openconsole/shadcn` | npm |
@@ -789,7 +789,7 @@ app/(dashboard)/<name>/
 
 ## 完整 reference 索引
 
-本 skill 内置了 `next-best-practices` + `vercel-react-best-practices` 两套权威指南的全部内容，按主题重组，Next 15 内容已清理。
+本 skill 按主题组织的 references 集合,覆盖 Next.js 16 App Router 与 React 19 的全部相关实践。
 
 ### 项目根文档
 

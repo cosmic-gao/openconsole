@@ -8,6 +8,7 @@
  * @module
  */
 import { callable, resolve } from "./balancer";
+import { markDynamic } from "./connection";
 import {
   DEFAULT_GROUP,
   type Balancer,
@@ -44,6 +45,12 @@ export interface DiscoveryOptions {
  */
 export class Discovery {
   private readonly cache = new Map<string, Entry>();
+  /**
+   * 进行中的 fetch 集合(按 cacheKey 去重)。冷启动 / TTL 过期时若 N 个
+   * 请求并发命中同一个服务,只允许 1 个真正打到注册中心,其它 N-1 个
+   * 复用同一个 Promise。避免冷启动 thundering herd 把注册中心压垮。
+   */
+  private readonly inflight = new Map<string, Promise<Instance[]>>();
   private readonly registry: Registry;
   private readonly ttl: number;
   private readonly defaults: Balancer;
@@ -57,9 +64,16 @@ export class Discovery {
   /**
    * 返回服务的健康可调用实例列表。
    *
-   * 命中缓存（已订阅 或 TTL 未过期）直接返回；否则拉取并尝试订阅。
+   * 命中缓存(已订阅 或 TTL 未过期)直接返回;否则拉取并尝试订阅。并发
+   * 调用同一 (service, group) 时只发起一次注册中心请求,见 {@link inflight}。
    */
   async list(service: string, group?: string): Promise<Instance[]> {
+    // 标记当前 Server Component 路由为 dynamic —— 下面的 `Date.now()` /
+    // `Math.random()`(默认负载均衡)需要这个 gate。直接调用 `discovery.list`
+    // 或 `client.discover()` 的路径都走这里;走 `client.fetch()` 时
+    // `Http.fetch` 已经标过一次,connection() 是幂等的,double-mark 无副作用。
+    await markDynamic();
+
     const key = cacheKey(service, group);
     const now = Date.now();
     const hit = this.cache.get(key);
@@ -68,10 +82,26 @@ export class Discovery {
       return callable(hit.instances);
     }
 
+    // 复用已在进行的 fetch(冷启动 thundering herd 防护)。
+    const existing = this.inflight.get(key);
+    if (existing) return existing.then(callable);
+
+    const promise = this.fetchAndCache(service, group);
+    this.inflight.set(key, promise);
+    try {
+      return callable(await promise);
+    } finally {
+      this.inflight.delete(key);
+    }
+  }
+
+  /** 真正打注册中心 + 写缓存 + 起订阅。被 {@link list} 用 inflight Map 包住去重。 */
+  private async fetchAndCache(service: string, group?: string): Promise<Instance[]> {
     const fresh = await this.registry.list(service, group);
-    this.cache.set(key, { instances: fresh, fetchedAt: now, subscribed: false });
+    const key = cacheKey(service, group);
+    this.cache.set(key, { instances: fresh, fetchedAt: Date.now(), subscribed: false });
     await this.subscribeOnce(service, group);
-    return callable(fresh);
+    return fresh;
   }
 
   /**
