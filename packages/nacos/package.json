@@ -1,6 +1,6 @@
 {
   "name": "@openconsole/nacos",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": false,
   "description": "Next.js 16 Nacos client — service discovery, dynamic config, and a fetch-compatible HTTP layer with plugins.",
   "keywords": [

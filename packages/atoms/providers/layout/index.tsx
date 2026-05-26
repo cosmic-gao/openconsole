@@ -4,8 +4,14 @@
  * 模块分层:
  * - {@link ./model `./model`}     纯数据模型:类型、默认值、cookie 编解码,服务端 / 客户端共享。
  * - {@link ./context `./context`}   `"use client"` —— React Context、状态 Provider、{@link useLayout} hook。
- * - 本文件                       服务端异步 Provider({@link LayoutProvider} / {@link SidebarProvider}),
+ * - 本文件                       服务端 Provider({@link LayoutProvider} / {@link SidebarProvider}),
  *                                负责在首屏渲染前从 cookie 还原状态,消除闪烁。
+ *
+ * 公开的 Provider 是**同步包装**:对外是普通组件,内部把读 cookie 的 async 工作
+ * 包在自带的 `<Suspense>` 边界里 —— 满足 Next 16 `cacheComponents` 模式
+ * 对动态 API(`cookies()`)必须在 Suspense 内访问的硬要求,业务方无需
+ * 在调用点再写 Suspense。cookies 几乎总是同请求即可读到,Suspense fallback
+ * 在实际运行中很少触发,体感无差异。
  *
  * @module
  */
@@ -48,15 +54,12 @@ export interface LayoutProviderProps {
 }
 
 /**
- * 侧边栏布局上下文 Provider —— **服务端**异步组件,先在服务端读 cookie
- * 还原持久化配置,再把首屏渲染对齐到真实值。
+ * 侧边栏布局上下文 Provider —— 服务端读 cookie 还原持久化配置,首屏渲染
+ * 即为最终态,消除「客户端 useEffect 读 storage → 翻转」造成的闪烁。
  *
- * 这样做避免了「客户端 useEffect 读 storage → 翻转 → 闪烁」的经典问题:
- * HTML 直接以正确的 `variant` / `collapsible` / `side` 渲染,hydration
- * 不会触发布局抖动。
- *
- * 业务方调用接口与普通组件一致 —— 直接 `<LayoutProvider>...</LayoutProvider>`,
- * 异步性由 React Server Components 自动处理,父组件无需 `await`。
+ * 内部用 `<Suspense fallback={null}>` 包了异步的 cookie 读取,满足 Next 16
+ * `cacheComponents` 模式对动态 API 必须在 Suspense 内访问的要求 —— 调用方
+ * **无需**再额外用 Suspense 包裹。
  *
  * @example
  * ```tsx
@@ -66,10 +69,25 @@ export interface LayoutProviderProps {
  * <LayoutProvider defaultConfig={{ side: "right" }}>{children}</LayoutProvider>
  * ```
  */
-export async function LayoutProvider({
+export function LayoutProvider({
   children,
   defaultConfig,
   storage = DEFAULT_LAYOUT_COOKIE,
+}: LayoutProviderProps) {
+  return (
+    <React.Suspense fallback={null}>
+      <LayoutProviderAsync defaultConfig={defaultConfig} storage={storage}>
+        {children}
+      </LayoutProviderAsync>
+    </React.Suspense>
+  );
+}
+
+/** {@link LayoutProvider} 的异步内核 —— 实际读 cookie 的地方。 */
+async function LayoutProviderAsync({
+  children,
+  defaultConfig,
+  storage,
 }: LayoutProviderProps) {
   const raw = storage ? await readCookie(storage) : undefined;
   const persisted = raw ? decodeLayoutConfig(raw) : undefined;
@@ -103,14 +121,13 @@ export interface SidebarProviderProps
 }
 
 /**
- * 侧边栏 Provider —— **服务端**异步组件,在服务端读 `sidebar_state` cookie
- * 算出 `defaultOpen`,再委托给 shadcn 的 `SidebarProvider` 渲染。
+ * 侧边栏 Provider —— 在服务端读 `sidebar_state` cookie 算出 `defaultOpen`,
+ * 再委托给 shadcn 的 `SidebarProvider`,消除「刷新瞬间侧边栏先展开再收起」
+ * 的闪烁。
  *
- * 解决的问题:shadcn 自己只写不读 cookie,默认 `defaultOpen=true`,
- * 如果用户上次收起了侧边栏,刷新瞬间会先以「展开」渲染再翻成「收起」,
- * 产生明显闪烁。
+ * 内部自带 `<Suspense fallback={null}>` 边界,无需在调用点额外包。
  *
- * 本组件在服务端就把 cookie 还原成正确的 `defaultOpen`,HTML 首屏即终态。
+ * 接口与 shadcn 的 `SidebarProvider` 兼容,可直接替换。
  *
  * @example
  * ```tsx
@@ -119,10 +136,30 @@ export interface SidebarProviderProps
  * <SidebarProvider>{children}</SidebarProvider>
  * ```
  */
-export async function SidebarProvider({
+export function SidebarProvider({
   children,
   defaultOpen,
   storage = DEFAULT_SIDEBAR_COOKIE,
+  ...props
+}: SidebarProviderProps) {
+  return (
+    <React.Suspense fallback={null}>
+      <SidebarProviderAsync
+        defaultOpen={defaultOpen}
+        storage={storage}
+        {...props}
+      >
+        {children}
+      </SidebarProviderAsync>
+    </React.Suspense>
+  );
+}
+
+/** {@link SidebarProvider} 的异步内核。 */
+async function SidebarProviderAsync({
+  children,
+  defaultOpen,
+  storage,
   ...props
 }: SidebarProviderProps) {
   let resolved = defaultOpen;

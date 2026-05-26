@@ -63,11 +63,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-> **重要**：`<LayoutProvider>` 与 `<SidebarProvider>` 是**异步服务端组件**
-> —— 它们会在服务端读 cookie 把持久化状态还原后再渲染，保证首屏 HTML
-> 就是最终态，**消除刷新瞬间的闪烁**。务必从 `@openconsole/atoms`
-> 而不是 `@openconsole/shadcn` 引入 `SidebarProvider`。详情见
-> [状态持久化与防闪烁](#状态持久化与防闪烁)。
+> **重要**：`<LayoutProvider>` 与 `<SidebarProvider>` 都在服务端读 cookie
+> 把持久化状态还原后再渲染，保证首屏 HTML 就是最终态，**消除刷新瞬间的闪烁**。
+> 务必从 `@openconsole/atoms` 而不是 `@openconsole/shadcn` 引入
+> `SidebarProvider`。详情见 [状态持久化与防闪烁](#状态持久化与防闪烁)。
 
 ### Dashboard 骨架
 
@@ -304,7 +303,7 @@ const { font, setFont, options } = useFont();
 
 ### `<LayoutProvider>` + `useLayout()`
 
-异步**服务端**组件。在服务端读 cookie 把持久化配置喂给客户端，HTML 首屏直接渲染为最终态 —— **没有闪烁**。
+服务端读 cookie 把持久化配置喂给客户端，HTML 首屏直接渲染为最终态 —— **没有闪烁**。组件内部已自带 `<Suspense fallback={null}>` 包住 cookie 读取，满足 Next 16 `cacheComponents` 模式对动态 API 的硬要求，**业务方不需要再用 Suspense 包**。
 
 ```tsx
 <LayoutProvider defaultConfig={{ variant: "inset", collapsible: "icon", side: "left" }}>
@@ -336,9 +335,10 @@ interface LayoutConfig {
 
 ### `<SidebarProvider>`
 
-异步**服务端**组件，包装 shadcn 的 `SidebarProvider`：在服务端读
-`sidebar_state` cookie 算出 `defaultOpen`，把展开 / 收起状态在首屏渲染时
-就准确还原 —— 解决「刷新瞬间侧边栏先展开再收起」的闪烁。
+包装 shadcn 的 `SidebarProvider`：在服务端读 `sidebar_state` cookie 算出
+`defaultOpen`，把展开 / 收起状态在首屏渲染时就准确还原 —— 解决「刷新瞬间
+侧边栏先展开再收起」的闪烁。同样内部自带 `<Suspense fallback={null}>`，
+满足 Next 16 `cacheComponents` 的要求，**调用点不需要额外包 Suspense**。
 
 ```tsx
 // 从 atoms 引入（不要从 shadcn 引入）
