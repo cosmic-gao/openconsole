@@ -11,7 +11,7 @@
     "postgres-js",
     "pgbouncer",
     "cache-components",
-    "openconsole-template",
+    "openconsole-scaffold",
     "typescript",
     "type-safety"
   ],
@@ -27,5 +27,5 @@
     "redis-development"
   ],
   "updated": "2026-05-26",
-  "notes": "Self-contained Drizzle ORM skill for the unified Next.js app scaffold. Uses drizzle-orm/postgres-js + postgres package (not pg/node-postgres), pgbouncer transaction mode, DATABASE_CASING auto-mapping, _cached.ts + Server Action split for Cache Components integration. Postgres-only — no MySQL/SQLite drift. Generic Drizzle knowledge lives in references/ for deep dives."
+  "notes": "Self-contained Drizzle ORM skill for the unified Next.js app scaffold. Uses drizzle-orm/postgres-js + postgres package (not pg/node-postgres), prepare:false so it works for both direct PG :5432 and pgbouncer transaction mode :6432, DATABASE_CASING auto-mapping, _cached.ts + Server Action split for Cache Components integration. Postgres-only — no MySQL/SQLite drift. DATABASE_URL provided by user (scaffold has no docker-compose). Generic Drizzle knowledge lives in references/ for deep dives."
 }

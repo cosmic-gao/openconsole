@@ -15,7 +15,6 @@
 | `config/` | 静态配置(无副作用) | `site.ts` / `sidebar.ts` 等纯数据 | 任何带状态 / 有副作用的代码 |
 | `contexts/` | 跨 feature 的全局 Context | 真正跨 feature 的 Provider | 单 feature 用的 Context(放 `features/<domain>/contexts/`) |
 | `drizzle/` | drizzle-kit 生成的迁移 | SQL 迁移 + meta | 手写 SQL、其它 ORM 文件 |
-| `docker/` | 本地开发依赖容器 | `docker-compose.yaml` + 辅助 dockerfile | 生产部署用的 Dockerfile(走 standalone 输出,运维另出 Dockerfile) |
 | `public/` | 静态资源 | favicon、图片、字体、robots.txt 等 | 任何代码 / 配置 |
 
 > ⚠️ **根目录禁止出现**:`src/` / `components/` / `hooks/` / `utils/` / `pages/` /
@@ -215,16 +214,15 @@ pnpm db:migrate
 
 ---
 
-## `docker/` —— 本地开发依赖
+## 外部依赖(Postgres / Redis / Nacos)
 
-只放**本地起 dev 依赖**用的 compose / dockerfile。生产部署的 Dockerfile **不在这里**(由运维基于 `output: "standalone"` 另出)。
+骨架**不包含** `docker/` 目录。Postgres / Redis / Nacos 都是外部依赖,由运维 / 平台提供:
 
-模板已经预置:
+- 连接串通过 `.env.local` 注入(scaffold 流程 Step 2 问用户)
+- 本地开发需要起服务时,自己 `docker run` 或装本机服务,跟骨架解耦
+- 生产部署的 Dockerfile 由运维基于 `output: "standalone"` 另出
 
-- `pgbouncer`:Postgres 连接池(端口 6432)。应用通过它连 Postgres,不要直连 5432。
-- `nacos`:服务注册中心(standalone 模式,端口 8848 / 9848)。
-
-加新本地依赖(比如 Kafka / MinIO)在同一个 compose 文件里加 service。
+`lib/db/index.ts` 的 `prepare: false` 让 Postgres **直连 5432** 与 **经 pgbouncer transaction mode 6432** 两种部署都兼容。
 
 ---
 

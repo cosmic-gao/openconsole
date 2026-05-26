@@ -1,9 +1,9 @@
 # Query Patterns
 
-Advanced querying techniques, subqueries, CTEs, and raw SQL in Drizzle ORM. All examples assume the scaffold's setup: PostgreSQL via `drizzle-orm/postgres-js` + `postgres`, behind pgbouncer transaction mode on port 6432.
+Advanced querying techniques, subqueries, CTEs, and raw SQL in Drizzle ORM. All examples assume the scaffold's setup: PostgreSQL via `drizzle-orm/postgres-js` + `postgres`, `prepare: false` (works for direct PG :5432 or behind pgbouncer transaction mode :6432).
 
 > ⚠️ **Two things this file deliberately omits, because they conflict with the unified scaffold:**
-> - **Prepared statements** (`.prepare()`) — pgbouncer transaction mode does not share sessions, breaking `PREPARE` / `EXECUTE`. See the "Prepared Statements — DO NOT USE" section below.
+> - **Prepared statements** (`.prepare()`) — the scaffold has `prepare: false` because pgbouncer transaction mode cannot preserve session state for `PREPARE` / `EXECUTE`. Since the scaffold can't know if the user's Postgres is behind pgbouncer, **never** use `.prepare()` in app code. See the "Prepared Statements — DO NOT USE" section below.
 > - **MySQL / SQLite syntax** — the scaffold is Postgres-only. Drizzle's API is portable but the examples here use `drizzle-orm/pg-core` exclusively.
 
 ## Subqueries
@@ -311,9 +311,9 @@ const numberedUsers = await db
 
 ## Prepared Statements — DO NOT USE
 
-> ⚠️ **The unified scaffold runs Postgres behind pgbouncer in transaction mode**, which does NOT preserve session state across statements. Drizzle's `.prepare()` API depends on `PREPARE` / `EXECUTE` round-trips that share a session, so prepared statements **silently break or hang** under pgbouncer transaction mode.
+> ⚠️ **Prepared statements break under pgbouncer transaction mode**, which doesn't preserve session state across statements. Since `DATABASE_URL` is user-provided and may point at a pgbouncer endpoint, the scaffold defensively sets `prepare: false` in `lib/db/index.ts` for **all** deployments. Don't call `.prepare()` in business code — even if your current Postgres is direct, a future move to pgbouncer would silently break your queries.
 >
-> The scaffold's `lib/db/index.ts` already passes `prepare: false` to `postgres-js` for this reason. Do not call `.prepare()` in business code. If you genuinely need PREPARE — e.g. you're running a one-off batch script that bypasses pgbouncer and talks to Postgres directly on port 5432 — do it outside the app process.
+> If you genuinely need PREPARE (e.g. a one-off batch script that always talks to direct Postgres), do it outside the app process where you can override `prepare: true`.
 
 ## Batch Operations
 

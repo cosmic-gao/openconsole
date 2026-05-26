@@ -1,8 +1,8 @@
 # Performance (template-aligned)
 
-Drizzle performance tuning for the unified Next.js scaffold. All advice assumes the scaffold's stack: `drizzle-orm/postgres-js` + `postgres@^3.4.9`, pgbouncer transaction mode on port 6432, `prepare: false`.
+Drizzle performance tuning for the unified Next.js scaffold. Stack: `drizzle-orm/postgres-js` + `postgres@^3.4.9`, `prepare: false`. `DATABASE_URL` is provided by the user — the scaffold supports both **direct Postgres :5432** and **Postgres behind pgbouncer transaction mode :6432**.
 
-> Generic Drizzle docs often show `pg.Pool` / `node-postgres` examples and prepared-statement patterns. **Ignore those for our scaffold** — we use `postgres-js`, and prepared statements break under pgbouncer transaction mode.
+> Generic Drizzle docs often show `pg.Pool` / `node-postgres` examples and prepared-statement patterns. **Ignore those for this scaffold** — we use `postgres-js`, and `.prepare()` is unsafe whenever the user's Postgres might be behind pgbouncer transaction mode (which the scaffold has no way to know).
 
 ---
 
@@ -19,17 +19,17 @@ postgres(env.DATABASE_URL, {
 });
 ```
 
-**Sizing rule:** `N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE` (pgbouncer default in the scaffold is `25`).
+**Sizing rule depends on the deployment**:
 
-- `N = 5` Next.js replicas × `DATABASE_POOL_MAX = 5` = 25, fully saturates pgbouncer.
-- More replicas → lower `DATABASE_POOL_MAX` OR raise pgbouncer's `DEFAULT_POOL_SIZE` (and `MAX_CLIENT_CONN`).
+- **Direct Postgres (5432)**: `N × DATABASE_POOL_MAX ≤ Postgres max_connections` (typically 100 by default). Each Next.js replica's `DATABASE_POOL_MAX` is its own slice.
+- **Behind pgbouncer transaction mode (6432)**: `N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE`. Pgbouncer multiplexes many client connections onto a smaller server-side pool.
 
 **Symptoms of misconfigured pool:**
 
 | Symptom | Likely cause |
 | --- | --- |
-| Requests stall ~10s then "connect_timeout" | pgbouncer DEFAULT_POOL_SIZE exhausted |
-| Random "no more connections allowed" errors | N × DATABASE_POOL_MAX > pgbouncer DEFAULT_POOL_SIZE |
+| Requests stall ~10s then "connect_timeout" | Pool exhausted (`DEFAULT_POOL_SIZE` for pgbouncer, or `max_connections` for direct PG) |
+| Random "no more connections allowed" / "too many clients already" errors | N × DATABASE_POOL_MAX > server-side limit |
 | Slow startup | `lazyConnect` not enabled, pool warming up |
 
 **Never** open new `postgres()` instances per request — the scaffold uses a `globalThis` singleton to prevent dev HMR connection leaks.
@@ -171,7 +171,7 @@ console.log(query.toSQL());
 ## 7. Batch inserts in one statement, not in a loop
 
 ```ts
-// ❌ N round-trips through pgbouncer
+// ❌ N round-trips to Postgres
 for (const row of bulk) {
   await db.insert(notes).values(row);
 }
@@ -197,7 +197,7 @@ for (let i = 0; i < bulk.length; i += CHUNK) {
 }
 ```
 
-If you need raw `COPY` throughput (millions of rows), do it outside the app process — connect directly to Postgres on port 5432 from a one-off script, bypassing pgbouncer.
+If you need raw `COPY` throughput (millions of rows), do it outside the app process — a one-off script that connects directly to Postgres (bypassing pgbouncer if there is one), where you can also enable prepared statements.
 
 ---
 
@@ -214,7 +214,7 @@ Cache Components + Redis cache backend together do per-tag invalidation across a
 
 ## 9. Use `db.transaction` only when atomicity is required
 
-Transactions on pgbouncer transaction mode are fine as long as **everything** stays inside one `db.transaction(async (tx) => { ... })` call:
+Transactions are fine on either deployment (direct Postgres or pgbouncer transaction mode), **as long as everything stays inside one `db.transaction(async (tx) => { ... })` call**:
 
 ```ts
 await db.transaction(async (tx) => {
@@ -225,24 +225,25 @@ await db.transaction(async (tx) => {
 
 **Anti-patterns:**
 
-- Spanning a transaction across HTTP requests — pgbouncer reclaims the connection between statements
+- Spanning a transaction across HTTP requests — pgbouncer reclaims the connection between statements; on direct PG you'd still hold a backend connection for too long
 - Calling external APIs inside a transaction — locks held the whole time
-- Long-running transactions with sleep / heavy compute — block the pgbouncer pool
+- Long-running transactions with sleep / heavy compute — block the connection pool (worse on pgbouncer where the pool is smaller)
 
 ---
 
 ## 10. Monitoring
 
-Track these from Postgres / pgbouncer:
+Track these (the exact source depends on whether the user's Postgres is behind pgbouncer):
 
-| Metric | Healthy | Warning |
-| --- | --- | --- |
-| pgbouncer `cl_active` | < 80% MAX_CLIENT_CONN | Increase pool or scale down callers |
-| pgbouncer `sv_active` | < 80% DEFAULT_POOL_SIZE | Tune `DATABASE_POOL_MAX` or `DEFAULT_POOL_SIZE` |
-| Postgres `pg_stat_activity` long queries | none > 30s | Investigate / cancel |
-| Postgres `idle_in_transaction` | none | App is holding txns too long |
+| Metric | Source | Healthy | Warning |
+| --- | --- | --- | --- |
+| Postgres `pg_stat_activity` count | direct PG / via pgbouncer backend | < 80% `max_connections` (PG) or `DEFAULT_POOL_SIZE` (pgbouncer) | Tune `DATABASE_POOL_MAX` |
+| Postgres `pg_stat_activity` long queries | both | none > 30s | Investigate / cancel |
+| Postgres `idle_in_transaction` | both | none | App is holding txns too long |
+| pgbouncer `cl_active` | pgbouncer only | < 80% MAX_CLIENT_CONN | Increase pool or scale down callers |
+| pgbouncer `sv_active` | pgbouncer only | < 80% DEFAULT_POOL_SIZE | Tune `DATABASE_POOL_MAX` or pgbouncer config |
 
-Expose pgbouncer admin console for these (`pgbouncer -p <port> -admin`), or scrape with `pgbouncer_exporter` + Prometheus.
+For pgbouncer deployments, expose its admin console (`pgbouncer -p <port> -admin`) or scrape with `pgbouncer_exporter` + Prometheus. For direct Postgres, scrape `pg_stat_*` views or use `postgres_exporter`.
 
 ---
 
@@ -253,7 +254,7 @@ Expose pgbouncer admin console for these (`pgbouncer -p <port> -admin`), or scra
 | `import { Pool } from "pg"` | `import postgres from "postgres"` (already in `lib/db/index.ts`) |
 | `.prepare("name")` | Plain query — let postgres-js handle prepared-statement-like reuse internally |
 | New `postgres()` per request | Use the `globalThis` singleton in `lib/db/index.ts` |
-| Connect to `localhost:5432` | Connect through pgbouncer on `6432` |
+| Modify `prepare: false` | Leave it — required if user's PG is behind pgbouncer, harmless otherwise |
 | `db.transaction` spanning HTTP calls | Keep everything inside one server action |
 | Manual LRU around `_cached.ts` reads | Trust `'use cache'` + `cacheTag` + cache-handler.mjs |
 | `db.select()` on wide tables in list view | Select only the columns the UI shows |

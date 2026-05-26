@@ -143,7 +143,6 @@
 │
 ├── contexts/                           # 跨 feature 全局 Context(默认空)
 ├── drizzle/                            # drizzle-kit 生成的迁移
-├── docker/                             # 本地开发依赖(pgbouncer + nacos)
 ├── public/                             # 静态资源
 │
 ├── package.json
@@ -183,8 +182,8 @@
 - 统一的 Provider 嵌套链(`NuqsAdapter` → `ThemeProvider` → `FontProvider` → `QueryProvider`)
 - 统一的 Dashboard layout(`AuthProvider` → `LayoutProvider` → `SidebarProvider` → `Sidebar` + `Header`)
 - 统一的错误页(5 个 special files + (errors) 路由组)
-- 统一的本地依赖容器(pgbouncer + nacos)
 - 一份示范 feature(`features/notes`)展示 Cache Components + Drizzle + TanStack Query + react-hook-form 完整闭环
+- Postgres / Redis / Nacos 由用户在 Step 2 提供连接串,**不**预置 docker-compose
 
 详细的逐文件内容、配置语义、何时改、不准改什么 —— 见 [`skill:nextjs-best-practices`](./nextjs-best-practices/SKILL.md) 入口与 `references/`。
 
@@ -267,8 +266,7 @@ Nacos 相关 env(`NACOS_*`)是例外:`@openconsole/nacos` 直接读 `process.env
 
 ```bash
 pnpm install                                                # 装包
-docker compose -f docker/docker-compose.yaml up -d         # 本地 pgbouncer + nacos(Redis 由各机部署)
-pnpm db:push                                                # 数据库迁移(dev 直推)
+pnpm db:push                                                # 数据库迁移(dev 直推,要求 DATABASE_URL 已配)
 pnpm dev                                                    # 开发服(localhost:3000)
 pnpm build                                                  # 生产构建
 pnpm start                                                  # 启动生产
@@ -279,11 +277,13 @@ pnpm db:studio                                              # Drizzle Studio
 curl http://localhost:3000/api/health                       # 健康检查
 ```
 
+> Postgres / Redis / Nacos **不在骨架内**。Scaffold 流程的 Step 2 会问用户拿连接串。本地开发若需要起 Postgres / Redis,自己 `docker run` 或装本机服务,跟骨架解耦。
+
 **禁止**:
 
 - 用 `npm` / `yarn`(锁文件冲突)
 - 用 `npx create-next-app`(目录约定冲突)
-- 跳过 Docker 直连 `localhost:5432`(必须经 pgbouncer 的 6432)
+- 在骨架里加 `docker/docker-compose.yaml` —— 外部依赖由运维 / 平台提供
 
 ---
 

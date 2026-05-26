@@ -158,7 +158,7 @@
 
 ```bash
 [ ] pnpm install                                           # 装包成功
-[ ] docker compose -f docker/docker-compose.yaml up -d     # 本地依赖起来
+[ ] 已确认 .env.local 的 DATABASE_URL / REDIS_URL / NACOS_* 可连(`psql $DATABASE_URL` / `redis-cli -u $REDIS_URL ping`)
 [ ] pnpm db:push                                           # 迁移成功
 [ ] pnpm dev                                               # dev server 起来
 [ ] curl http://localhost:3000/api/health                  # 返回 {"status":"ok"}
@@ -194,8 +194,8 @@
 | `unauthorized is not a function` | `experimental.authInterrupts` 没开 | `next.config.ts` |
 | Hydration mismatch | 服务端 / 客户端首屏不一致 | `theme.md` 防闪烁 / `useEffect` 包 window |
 | `next/dist/...` build 报 native binding | `serverExternalPackages` 漏 | `next.config.ts` |
-| pgbouncer 连接超时 | Docker 没起,或 N×POOL_MAX > 25 | `configs.md` env 段 |
-| Nacos 注册不上 | NACOS_SERVER 错 / 网络 / docker 容器没启 | `docker compose logs nacos` |
+| Postgres 连接超时 | `DATABASE_URL` 错;DB 不通;若经 pgbouncer 还可能 N×POOL_MAX > DEFAULT_POOL_SIZE | `configs.md` env 段 |
+| Nacos 注册不上 | NACOS_SERVER 错 / 网络;或不需要 Nacos 时却开了 `NACOS_PROVIDER_ENABLED=true` | 关掉或修 `NACOS_SERVER` |
 | TanStack Query 报 dehydration error | Cache Components + 'use server' queryFn + HydrationBoundary | 模板用 `initialData` 不用 Hydration |
 | `Module not found: server-only` | 客户端组件 import 了 server-only 模块 | 检查 import 链 |
 | `'use cache' cannot use cookies()` | `_cached.ts` 里读 cookies | 把鉴权挪到 `actions.ts` |

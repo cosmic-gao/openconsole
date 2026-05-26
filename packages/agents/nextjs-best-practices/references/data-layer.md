@@ -11,8 +11,8 @@
 ### 配置链
 
 ```
-.env.local            DATABASE_URL=postgres://...@localhost:6432/postgres
-       │              ↑ 必须经 pgbouncer(6432)而不是直连 5432
+.env.local            DATABASE_URL=postgres://...@<host>:<5432 或 6432>/<db>
+       │              ↑ 由用户提供;直连 5432 或经 pgbouncer transaction mode 6432 都可以
        ▼
 env.ts                DATABASE_URL: z.url().startsWith("postgres")
        │              DATABASE_POOL_MAX: 5  (per-instance pool)
@@ -56,9 +56,9 @@ export type NewNote = typeof notes.$inferInsert;    // 插入用的形态
 - DB 端 snake_case(`created_at` / `user_id`)
 - 由 `casing: "snake_case"` 自动转换(模板默认)
 
-### pgbouncer 注意事项
+### pgbouncer 注意事项(如果用户的 Postgres 在 pgbouncer transaction mode 后面)
 
-模板的 docker-compose 起的是 **transaction mode** pgbouncer。约束:
+骨架不预置 pgbouncer 容器 —— `lib/db/index.ts` 的 `prepare: false` 让直连 5432 与经 pgbouncer 6432 两种都跑得了。**如果**用户的 `DATABASE_URL` 指向 pgbouncer transaction mode,以下约束生效:
 
 | ✅ 可以 | ❌ 不可以 |
 | --- | --- |
@@ -67,7 +67,7 @@ export type NewNote = typeof notes.$inferInsert;    // 插入用的形态
 | RR 读 / 写 | session-level 设置(`SET LOCAL` 限于事务内可以) |
 |  | 长事务跨多 query —— 会卡住整个 pool |
 
-`N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE (25)`,默认 5 让 5 个 Next.js 实例能跑满。
+经 pgbouncer 时:`N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE`(运维侧 pgbouncer 配置)。骨架默认 `DATABASE_POOL_MAX=5`。直连 5432 时不需要满足该约束,只需考虑 Postgres 自身的 `max_connections`。
 
 ---
 

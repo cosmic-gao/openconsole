@@ -269,10 +269,10 @@ export const onRequestError = async (error, request, context) => { ... };
 NEXT_PUBLIC_AUTH_URL=https://<SSO 站>
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-DATABASE_URL=postgres://postgres:123456@localhost:6432/postgres
+DATABASE_URL=<由用户填,如 postgres://user:pwd@host:5432/db 或经 pgbouncer 的 6432>
 REDIS_URL=redis://:123456@localhost:6379
 
-NACOS_SERVER=127.0.0.1:8848
+NACOS_SERVER=<由用户填,如 nacos.internal:8848;不接 Nacos 时整段删,改 NACOS_PROVIDER_ENABLED=false>
 NACOS_NAMESPACE=public
 NACOS_USERNAME=nacos
 NACOS_PASSWORD=nacos
@@ -290,7 +290,7 @@ NACOS_PROVIDER_SERVICE=<your-service>
 ### 可选
 
 ```bash
-DATABASE_POOL_MAX=5          # 默认 5,N × max ≤ pgbouncer DEFAULT_POOL_SIZE
+DATABASE_POOL_MAX=5          # 默认 5;经 pgbouncer 时 N × max ≤ pgbouncer DEFAULT_POOL_SIZE,直连 Postgres 时只需考虑 PG 的 max_connections
 DATABASE_CASING=snake_case    # 默认 snake_case;改 camelCase 同步改 drizzle.config.ts
 
 COOKIE_TOKEN=token            # 默认 token

@@ -1,11 +1,11 @@
 ---
 name: drizzle-orm
 description: |
-  公司内部 Next.js 项目的 Drizzle ORM 使用规范,自包含完整定义。统一骨架用 **`drizzle-orm/postgres-js` + `postgres`** 驱动(不是 `node-postgres` / `pg`),通过 pgbouncer transaction mode 连接(6432 端口),按 `DATABASE_CASING=snake_case` 自动转换 TS camelCase ↔ DB snake_case,客户端是 `globalThis` 单例 + `import "server-only"`。
+  公司内部 Next.js 项目的 Drizzle ORM 使用规范,自包含完整定义。统一骨架用 **`drizzle-orm/postgres-js` + `postgres`** 驱动(不是 `node-postgres` / `pg`);客户端是 `globalThis` 单例 + `import "server-only"`;通过 `prepare: false` 同时兼容**直连 Postgres :5432** 与**经 pgbouncer transaction mode :6432** 两种部署 —— `DATABASE_URL` 由用户在 scaffold 流程 Step 2 提供。按 `DATABASE_CASING=snake_case` 自动转换 TS camelCase ↔ DB snake_case。
 
   必须在以下场景触发,即使用户没说出 skill 名:加表 / 新表 / database schema / `pgTable` / 加字段 / 改字段 / 写 schema / 生成迁移 / `drizzle-kit generate` / `pnpm db:generate` / `pnpm db:push` / `pnpm db:migrate` / `pnpm db:studio` / `db.query.*.findMany` / `db.select` / `db.insert` / `db.update` / `db.delete` / `eq()` / `desc()` / `inArray()` / `returning()` / `$inferSelect` / `$inferInsert` / `relations()` / one-to-many / many-to-many / `db.transaction` / pgbouncer / DATABASE_URL / DATABASE_POOL_MAX / DATABASE_CASING / `lib/db/` / `drizzle.config.ts` / 写 `_cached.ts` / `'use cache'` 函数里查数据库 / `updateTag` 后查数据库 / N+1 / 列名映射 / 改 connection pool / postgres-js / prepared statements / Drizzle Studio。
 
-  **禁止**:用 `pg` / `node-postgres` / `Prisma` / `TypeORM` / 直连 5432 跳过 pgbouncer / 在 `_cached.ts` 里调 `Date.now()` / 直接 `db.insert(...)` 不经 zod / 在 `app/api/<entity>/route.ts` 里跑 CRUD(必须走 Server Action) / 在客户端组件里 import `@/lib/db` / 跨 feature 直接 import 别人的 `_cached.ts`。
+  **禁止**:用 `pg` / `node-postgres` / `Prisma` / `TypeORM` / 在 `_cached.ts` 里调 `Date.now()` / 直接 `db.insert(...)` 不经 zod / 在 `app/api/<entity>/route.ts` 里跑 CRUD(必须走 Server Action) / 在客户端组件里 import `@/lib/db` / 跨 feature 直接 import 别人的 `_cached.ts` / 设 `prepare: true`(若用户的 Postgres 在 pgbouncer transaction mode 后面会断)。
 
   全局架构约束见同目录 `AGENTS.md`;数据层全景 + Cache Components 整合见 `nextjs-best-practices/references/data-layer.md`;Server Action 写法见 `nextjs-best-practices` skill。
 ---
@@ -20,7 +20,8 @@ description: |
 > - `drizzle.config.ts` —— drizzle-kit 配置
 > - `features/<domain>/_cached.ts` + `features/<domain>/actions.ts` —— `'use cache'` + Server Action 闭环
 > - `env.ts` —— `DATABASE_URL` / `DATABASE_POOL_MAX` / `DATABASE_CASING`
-> - `docker/docker-compose.yaml` —— pgbouncer transaction mode
+>
+> **Postgres 不在骨架内**。`DATABASE_URL` 由用户在 scaffold 流程 Step 2 提供(直连 5432 或经 pgbouncer 6432 都行)。骨架不预置 docker-compose。
 
 ---
 
@@ -43,10 +44,10 @@ const globalForDb = globalThis as unknown as {
 const client =
   globalForDb.__pgClient ??
   postgres(env.DATABASE_URL, {
-    max: env.DATABASE_POOL_MAX,    // per-instance pool;N × max ≤ pgbouncer DEFAULT_POOL_SIZE (25)
+    max: env.DATABASE_POOL_MAX,    // per-instance pool;经 pgbouncer 时 N × max ≤ DEFAULT_POOL_SIZE
     idle_timeout: 20,
     connect_timeout: 10,
-    prepare: false,                // pgbouncer transaction mode 不支持 prepared statements
+    prepare: false,                // 同时兼容直连 Postgres / 经 pgbouncer transaction mode
   });
 
 if (process.env.NODE_ENV !== "production") globalForDb.__pgClient = client;
@@ -61,12 +62,12 @@ export type Database = typeof db;
 | --- | --- |
 | `drizzle-orm/postgres-js` + `postgres` | Edge / serverless 兼容更好,bundle 比 `pg` 小,模板统一选 |
 | `import "server-only"` | 防止客户端组件意外 import `db`,触发 build 错 |
-| `globalThis.__pgClient` 缓存 | Next dev HMR 每次重编都会重 require 此模块;不缓存的话每次都开新连接,几秒内能打爆 pgbouncer pool |
-| `max: env.DATABASE_POOL_MAX`(默认 5) | pgbouncer DEFAULT_POOL_SIZE = 25,5 个 Next 实例 × 5 ≤ 25 |
-| `prepare: false` | pgbouncer transaction mode 不持有会话,prepared statements 会失效 |
+| `globalThis.__pgClient` 缓存 | Next dev HMR 每次重编都会重 require 此模块;不缓存会几秒内打爆 Postgres / pgbouncer 的连接池 |
+| `max: env.DATABASE_POOL_MAX`(默认 5) | 经 pgbouncer 时需满足 N × max ≤ DEFAULT_POOL_SIZE;直连 Postgres 时只需考虑 PG 的 `max_connections` |
+| `prepare: false` | pgbouncer transaction mode 不持有会话,prepared statements 会断;直连 Postgres 时只是放弃 prep statement 复用(轻微 perf 损失,功能正常)—— 所以这个值**两种部署都安全** |
 | `casing: env.DATABASE_CASING` | TS 里写 `createdAt`,DB 里自动变 `created_at`,**单一事实来源在 TS** |
 
-**禁止**:用 `pg` / `node-postgres` / `Pool`,在客户端 import `@/lib/db`,直连 5432 跳过 pgbouncer,设 `prepare: true`。
+**禁止**:用 `pg` / `node-postgres` / `Pool`,在客户端 import `@/lib/db`,设 `prepare: true`(若用户 Postgres 在 pgbouncer transaction mode 后面会断)。
 
 ---
 
@@ -144,7 +145,7 @@ pnpm db:studio    # 起一个 Drizzle Studio,浏览器看数据
 
 - 手写 SQL 进 `drizzle/<num>_*.sql` —— 让 drizzle-kit 生成
 - 在 prod 跑 `db:push`(会跳过迁移历史,容易丢字段)
-- 在 dev 跑 `db:migrate` 但没起 pgbouncer / DB
+- 在 dev 跑 `db:migrate` 但 DB 不通(`.env.local` 的 `DATABASE_URL` 错)
 
 ---
 
@@ -475,9 +476,9 @@ const { data: notes } = useSuspenseQuery({
 
 ---
 
-## 9. pgbouncer transaction mode 注意事项
+## 9. pgbouncer transaction mode 注意事项(如果用户的 Postgres 在 pgbouncer transaction mode 后面)
 
-模板的 `docker/docker-compose.yaml` 起的是 **transaction mode** pgbouncer:
+骨架不预置 pgbouncer 容器 —— `DATABASE_URL` 由用户提供。**只有当用户的 Postgres 在 pgbouncer transaction mode 后面**(URL 一般指向端口 `6432`)时,下面的约束才生效。直连 Postgres 5432 的用户可以跳过本节。
 
 | ✅ 可以 | ❌ 不可以 |
 | --- | --- |
@@ -486,18 +487,16 @@ const { data: notes } = useSuspenseQuery({
 | RR 读 / 写 | session-level `SET`(`SET LOCAL` 限于事务内 OK) |
 |  | 长事务跨多个 query —— 会卡住整个 pool |
 
-`N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE(默认 25)`。默认 `DATABASE_POOL_MAX=5` 让 5 个 Next 实例都能跑满。
+经 pgbouncer 时:`N × DATABASE_POOL_MAX ≤ pgbouncer DEFAULT_POOL_SIZE`(运维侧 pgbouncer 配置)。骨架默认 `DATABASE_POOL_MAX=5`,要调整就改 `.env.local` 的 `DATABASE_POOL_MAX`,同时通知运维 / 平台是否要调 pgbouncer 的 `DEFAULT_POOL_SIZE`。
 
-`docker/docker-compose.yaml` 的关键参数:
+**典型运维侧 pgbouncer 配置**(只是参考,**不由骨架管理**):
 
-```yaml
-POOL_MODE: transaction
-AUTH_TYPE: scram-sha-256
-DEFAULT_POOL_SIZE: 25
-MAX_CLIENT_CONN: 1000
+```ini
+POOL_MODE = transaction
+AUTH_TYPE = scram-sha-256
+DEFAULT_POOL_SIZE = 25
+MAX_CLIENT_CONN = 1000
 ```
-
-要调大,改 docker compose,**同时**改 `DATABASE_POOL_MAX`。
 
 ---
 
@@ -511,7 +510,7 @@ MAX_CLIENT_CONN: 1000
 - ❌ 客户端组件直接 `import { db } from "@/lib/db"` —— build 会报 server-only
 - ❌ 在 `app/api/<entity>/route.ts` 写 CRUD —— 用 Server Action
 - ❌ `prepare: true`(或漏掉 `prepare: false`)
-- ❌ 直接连 5432 —— 必须经 pgbouncer 6432
+- ❌ 修改 `prepare: false` 为 `prepare: true`(若用户 Postgres 在 pgbouncer transaction mode 后面会断)
 - ❌ 跨 feature 直接 `import { listNotesCached } from "@/features/notes/_cached"` —— 必须经 Server Action
 
 ---

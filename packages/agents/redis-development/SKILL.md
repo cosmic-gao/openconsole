@@ -207,7 +207,7 @@ cacheHandler: path.resolve(process.cwd(), "cache-handler.mjs"),
 | 入口 | `import { redis } from "@/lib/redis"` | 不 import,Next 自动用 |
 | 业务 key 前缀 | 自定义(`ratelimit:` / `captcha:` 等) | `<PROJECT_NAME>:cache:`(配置在 cache-handler) |
 | 出错怎么办 | ioredis 重试 + 业务捕获 | 自动 fall back 到 LRU |
-| dev 行为 | 跟生产一致(连 docker-compose 起的 Redis) | 总是 LRU(忽略 REDIS_URL) |
+| dev 行为 | 跟生产一致(连 `REDIS_URL` 指向的 Redis) | 总是 LRU(忽略 `REDIS_URL`) |
 
 两个连接是独立的 ioredis / redis@4 客户端(虽然 URL 相同),**不要**在业务代码里去 `import` cache-handler 的 client。
 
@@ -345,17 +345,13 @@ sub.on("message", (ch, msg) => console.log(ch, msg));
 ## 8. 命令速查
 
 ```bash
-# 起本地 Redis(模板的 docker-compose 不含 Redis,假设走外部 / 各机各部署)
+# 起本地 Redis(骨架不预置 docker-compose;按需自己起一个本机服务)
 docker run -p 6379:6379 redis:7-alpine
 
-# 或加进 docker/docker-compose.yaml 的 services:
-#   redis:
-#     image: redis:7-alpine
-#     command: redis-server --requirepass 123456
-#     ports: ["6379:6379"]
+# 或装本机 Redis 服务,然后把 .env.local 的 REDIS_URL 指过去
 
-# CLI 连接
-redis-cli -h localhost -p 6379 -a 123456
+# CLI 连接(按你 REDIS_URL 的形态调整)
+redis-cli -u $REDIS_URL ping
 
 # 在 CLI 里看 cache backend 写了啥
 KEYS <PROJECT_NAME>:cache:*           # 仅 dev / staging 时用,生产用 SCAN

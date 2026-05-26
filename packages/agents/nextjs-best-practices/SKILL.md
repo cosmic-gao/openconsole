@@ -26,39 +26,50 @@ description: |
 
 ---
 
-## 项目初始化（空目录搭骨架）
+## 项目初始化(空目录搭骨架)
 
-用户说"做一个 xxx APP"、"新建一个项目"、"搭一个后台"、"从零开始"时，执行以下流程：
+用户说「做一个 xxx APP」、「新建一个项目」、「搭一个后台」、「从零开始」时,执行以下流程。
 
-### Step 1：用 AskUserQuestion 问 3 个关键参数
+> **关键**:骨架**不带 docker-compose**,Postgres / Redis / Nacos 都是**外部依赖**,必须先问用户拿到连接串,否则 `.env.local` 没法生成。
+
+### Step 1:用 AskUserQuestion 问基础参数(项目身份 + 部署位置 + 登录)
 
 ```jsonc
 {
   "questions": [
     {
-      "question": "项目叫什么名字？这会写进 package.json 的 name 字段。",
+      "question": "项目叫什么名字?这会写进 package.json 的 name、cache-handler 的 keyPrefix、Nacos 注册名等。",
       "header": "项目名",
       "options": [
-        { "label": "shadcn-admin", "description": "默认值，仓库通用名" },
-        { "label": "my-app", "description": "示例：换成你的项目名" }
+        { "label": "shadcn-admin", "description": "默认值,演示用" },
+        { "label": "my-app", "description": "示例:换成你的项目名(小写、连字符)" }
       ],
       "multiSelect": false
     },
     {
-      "question": "在哪里创建？",
+      "question": "在哪里创建?",
       "header": "位置",
       "options": [
-        { "label": "在当前目录（当前目录必须是空的）", "description": "适合刚 git clone 完一个空仓库" },
+        { "label": "在当前目录(当前目录必须是空的)", "description": "适合刚 git clone 完一个空仓库" },
         { "label": "在子目录 ./<项目名>/", "description": "在工作目录下建一个新子目录" }
       ],
       "multiSelect": false
     },
     {
-      "question": "要不要顺手装登录回调？装了之后未登录访问会跳到外部登录页。",
+      "question": "本应用部署后的根 URL 是什么?会写到 NEXT_PUBLIC_APP_URL,登录回来要跳回这里。",
+      "header": "应用 URL",
+      "options": [
+        { "label": "http://localhost:3000", "description": "本地开发默认值" },
+        { "label": "https://app.example.com", "description": "示例:线上域名" }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "要不要顺手装登录回调?装了之后未登录访问会跳到外部登录页。",
       "header": "登录回调",
       "options": [
-        { "label": "要 —— 装好后顺便配登录", "description": "搭完骨架自动调用 nextjs-auth-callback skill" },
-        { "label": "先不要 —— 只搭骨架", "description": "之后可以单独说'加登录'再装" }
+        { "label": "要 —— 装好后顺便配登录", "description": "搭完骨架自动调用 nextjs-auth-callback skill,会再问登录页 URL" },
+        { "label": "先不要 —— 只搭骨架", "description": "之后可以单独说「加登录」再装。.env.local 里 NEXT_PUBLIC_AUTH_URL 留空即可" }
       ],
       "multiSelect": false
     }
@@ -66,33 +77,116 @@ description: |
 }
 ```
 
-### Step 2：准备目录
+### Step 2:用 AskUserQuestion 问外部依赖(Postgres / Redis / Nacos)
 
-`ls -la` 确认目标目录为空（只允许有 `.git` / `.gitignore`）。非空就停下来问用户。子目录模式先 `mkdir <name> && cd <name>`。
+```jsonc
+{
+  "questions": [
+    {
+      "question": "你的 Postgres 在哪里?填完整连接串。直连 5432 或经 pgbouncer transaction mode 的 6432 都行 —— lib/db/index.ts 的 prepare:false 让两种都兼容。",
+      "header": "DATABASE_URL",
+      "options": [
+        { "label": "postgres://postgres:postgres@localhost:5432/postgres", "description": "本地直连示例" },
+        { "label": "postgres://app:<pwd>@db.internal:6432/app", "description": "示例:经 pgbouncer 的内网 Postgres" }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "你的 Redis 在哪里?用于应用层(rate limit / pub-sub / 临时状态)+ Next cache backend(跨实例共享 `'use cache'`)。",
+      "header": "REDIS_URL",
+      "options": [
+        { "label": "redis://localhost:6379", "description": "本地无密码示例" },
+        { "label": "redis://:<pwd>@redis.internal:6379/0", "description": "示例:带密码 + db 编号" }
+      ],
+      "multiSelect": false
+    },
+    {
+      "question": "需要 Nacos 服务发现吗?用于本服务注册 + 调用其它内部服务(`nacos://service-name/...`)。",
+      "header": "Nacos",
+      "options": [
+        { "label": "不需要 —— 跳过", "description": ".env.local 里 NACOS_* 全删,NACOS_PROVIDER_ENABLED=false。本服务跑不上 Nacos,但也不调其它服务" },
+        { "label": "需要 —— 接着问 server / 命名空间 / 账号", "description": "下一步再问 NACOS_SERVER / NAMESPACE / USERNAME / PASSWORD" }
+      ],
+      "multiSelect": false
+    }
+  ]
+}
+```
 
-### Step 3：按 [`references/scaffold.md`](./references/scaffold.md) 的文件清单逐个 Write 创建
+如果用户在「Nacos」选了「需要」,**再追问 4 个值**:
 
-**严格按片段内容**——除了 `package.json` 的 `"name"` 字段换成用户填的项目名以外，**不要擅自改**任何片段内容。
+```jsonc
+{
+  "questions": [
+    { "question": "NACOS_SERVER 地址?(如 nacos.internal:8848,无 http:// 前缀)", "header": "NACOS_SERVER",
+      "options": [
+        { "label": "127.0.0.1:8848", "description": "本地默认" },
+        { "label": "nacos.internal:8848", "description": "示例:内网 Nacos" }
+      ], "multiSelect": false },
+    { "question": "NACOS_NAMESPACE?", "header": "NACOS_NAMESPACE",
+      "options": [
+        { "label": "public", "description": "默认命名空间" },
+        { "label": "<your-namespace>", "description": "示例:按环境分(dev/staging/prod)" }
+      ], "multiSelect": false },
+    { "question": "NACOS_USERNAME?", "header": "用户名",
+      "options": [
+        { "label": "nacos", "description": "默认账号" },
+        { "label": "<your-user>", "description": "示例" }
+      ], "multiSelect": false },
+    { "question": "NACOS_PASSWORD?", "header": "密码",
+      "options": [
+        { "label": "nacos", "description": "默认密码" },
+        { "label": "<your-password>", "description": "示例" }
+      ], "multiSelect": false }
+  ]
+}
+```
 
-### Step 4：装依赖、起开发服
+> 用户的回答最终都会落到 `.env.local`(`scaffold/root.md` [2])里,占位符 `<DATABASE_URL>` / `<REDIS_URL>` / `<NACOS_*>` 一并替换。
+
+### Step 3:准备目录
+
+`ls -la` 确认目标目录为空(只允许有 `.git` / `.gitignore`)。非空就停下来问用户。子目录模式先 `mkdir <name> && cd <name>`。
+
+### Step 4:按 [`references/scaffold.md`](./references/scaffold.md) 的文件清单逐个 Write 创建
+
+按 scaffold.md 的「按推荐顺序」表(root → config → lib → features-auth → features-notes → app → drizzle → public)逐目录 Write。所有占位符替换:
+
+| 占位符 | 来源 |
+| --- | --- |
+| `<PROJECT_NAME>` | Step 1 问题 1 |
+| `<PROJECT_DISPLAY_NAME>` | Step 1 问题 1(可与 `<PROJECT_NAME>` 相同,或加首字母大写) |
+| `<SERVICE_NAME>` | Step 1 问题 1(Nacos 注册名;若不接 Nacos 可忽略) |
+| `<DEFAULT_REDIRECT>` | 默认 `/dashboard`,除非用户明确想换 |
+| `<NEXT_PUBLIC_APP_URL>` | Step 1 问题 3 |
+| `<NEXT_PUBLIC_AUTH_URL>` | Step 1 问题 4(选「要登录回调」)→ 调 `nextjs-auth-callback` skill 时会再问 |
+| `<DATABASE_URL>` | Step 2 问题 1 |
+| `<REDIS_URL>` | Step 2 问题 2 |
+| `<NACOS_*>` | Step 2 问题 3(+ 追问) |
+
+**除占位符替换外**,scaffold 片段内容**不要擅自改**。
+
+### Step 5:装依赖、起开发服
 
 ```bash
 pnpm install
+pnpm db:push   # 让 drizzle-kit 把 schema 推到用户的 Postgres
 pnpm dev
 ```
 
-`pnpm install` 失败大概率是 Node 版本 < 20，提示用户升级。
+`pnpm install` 失败大概率是 Node 版本 < 22.11,提示用户升级。`pnpm db:push` 失败一般是 `DATABASE_URL` 不通 —— 让用户 `psql $DATABASE_URL` 直连验证。
 
-### Step 5：报告 + 衔接登录回调
+### Step 6:报告 + 衔接登录回调
 
-成功后报告：
+成功后报告:
 - 项目骨架位置、`pnpm dev` 端口
-- 访问 http://localhost:3000/dashboard 看欢迎页
-- 下一步建议：换 favicon、改 sidebar、加 feature
+- 访问 http://localhost:3000/dashboard 看欢迎页(若装了登录回调,会先跳外部登录)
+- 下一步建议:换 favicon、改 sidebar、加 feature
 
-如果 Step 1 用户选了"要登录回调"，**直接调用** `nextjs-auth-callback` skill。
+如果 Step 1 用户选了「要登录回调」,**直接调用** `nextjs-auth-callback` skill。
 
-> ⚠️ **不要**用 `npx create-next-app`——生成的目录约定跟本项目冲突。
+> ⚠️ **不要**用 `npx create-next-app` —— 生成的目录约定跟本骨架冲突。
+> ⚠️ **不要**自己生成 `docker/docker-compose.yaml` —— 骨架不带,外部依赖由运维 / 平台提供。
 
 ---
 
