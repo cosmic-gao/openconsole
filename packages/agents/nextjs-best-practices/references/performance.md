@@ -16,7 +16,7 @@ export const getUser = cache(async (id: string) => {
 });
 ```
 
-本项目 `lib/auth/session.ts` 的 `auth()` 已经用。
+本项目 `features/auth/server/session.ts` 的 `getSession()` 已经用 `React.cache()` 包过。
 
 ### 不要在组件里定义内嵌组件
 

@@ -114,7 +114,7 @@ Key points:
 
 - The function must be named `proxy` (or default-exported).
 - The config export is still `config` (same as the old `middleware.ts`).
-- This template's `proxy.ts` is at the project root — see [`proxy.ts`](../../../../proxy.ts) for the actual auth gate.
+- This template's `proxy.ts` lives at the project root —— 完整内容见 [`../scaffold.md`](../scaffold.md) 第 [9] 项。
 
 **Migration from older Next versions**: `npx @next/codemod@canary middleware-to-proxy .` auto-renames file + function.
 

@@ -102,12 +102,16 @@ description: >
 
 | Provider | 来自 | 作用 |
 |---|---|---|
-| `ThemeProvider` | `@openconsole/atoms` | 亮/暗/系统主题 |
-| `FontProvider` | `@openconsole/atoms` | 活跃字体 |
-| `LayoutProvider` | `@openconsole/atoms` | 侧边栏变体配置 |
-| `SidebarProvider` | `@openconsole/shadcn` | 侧边栏状态 |
+| `ThemeProvider` | `@openconsole/atoms` | 亮/暗/系统主题(包装 next-themes) |
+| `FontProvider` | `@openconsole/atoms` | 活跃字体(localStorage 持久化) |
+| `LayoutProvider` | `@openconsole/atoms` | 侧边栏变体配置(cookie 持久化 + 服务端读 + 首屏防闪烁) |
+| `SidebarProvider` | `@openconsole/atoms` | 侧边栏展开/收起(cookie 持久化 + 服务端读 + 首屏防闪烁) |
 
-详见 [foundation.md](./rules/foundation.md)。
+> ⚠️ `SidebarProvider` **必须**从 `@openconsole/atoms` 引入,**不要**从
+> `@openconsole/shadcn` —— atoms 版本在服务端读 cookie 还原状态,首屏
+> 即终态;shadcn 原版只写不读,刷新会闪烁。
+
+详见 [foundation.md](./rules/foundation.md) 与 [theme.md](./rules/theme.md)。
 
 ---
 
@@ -151,3 +155,5 @@ description: >
 - [rules/composition.md](./rules/composition.md) — Groups、Card、Avatar、Alert、Empty、Toast
 - [rules/icons.md](./rules/icons.md) — data-icon、图标传递
 - [rules/foundation.md](./rules/foundation.md) — Provider 组合、Layout 结构、atoms 高阶组件 API
+- [rules/theme.md](./rules/theme.md) — 品牌主色 #17b3a3、字体、明暗主题、布局、防闪烁(opentemplate 合并)
+- [rules/library-whitelist.md](./rules/library-whitelist.md) — UI 库白名单 + 黑名单 + 决策树 + FAQ(opentemplate 合并)

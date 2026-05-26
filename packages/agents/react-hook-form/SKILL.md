@@ -21,7 +21,8 @@ description: |
 
 ## The canonical pattern
 
-Mirror [`features/notes/components/note-form.tsx`](../../../features/notes/components/note-form.tsx).
+权威实现:`features/notes/components/note-form.tsx`(opentemplate)。模板里
+用的是 Dialog 形式,逻辑相同。
 
 ```tsx
 "use client";
@@ -38,29 +39,36 @@ import {
   Input, Textarea,
 } from "@openconsole/shadcn";
 
+import type { Note } from "@/lib/db/schema";
+
+import { createNote, updateNote } from "../actions";
 import { noteKeys } from "../queries/keys";
-import { createNote } from "../server/create-note";
-import { updateNote } from "../server/update-note";
-import { NoteFormSchema, type Note, type NoteFormInput } from "../schemas";
+import { NoteInput } from "../schemas";
 
 export function NoteForm({ initial }: { initial?: Note }) {
   const router = useRouter();
   const qc = useQueryClient();
 
-  const form = useForm<NoteFormInput>({
-    resolver: zodResolver(NoteFormSchema),
+  const form = useForm<NoteInput>({
+    resolver: zodResolver(NoteInput),
     defaultValues: initial
       ? { title: initial.title, content: initial.content }
       : { title: "", content: "" },
   });
 
   const mutation = useMutation({
-    mutationFn: (values: NoteFormInput) =>
+    mutationFn: (values: NoteInput) =>
       initial ? updateNote(initial.id, values) : createNote(values),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: noteKeys.all });
+    onSuccess: (row) => {
+      // 直接 setQueryData 避免一次 refetch
+      qc.setQueryData<Note[]>(noteKeys.list(), (old = []) => {
+        if (!row) return old;
+        return initial
+          ? old.map((n) => (n.id === row.id ? row : n))
+          : [row, ...old];
+      });
       toast.success(initial ? "已更新" : "已创建");
-      router.push("/dashboard/notes");
+      router.push("/notes");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -118,23 +126,31 @@ export function NoteForm({ initial }: { initial?: Note }) {
 
 ## Schema-driven validation
 
-Zod schema is the single source of truth — same schema validates on the client (via `zodResolver`) and on the server (inside the Server Action via `Schema.parse(input)`).
+Zod schema 是单一事实来源 —— 同一个 schema 在客户端经 `zodResolver` 校验、在 Server Action 内经 `Schema.parse(input)` 校验。
 
 ```ts
-// features/notes/schemas.ts
-export const NoteSchema = z.object({
-  id: z.string(),
-  title: z.string().min(1, "标题不能为空").max(120, "标题最长 120 字"),
-  content: z.string().max(10_000, "正文最长 10000 字"),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+// features/notes/schemas.ts(opentemplate 模板原样)
+import { z } from "zod";
+
+export const NoteInput = z.object({
+  title: z.string().trim().min(1, "Title is required").max(120),
+  content: z.string().trim().max(10_000),
 });
 
-export const NoteFormSchema = NoteSchema.pick({ title: true, content: true });
+export type NoteInput = z.infer<typeof NoteInput>;
 
-export type Note = z.infer<typeof NoteSchema>;
-export type NoteFormInput = z.infer<typeof NoteFormSchema>;
+export const NoteId = z.coerce.number().int().positive();
 ```
+
+数据库行的 TS 类型来自 Drizzle:
+
+```ts
+// lib/db/schema/notes.ts
+export type Note = typeof notes.$inferSelect;     // 查询出来的形态
+export type NewNote = typeof notes.$inferInsert;  // 插入用的形态
+```
+
+业务里 `import type { Note } from "@/lib/db/schema"`,**不**自己用 zod 再造一份。
 
 `<FormMessage />` automatically reads from `form.formState.errors[name]` — no wiring needed.
 
@@ -199,18 +215,29 @@ The error appears on the `to` field via `path`.
 
 ## Defense in depth — server still validates
 
-The Server Action runs `Schema.parse(input)` again:
+模板里的每个 Server Action 都用同一份 schema 做 `Schema.parse(input)`:
 
 ```ts
 "use server";
-export async function updateNote(id: string, patch: NoteFormInput) {
-  await requireSession();
-  const valid = NoteFormSchema.parse(patch);   // ZodError on bad input
+
+import { unauthorized } from "next/navigation";
+
+import { getSession } from "@/features/auth/server/session";
+
+import { NoteId, NoteInput } from "./schemas";
+
+export async function updateNote(rawId: unknown, input: unknown) {
+  const session = await getSession();
+  if (!session) unauthorized();
+
+  const id = NoteId.parse(rawId);
+  const { title, content } = NoteInput.parse(input);    // ZodError on bad input
   // …mutation
 }
 ```
 
-If a script bypasses the client form, the server still rejects. The thrown `ZodError` surfaces via `useMutation.onError`.
+即使脚本绕过客户端表单,服务端仍然拒绝。抛出的 `ZodError` 会通过
+`useMutation.onError` 暴露给业务。
 
 ## Sheet / Dialog forms
 
@@ -231,12 +258,12 @@ export function NoteFormSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const isEdit = !!note;
-  const form = useForm<NoteFormInput>({
-    resolver: zodResolver(NoteFormSchema),
+  const form = useForm<NoteInput>({
+    resolver: zodResolver(NoteInput),
     defaultValues: note ?? { title: "", content: "" },
   });
   const mutation = useMutation({
-    mutationFn: (values: NoteFormInput) =>
+    mutationFn: (values: NoteInput) =>
       isEdit ? updateNote(note.id, values) : createNote(values),
     onSuccess: () => onOpenChange(false),
   });
@@ -283,8 +310,8 @@ const STEPS = [
 ] as const;
 
 const [step, setStep] = useState(0);
-const form = useForm<OrderFormInput>({
-  resolver: zodResolver(OrderFormSchema),
+const form = useForm<OrderInput>({
+  resolver: zodResolver(OrderInput),
   defaultValues: { customer: "", status: "pending", total: 0 },
 });
 

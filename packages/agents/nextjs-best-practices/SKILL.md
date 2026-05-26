@@ -14,7 +14,7 @@ description: |
 
 | 主题 | 在哪里 |
 | --- | --- |
-| 项目目录结构 / 依赖清单 / 构建命令 / 技术栈版本 | 根目录 [`AGENTS.md`](../../AGENTS.md) |
+| 项目目录结构 / 依赖清单 / 构建命令 / 技术栈版本 | 根目录 [`AGENTS.md`](../AGENTS.md) |
 | 从零初始化项目（空目录搭骨架） | **本 skill** 的 [`references/scaffold.md`](./references/scaffold.md) |
 | 外部登录回调（SSO / proxy.ts / lib/auth/* / `<Callback />`） | [`nextjs-auth-callback`](../nextjs-auth-callback/SKILL.md) skill |
 | 写 page / layout / Server Action / 组件的具体范式 | **本 skill** |
@@ -96,27 +96,33 @@ pnpm dev
 
 | 想做什么 | 用这个 | 路径 | 来源 |
 | --- | --- | --- | --- |
-| 读当前 session（RSC / Server Action） | `auth()` | `@/lib/auth/session` | nextjs-auth-callback |
-| 给外部 API 拼 `Authorization: Bearer …` | `bearer()` | `@/lib/auth/session` | nextjs-auth-callback |
-| 守护 Server Action（无 session 即跳转） | `protect()` | `@/lib/auth/guards` | nextjs-auth-callback |
-| Cookie 名常量 | `TOKEN_COOKIE` / `TENANT_COOKIE` / `CONTINUE_COOKIE` | `@/lib/auth/cookies` | nextjs-auth-callback |
-| 环境变量（类型安全） | `env.*` | `@/env` | 项目根 |
+| 读当前 session(RSC / Server Action) | `getSession()` | `@/features/auth/server/session` | scaffold 自带 |
+| 给 BFF 调用注入 token / tenant_code 头 | `getSessionHeaders()` | `@/features/auth/server/session` | scaffold 自带 |
+| 守护 Server Action(无 session 即触发 401 页) | `unauthorized()` | `next/navigation`(Next 16) | 标准 API |
+| 写 cookie(SSO callback 写 token) | `setSession({ token, tenantCode })` | `@/features/auth/actions` | scaffold 自带 |
+| Cookie 名常量 | `env.COOKIE_TOKEN` / `env.COOKIE_TENANT_CODE` / `env.COOKIE_CONTINUE` | `@/env` | scaffold 自带 |
+| 环境变量(类型安全) | `env.*` | `@/env` | scaffold 自带 |
+| BFF 调用 + envelope 拆解 | `request` + `safeUnwrap(Schema, ...)` | `@/lib/request` | scaffold 自带 |
+| 数据库 | `db` + Drizzle | `@/lib/db` | scaffold 自带 |
+| 应用层 Redis | `redis` | `@/lib/redis` | scaffold 自带 |
+| 调其它内部服务 | `client().fetch("nacos://service/path")` | `@openconsole/nacos` | npm |
+| 日志 | `scoped(tag)` | `@/lib/logger` | scaffold 自带 |
 | Toast | `toast()` | `sonner` | npm |
-| UI 基础原语（Button、Input、Dialog 等） | exports | `@openconsole/shadcn` | npm |
-| UI 高阶组件（Sidebar、Header、FontProvider、ThemeProvider、LayoutProvider） | exports | `@openconsole/atoms` | npm |
+| UI 基础原语(Button、Input、Dialog 等) | exports | `@openconsole/shadcn` | npm |
+| UI 高阶组件(Sidebar、Header、LayoutProvider 等) | exports | `@openconsole/atoms` | npm |
 | Icons | exports (PascalCase) | `lucide-react` | npm |
 | 表单 | `useForm` + `zodResolver` | `react-hook-form` + `@hookform/resolvers/zod` | npm |
 | URL state | `useQueryState` / `parseAsString` 等 | `nuqs` | npm |
-| 主题切换 | `useTheme` | `next-themes` | npm |
+| 主题切换 | `useTheme` | `next-themes`(用 atoms `<ThemeSwitch>` 直接) | npm |
 
-**绝对不要**：
+**绝对不要**:
 
-- 自己写 `getServerSession()` → 用 `auth()`
-- 自己写 `cookies().get("token")` → 用 `auth()`
-- 自己拼 `Bearer ${token}` → 用 `bearer()`
+- 自己写 `getServerSession()` → 用 `getSession()`
+- 自己写 `cookies().get("token")` → 用 `getSession()`(`React.cache` 包过,一请求只读一次)
+- 自己拼 `Authorization: Bearer ${token}` → 用 `request` 客户端,头自动注入
 - 直接读 `process.env.NEXT_PUBLIC_*` → 用 `@/env` 的 `env` 对象
-- 自己写 axios/fetch wrapper → 等到要加再加 `lib/http/`（参考 AGENTS.md 的 lib/ 约定）
-- 引入 `@tanstack/react-query` 之外的客户端缓存库（SWR 等）
+- 自己写 axios/fetch wrapper → 用模板已有的 `@/lib/request`(BFF envelope + 自动 session 头注入)
+- 引入 `@tanstack/react-query` 之外的客户端缓存库(SWR 等)
 
 ---
 
@@ -127,7 +133,7 @@ pnpm dev
 ### Page / Layout
 
 ```tsx
-// app/dashboard/orders/[id]/page.tsx
+// app/(dashboard)/orders/[id]/page.tsx
 type Props = {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
@@ -154,7 +160,8 @@ export const readTheme = cache(async () => {
 });
 ```
 
-`@/lib/auth/session.ts` 的 `auth()` 就是这个范式。
+`@/features/auth/server/session.ts` 的 `getSession()` 就是这个范式 ——
+模板已经内置(scaffold 第 [52] 项)。
 
 详见 [`references/data/async-patterns.md`](./references/data/async-patterns.md)
 
@@ -184,7 +191,7 @@ export const readTheme = cache(async () => {
 ### Server Action 是唯一可传函数的例外
 
 ```tsx
-// features/orders/server/create-order.ts
+// features/orders/actions.ts
 "use server";
 export async function createOrder(input: { name: string }) { /* ... */ }
 ```
@@ -192,14 +199,14 @@ export async function createOrder(input: { name: string }) { /* ... */ }
 ```tsx
 // features/orders/components/order-form.tsx
 "use client";
-import { createOrder } from "@/features/orders/server/create-order";
+import { createOrder } from "@/features/orders/actions";
 
 export function OrderForm() {
   return <button onClick={() => createOrder({ name: "x" })}>Save</button>;
 }
 ```
 
-> ⚠️ 不要在 `features/<slice>/index.ts` 里 re-export `server/` 的函数——`"use server"` directive 必须在 import 点可见，否则客户端组件可能误以为是普通函数。详见 [`features/README.md`](../../features/README.md)。
+> ⚠️ 不要在 `features/<slice>/index.ts` 里 re-export `actions.ts` 的函数 —— `"use server"` directive 必须在 import 点可见,否则客户端组件可能误以为是普通函数。详见 [`references/features.md`](./references/features.md)。
 
 详见 [`references/rsc/rsc-boundaries.md`](./references/rsc/rsc-boundaries.md)、[`references/rsc/directives.md`](./references/rsc/directives.md)
 
@@ -207,14 +214,16 @@ export function OrderForm() {
 
 ## 3. Server Action 三件套
 
-所有 Server Action 必须做这三件事：
+所有 Server Action 必须做这三件事:
 
 ```ts
-// features/orders/server/create-order.ts
+// features/orders/actions.ts
 "use server";                                  // ① 文件首行标记
 
 import { z } from "zod";
-import { protect } from "@/lib/auth/guards";  // ③ 来自 nextjs-auth-callback
+import { unauthorized } from "next/navigation";
+
+import { getSession } from "@/features/auth/server/session";
 
 const Schema = z.object({                      // ② zod 校验入参
   name: z.string().min(1).max(120),
@@ -222,7 +231,10 @@ const Schema = z.object({                      // ② zod 校验入参
 });
 
 export async function createOrder(input: z.input<typeof Schema>) {
-  await protect();                             // ③ 鉴权（动用户数据必做）
+  // ③ 鉴权(操作用户数据必做)
+  const session = await getSession();
+  if (!session) unauthorized();                // 触发 app/unauthorized.tsx
+
   const { name, amount } = Schema.parse(input); // ② parse 抛 ZodError
 
   // ④ 业务
@@ -230,30 +242,54 @@ export async function createOrder(input: z.input<typeof Schema>) {
 }
 ```
 
-> ⚠️ Server Actions 是公开 RPC 端点，客户端能直接构造请求，**proxy.ts 拦不住没 cookie 的 Action 调用**——必须在 Action 里再 `protect()`。
+> ⚠️ Server Actions 是公开 RPC 端点,客户端能直接构造请求,**proxy.ts 拦不住没 cookie 的 Action 调用** —— 必须在 Action 里再做 session 检查。
 
-参考 [`@/lib/auth/authenticate.ts`](../../lib/auth/authenticate.ts) 是项目里这个范式的样板。
+如果跨多个 action 复用,可以抽一个 `protect()` helper:
 
-详见 [`references/server/server-auth-actions.md`](./references/server/server-auth-actions.md)
+```ts
+// features/auth/server/guard.ts
+import "server-only";
+import { unauthorized } from "next/navigation";
+import { getSession } from "./session";
+
+export async function protect() {
+  const session = await getSession();
+  if (!session) unauthorized();
+  return session;
+}
+```
+
+详见 [`references/server/server-auth-actions.md`](./references/server/server-auth-actions.md) 和 [`references/data-layer.md`](./references/data-layer.md)
 
 ---
 
-## 4. 数据获取（项目当前姿势）
+## 4. 数据获取(项目当前姿势)
 
-项目**没有客户端缓存库**——RSC / Server Action 直接 `await` 是默认。
+项目有 **TanStack Query**(`@tanstack/react-query`,客户端缓存)和
+**Cache Components**(`'use cache'`,服务端缓存)两层。RSC / Server Action
+直接 `await` 是默认;客户端通过 `useSuspenseQuery` 拿 server-action queryFn 的
+结果,用 `initialData` 喂入。
 
 ### Server Component 默认姿势
 
 ```tsx
-// app/dashboard/orders/page.tsx
-import { protect } from "@/lib/auth/guards";
-import { getOrders } from "@/features/orders/server/get-orders";
-import { OrderList } from "@/features/orders";
+// app/(dashboard)/orders/page.tsx
+import { Suspense } from "react";
 
-export default async function OrdersPage() {
-  await protect();
-  const orders = await getOrders();
-  return <OrderList orders={orders} />;
+import { listOrders } from "@/features/orders/actions";
+import { OrdersTable } from "@/features/orders/components/orders-table";
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<OrdersSkeleton />}>
+      <OrdersShell />
+    </Suspense>
+  );
+}
+
+async function OrdersShell() {
+  const data = await listOrders();             // Server Action,内部转发到 _cached
+  return <OrdersTable initialData={data} />;
 }
 ```
 
@@ -285,78 +321,85 @@ export default function Page() {
 }
 ```
 
-`app/dashboard/layout.tsx` 已经在 `<Header />` 外包了 `<Suspense>`——里面用 `useSearchParams` 才不会撞 Next 16 的 CSR bailout。
+`app/(dashboard)/layout.tsx` 已经在 `<Header />` 外包了 `<Suspense>` —— 里面用 `useSearchParams` 才不会撞 Next 16 的 CSR bailout。
 
-### 要加客户端缓存时
+### 客户端缓存
 
-加 **TanStack Query**（生态匹配 `@tanstack/react-table`），不要混入 SWR。setup 放 `lib/query/`（参考 AGENTS.md 的 lib/ 约定）。
+`@tanstack/react-query` 已经预装,setup 在 `lib/query/`。详见
+[`references/data-layer.md`](./references/data-layer.md) 的「前端拿数据」段。
+**禁止**混入 SWR。
 
 详见 [`references/data/data-patterns.md`](./references/data/data-patterns.md)、[`references/data/async-parallel.md`](./references/data/async-parallel.md)
 
 ---
 
-## 5. 缓存（`'use cache'` 尚未启用）
+## 5. 缓存(`'use cache'` 已启用 + 跨实例 Redis)
 
-`next.config.ts` 当前**没启** `experimental.cacheComponents`。要启用时遵守硬规则：
+`next.config.ts` 的 `cacheComponents: true` 已开;`cache-handler.mjs` 让多实例
+间通过 Redis 共享 `revalidateTag` / `updateTag`。硬规则:
 
 ```ts
-// ❌ 'use cache' 函数里禁止用 cookies/headers/params/Date.now()/Math.random()
+// ❌ 'use cache' 函数里禁止用 cookies/headers/Date.now()/Math.random()
 "use cache";
 export async function getOrders() {
   const jar = await cookies();           // ❌ 不能用
   return fetchFromAPI(jar.get("token")); // ❌ 不能用
 }
 
-// ✓ 拆成两层：deterministic 的 _cached.ts + 鉴权的 'use server' wrapper
-// features/orders/server/_cached.ts
-"use cache";
-export async function _getOrdersCached(serviceToken: string, filters: Filters) {
-  return fetchFromAPI(serviceToken, filters);
+// ✓ 拆成两层:deterministic 的 _cached.ts + 鉴权的 'use server' wrapper
+// features/orders/_cached.ts
+import "server-only";
+import { cacheLife, cacheTag } from "next/cache";
+
+export async function _getOrdersCached(filters: Filters) {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("orders:list");
+  return db.query.orders.findMany({ where: ... });
 }
 
-// features/orders/server/get-orders.ts
+// features/orders/actions.ts
 "use server";
-import { protect } from "@/lib/auth/guards";
+import { updateTag } from "next/cache";
+
 import { _getOrdersCached } from "./_cached";
 
 export async function getOrders(filters: Filters) {
-  await protect();
-  return _getOrdersCached(env.SERVICE_TOKEN, filters);
+  // 鉴权:Server Action 里读 cookies 没问题,只是不能在 _cached.ts 里
+  const session = await getSession();
+  if (!session) unauthorized();
+  return _getOrdersCached(filters);
 }
 ```
 
-注意：`React.cache()`（同一请求去重）≠ `'use cache'`（跨请求缓存）。`auth()` 用的是前者，可以读 cookies。
+注意:`React.cache()`(同一请求去重)≠ `'use cache'`(跨请求缓存)。
+`getSession()` 用的是前者(`import { cache } from "react"`),可以读 cookies。
 
 详见 [`references/rsc/directives.md`](./references/rsc/directives.md)
 
 ---
 
-## 6. 错误处理（项目现状）
+## 6. 错误处理
 
-项目目前**没有** `app/error.tsx`、`app/not-found.tsx`、`app/unauthorized.tsx`、`app/forbidden.tsx`。加这些 special files 时遵守：
+模板里 5 个 special files 都已经实现,用 atoms 的现成组件渲染:
 
-| 文件 | 含义 | 必须 `"use client"`? |
-| --- | --- | --- |
-| `app/error.tsx` | segment-level error | **是** |
-| `app/global-error.tsx` | root layout 崩 | **是** |
-| `app/not-found.tsx` | `notFound()` 被调 | 否 |
-| `app/unauthorized.tsx` | `unauthorized()` 被调（Next 16） | 否 |
-| `app/forbidden.tsx` | `forbidden()` 被调（Next 16） | 否 |
+| 文件 | 含义 | 必须 `"use client"`? | 模板组件 |
+| --- | --- | --- | --- |
+| `app/error.tsx` | segment-level error | **是** | atoms `<ServerError>` |
+| `app/global-error.tsx` | root layout 崩 | **是** | atoms `<ServerError>`(自渲 `<html>`) |
+| `app/not-found.tsx` | `notFound()` 被调 | 否 | atoms `<NotFound>` |
+| `app/unauthorized.tsx` | `unauthorized()` 被调 | 否 | atoms `<Unauthorized>` |
+| `app/forbidden.tsx` | `forbidden()` 被调 | 否 | atoms `<Forbidden>` |
 
-把 `protect()` 从 "redirect 到 /" 换成 401 页：
+`unauthorized()` / `forbidden()` 需要 `next.config.ts` 的
+`experimental.authInterrupts: true`(模板已开)。
 
-```ts
-// lib/auth/guards.ts
-import { unauthorized } from "next/navigation";
+**禁止**:
 
-export async function protect(): Promise<Session> {
-  const session = await auth();
-  if (!session) unauthorized();   // 然后加 app/unauthorized.tsx
-  return session;
-}
-```
+- 自己画 404 / 401 / 500 页面 —— 用 atoms 组件
+- 在 Server Action 里 `throw new Response("401", ...)` —— 用 `unauthorized()`
 
-详见 [`references/error-handling.md`](./references/error-handling.md)
+详见 [`references/error-pages.md`](./references/error-pages.md)
 
 ---
 
@@ -548,7 +591,7 @@ export default async function OrdersPage({
    const doubled = value * 2;
    ```
 
-3. **`React.cache()` 跨 RSC 去重**（`auth()` 是范式）。
+3. **`React.cache()` 跨 RSC 去重**(`getSession()` 是范式)。
 
 4. **不要 `"use client"` + `async function`**——客户端组件不能 async。要异步加载数据用 `useEffect` 或 React 19 的 `use()` hook。
 
@@ -599,39 +642,50 @@ export default function Page() {
 </Suspense>
 ```
 
-`app/dashboard/layout.tsx` 已经在 `<Header />` 外包了 Suspense。
+`app/(dashboard)/layout.tsx` 已经在 `<Header />` 外包了 Suspense;atoms 的
+`<LayoutProvider>` / `<SidebarProvider>` 内置 Suspense,也不需要在调用点再包。
 
 ### 不要 `export const dynamic = "force-dynamic"`
 
-`next.config.ts` 没开 `cacheComponents`，dynamic 默认就生效。强制 dynamic 反而绕过未来的 cache 优化。
+`next.config.ts` 已开 `cacheComponents: true`,任何用了 cookies/headers/params
+的 component 自动按 dynamic 处理。强制 dynamic 反而绕过 cache 优化。
 
 详见 [`references/rsc/hydration-error.md`](./references/rsc/hydration-error.md)、[`references/rsc/suspense-boundaries.md`](./references/rsc/suspense-boundaries.md)
 
 ---
 
-## 12. 加新 features 切片（最小 checklist）
+## 12. 加新 features 切片(最小 checklist)
 
 ```
 features/<name>/
-  schemas.ts                    zod schemas
-  server/
-    get-<name>.ts               "use server" — protect() + 业务
-    create-<name>.ts            "use server" — protect() + 业务
+  schemas.ts                    zod schemas(单一事实来源)
+  types.ts                      从 schemas 派生 + 纯 TS 类型(可选)
+  actions.ts                    "use server" —— Server Actions(读 + 写 + updateTag)
+  _cached.ts                    "use cache" —— 缓存读(可选)
   components/
-    <name>-table.tsx            client UI
+    <name>-table.tsx
     <name>-form.tsx
-  index.ts                      barrel — 只导 UI + types + schemas，NEVER server fns
+    <name>-delete-dialog.tsx    (如果有删除)
+  queries/
+    keys.ts                     query key 工厂
+    options.ts                  queryOptions(queryKey + queryFn = action)
+  contexts/                     React Context(可选)
+  hooks/                        自定义 hooks(可选)
+  server/                       仅服务端工具,不是 Server Action(可选)
 ```
 
-路由分开放在 `app/dashboard/<name>/`：
+路由分开放在 `app/(dashboard)/<name>/`:
 
 ```
-app/dashboard/<name>/
-  page.tsx                      列表（RSC 里 await + 传给 client 组件）
+app/(dashboard)/<name>/
+  page.tsx                      列表(RSC 里 await action → 传 initialData)
   [id]/page.tsx                 详情
 ```
 
-详见 [`features/README.md`](../../features/README.md)
+**禁止**:`features/<name>/index.ts` 里 re-export `actions.ts` —— `"use server"`
+必须在 import 点可见。
+
+详见 [`references/features.md`](./references/features.md)
 
 ---
 
@@ -643,11 +697,21 @@ app/dashboard/<name>/
 
 | 主题 | 文件 |
 | --- | --- |
-| 项目结构 + 依赖 + 命令 | [`AGENTS.md`](../../AGENTS.md) |
-| 目录命名规则详解 | [`STRUCTURE.md`](../../STRUCTURE.md) |
-| `lib/` 详细约定 | [`lib/README.md`](../../lib/README.md) |
-| `features/` 详细约定 | [`features/README.md`](../../features/README.md) |
+| 公司级硬约束 + 技术栈 + 五条硬规则 | [`AGENTS.md`](../AGENTS.md) |
 | 外部登录回调 | [`../nextjs-auth-callback/SKILL.md`](../nextjs-auth-callback/SKILL.md) |
+| UI 组件 / 主题 / 防闪烁 | [`../ui/SKILL.md`](../ui/SKILL.md) |
+
+### 项目骨架 + 强约束(opentemplate 系列,合并自原 opentemplate skill)
+
+| 文件 | 何时查 |
+| --- | --- |
+| [`references/scaffold.md`](./references/scaffold.md) | 从零初始化 —— 逐文件 Write 的完整蓝本(66 个文件) |
+| [`references/directory-structure.md`](./references/directory-structure.md) | 每个目录的能放/不能放、根目录的禁止列表 |
+| [`references/configs.md`](./references/configs.md) | env / next.config / proxy / instrumentation / cache-handler / drizzle.config 每一项的语义 |
+| [`references/data-layer.md`](./references/data-layer.md) | Drizzle / Cache Components / Redis / BFF envelope / TanStack Query 全图 |
+| [`references/features.md`](./references/features.md) | 加新 feature 切片的完整流程 + 速查表 |
+| [`references/error-pages.md`](./references/error-pages.md) | 5 个 special files + `(errors)/*` 路由组 + auth interrupts |
+| [`references/checklist.md`](./references/checklist.md) | pre-commit / review / 部署 / 排障四套清单 |
 
 ### 本 skill references/（按主题）
 
@@ -667,7 +731,7 @@ app/dashboard/<name>/
 | [`advanced/`](./references/advanced/) | event-handler-refs、init-once、use-latest | 高级模式（按需） |
 | [`AGENTS.md`](./references/AGENTS.md) | 3300+ 行 React 性能总览 | 想一次性看全 |
 | [`performance.md`](./references/performance.md) | 项目相关性能优先级排序 | 优化前 |
-| [`error-handling.md`](./references/error-handling.md) | error / not-found / unauthorized 三类 | 加错误页前 |
+| [`error-pages.md`](./references/error-pages.md) | 5 个 special files + `(errors)/*` 路由组 + auth interrupts | 加错误页前 |
 
 ### 怎么用
 

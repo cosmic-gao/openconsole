@@ -1,242 +1,309 @@
 ---
 name: tanstack-query
-description: TanStack Query v5 最佳工程实践。包括目录结构、Provider 设置、queryOptions 模式、API + query 内聚、useSuspenseQuery、useMutation、缓存管理等。触发场景：客户端数据获取、缓存管理、乐观更新、useSuspenseQuery、useMutation、queryOptions 配置。
+description: TanStack Query v5 在 opentemplate 中的标准用法 —— 目录结构、QueryClient 设置、queryKey 工厂、queryOptions 模式、queryFn 调 Server Action、useSuspenseQuery + initialData、useMutation 乐观更新。触发场景:客户端数据获取、缓存管理、乐观更新、useSuspenseQuery、useMutation、queryOptions 配置。
 ---
 
-# TanStack Query v5 最佳工程实践
+# TanStack Query v5 在 opentemplate 中的标准用法
 
-## 目录结构（强制）
+> 权威实现参考:`features/notes/`(`E:/opencode/oepntemplate/features/notes/`)。
+> 全局架构见 [`../AGENTS.md`](../AGENTS.md);项目骨架见
+> [`../nextjs-best-practices/references/scaffold.md`](../nextjs-best-practices/references/scaffold.md)。
 
-### 基础设施层（lib/query/）
+## 目录结构(强制)
+
+### 基础设施层 `lib/query/`
 
 ```
 lib/
 └── query/
-    ├── get-query-client.ts    # Per-request QueryClient
-    └── provider.tsx           # QueryClientProvider
+    ├── client.ts        # makeQueryClient + getQueryClient(per-request)
+    ├── provider.tsx     # "use client" QueryProvider + Devtools
+    └── index.ts         # barrel
 ```
 
-### 业务 API 层（features/<domain>/api/）
+### 业务层 `features/<domain>/queries/`
 
 ```
-features/post/
-├── api/
-│   ├── post.ts     # API 方法 + queryOptions（内聚）
-│   ├── schemas.ts  # Zod schemas
-│   └── index.ts    # barrel
+features/notes/
+├── actions.ts                # "use server" —— queryFn 就是这里的函数
+├── _cached.ts                # "use cache" —— 实际读数据库 / BFF
+├── schemas.ts                # zod schemas
 ├── components/
-├── server/
-└── index.ts
+└── queries/
+    ├── keys.ts               # query key 工厂
+    └── options.ts            # queryOptions(queryKey + queryFn)
 ```
 
 ### 分工原则
 
 | 目录 | 内容 | 为什么 |
 | --- | --- | --- |
-| `lib/query/` | QueryClient 初始化 + Provider | 基础设施，所有业务共用 |
-| `features/<domain>/api/` | API 方法 + queryOptions | 业务相关，跟随 domain |
+| `lib/query/` | `QueryClient` 初始化 + Provider | 基建,所有业务共用 |
+| `features/<domain>/queries/keys.ts` | query key 工厂(`xxxKeys.all/list/detail`) | 同 domain 的 key 集中,避免散落 |
+| `features/<domain>/queries/options.ts` | `queryOptions` 工厂(`xxxQueries.list/detail`) | queryFn 必定调本 domain 的 Server Action |
+
+**禁止**:把 `queryOptions` 散落在 component 里、直接写裸的 `useQuery({queryKey,queryFn})`。
 
 ---
 
-## Provider 设置（强制）
+## Provider 设置(强制)
 
-### lib/query/provider.tsx
+### `lib/query/client.ts`
 
-```tsx
-'use client'
+```ts
+import {
+  QueryClient,
+  defaultShouldDehydrateQuery,
+  environmentManager,
+} from "@tanstack/react-query";
 
-import { isServer, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
-function makeQueryClient() {
+function makeQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 60 * 1000,        // 1 分钟
-        gcTime: 5 * 60 * 1000,       // 5 分钟（v5: 原来是 cacheTime）
-        refetchOnWindowFocus: false,
-        retry: 1,
+        staleTime: 60 * 1000,      // 1 分钟
+        gcTime: 5 * 60 * 1000,     // 5 分钟(v5: 原来叫 cacheTime)
+      },
+      dehydrate: {
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) ||
+          query.state.status === "pending",
       },
     },
-  })
+  });
 }
 
-let browserQueryClient: QueryClient | undefined = undefined
+let browserQueryClient: QueryClient | undefined;
 
-export function getQueryClient() {
-  if (isServer) return makeQueryClient()
-  if (!browserQueryClient) browserQueryClient = makeQueryClient()
-  return browserQueryClient
-}
-
-export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <QueryClientProvider client={getQueryClient()}>
-      {children}
-    </QueryClientProvider>
-  )
+export function getQueryClient(): QueryClient {
+  if (environmentManager.isServer()) return makeQueryClient();
+  if (!browserQueryClient) browserQueryClient = makeQueryClient();
+  return browserQueryClient;
 }
 ```
 
-### 使用方式
+### `lib/query/provider.tsx`
+
+```tsx
+"use client";
+
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+
+import { getQueryClient } from "./client";
+
+export function QueryProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = getQueryClient();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools />
+    </QueryClientProvider>
+  );
+}
+```
+
+### `lib/query/index.ts`
+
+```ts
+export { getQueryClient } from "./client";
+export { QueryProvider } from "./provider";
+```
+
+### 在根 layout 中使用
 
 ```tsx
 // app/layout.tsx
-import { Providers } from '@/lib/query/provider'
+import { QueryProvider } from "@/lib/query";
 
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <body>
-        <Providers>{children}</Providers>
-      </body>
-    </html>
-  )
+<NuqsAdapter>
+  <ThemeProvider ...>
+    <FontProvider>
+      <QueryProvider>{children}</QueryProvider>
+    </FontProvider>
+  </ThemeProvider>
+</NuqsAdapter>
+```
+
+---
+
+## queryFn 调 Server Action(不是 fetch)
+
+opentemplate 的核心约定:**queryFn 调本 domain 的 Server Action**,Server Action 内部转发到 `_cached.ts` 或直接业务逻辑。**不**让客户端直接 `ofetch("/api/...")`。
+
+为什么:Server Action 是 RPC 端点,统一签名;查询和变更都用同一组函数;鉴权 / 缓存失效 / Cache Components 都在 Server Action 一层处理。
+
+### `features/notes/queries/keys.ts`
+
+```ts
+export const noteKeys = {
+  all: () => ["notes"] as const,
+  list: () => [...noteKeys.all(), "list"] as const,
+  detail: (id: number) => [...noteKeys.all(), "detail", id] as const,
+};
+```
+
+### `features/notes/queries/options.ts`
+
+```ts
+import { queryOptions } from "@tanstack/react-query";
+
+import { getNote, listNotes } from "../actions";
+import { noteKeys } from "./keys";
+
+export const noteQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: noteKeys.list(),
+      queryFn: () => listNotes(),           // Server Action
+      staleTime: 30 * 1000,
+    }),
+  detail: (id: number) =>
+    queryOptions({
+      queryKey: noteKeys.detail(id),
+      queryFn: () => getNote(id),            // Server Action
+      staleTime: 30 * 1000,
+    }),
+};
+```
+
+> 注意:queryFn 是箭头函数包装 —— 直接 `queryFn: listNotes` 会把 TanStack 内部传给 queryFn 的 `QueryFunctionContext` 当成参数传给 Server Action,Server Action 的 zod 校验就会失败。永远 `queryFn: () => listNotes()`。
+
+### `features/notes/actions.ts`(参考片段)
+
+```ts
+"use server";
+
+import { eq } from "drizzle-orm";
+import { updateTag } from "next/cache";
+
+import { db } from "@/lib/db";
+import { notes } from "@/lib/db/schema";
+
+import { getNoteCached, listNotesCached } from "./_cached";
+import { NoteId, NoteInput } from "./schemas";
+
+export async function listNotes() {
+  return listNotesCached();           // _cached.ts 是 "use cache"
+}
+
+export async function getNote(rawId: unknown) {
+  const id = NoteId.parse(rawId);
+  return getNoteCached(id);
+}
+
+export async function createNote(input: unknown) {
+  const { title, content } = NoteInput.parse(input);
+  const [row] = await db.insert(notes).values({ title, content }).returning();
+  updateTag("notes:list");             // 失效 Cache Components
+  return row;
 }
 ```
 
 ---
 
-## API 服务层（强制）
+## Query Hooks
 
-### lib/http/request.ts（HTTP 客户端）
+### 默认用 `useSuspenseQuery` + `initialData`(RSC 预取 → Client 消费)
 
-```typescript
-// lib/http/request.ts
-import { ofetch } from 'ofetch'
+opentemplate 的核心数据流:
 
-export const request = ofetch.create({
-  baseURL: '/api',
-  timeout: 5000,
-  retry: 1,
-  onRequest({ options }) {
-    // 添加 auth header
-    // const token = getToken()
-    // if (token) options.headers.set('Authorization', `Bearer ${token}`)
-  },
-  onResponseError({ response }) {
-    if (response.status === 401) {
-      // 处理未授权
-    }
-  },
-})
 ```
-
-### features/post/api/post.ts（API + queryOptions 内聚）
-
-```typescript
-// features/post/api/post.ts
-import { queryOptions } from '@tanstack/react-query'
-import { request } from '@/lib/http/request'
-import type { Post, CreatePostDto, UpdatePostDto } from './schemas'
-
-// API 方法
-export const post = {
-  list: () => request<Post[]>('/posts'),
-  get: (id: string) => request<Post>(`/posts/${id}`),
-  create: (data: CreatePostDto) => request<Post>('/posts', { method: 'POST', body: data }),
-  update: (id: string, data: UpdatePostDto) => request<Post>(`/posts/${id}`, { method: 'PUT', body: data }),
-  delete: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
-}
-
-// queryOptions（queryKey + queryFn 内聚）
-export const postQuery = {
-  all: () => queryOptions({
-    queryKey: ['post'],
-    queryFn: post.list,
-  }),
-  list: (filters?: string) => queryOptions({
-    queryKey: ['post', 'list', { filters }],
-    queryFn: () => post.list(),
-  }),
-  detail: (id: string) => queryOptions({
-    queryKey: ['post', 'detail', id],
-    queryFn: () => post.get(id),
-  }),
-}
+RSC: await listNotes() → initialData
+        ↓
+Client: useSuspenseQuery({ ...noteQueries.list(), initialData })
 ```
-
----
-
-## Query Hooks（强制）
-
-### useSuspenseQuery（默认）
 
 ```tsx
-// features/post/components/post-list.tsx
-'use client'
+// app/(dashboard)/notes/page.tsx (RSC)
+import { Suspense } from "react";
 
-import { useSuspenseQuery } from '@tanstack/react-query'
-import { postQuery } from '@/features/post/api/post'
+import { listNotes } from "@/features/notes/actions";
+import { NotesTable } from "@/features/notes/components/notes-table";
 
-function PostList() {
-  const { data: posts } = useSuspenseQuery(postQuery.all())
-
+export default function NotesPage() {
   return (
-    <div>
-      {posts.map(p => <PostCard key={p.id} post={p} />)}
-    </div>
-  )
+    <Suspense fallback={<NotesSkeleton />}>
+      <NotesShell />
+    </Suspense>
+  );
 }
 
-// 配合 Suspense 使用
-<Suspense fallback={<PostListSkeleton />}>
-  <PostList />
-</Suspense>
+async function NotesShell() {
+  const data = await listNotes();         // 走 _cached.ts
+  return <NotesTable initialData={data} />;
+}
 ```
-
-### useMutation
 
 ```tsx
-// features/post/components/post-form.tsx
-'use client'
+// features/notes/components/notes-table.tsx
+"use client";
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { post, postQuery } from '@/features/post/api/post'
-import { toast } from 'sonner'
+import { useSuspenseQuery } from "@tanstack/react-query";
 
-export function CreatePostForm() {
-  const queryClient = useQueryClient()
+import type { Note } from "@/lib/db/schema";
 
-  const mutation = useMutation({
-    mutationFn: post.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['post'] })
-      toast.success('创建成功')
-    },
-    onError: () => {
-      toast.error('创建失败')
-    },
-  })
+import { noteQueries } from "../queries/options";
 
-  return (
-    <form onSubmit={(e) => {
-      e.preventDefault()
-      const formData = new FormData(e.currentTarget)
-      mutation.mutate({
-        title: formData.get('title') as string,
-        content: formData.get('content') as string,
-      })
-    }}>
-      <button type="submit" disabled={mutation.isPending}>
-        {mutation.isPending ? '保存中...' : '保存'}
-      </button>
-    </form>
-  )
+export function NotesTable({ initialData }: { initialData: Note[] }) {
+  const { data: notes } = useSuspenseQuery({
+    ...noteQueries.list(),
+    initialData,
+  });
+  // 后续 mutation 后 setQueryData 直接更新这份 cache
 }
 ```
 
-### useQuery（Legacy，仅在需要 component-level loading 时用）
+> **为什么不用 HydrationBoundary**:Cache Components + `"use server"` queryFn 在 Next 16 与 HydrationBoundary 不稳定。模板统一走 `initialData` 喂入,**这是当前推荐姿势**。
+
+### `useQuery`(可选,客户端独立请求)
 
 ```tsx
-function PostList() {
-  const { data, isPending, error } = useQuery(postQuery.all())
+import { useQuery } from "@tanstack/react-query";
+import { noteQueries } from "../queries/options";
 
-  if (isPending) return <Skeleton />
-  if (error) return <Error error={error} />
+const { data, isPending, error } = useQuery(noteQueries.list());
 
-  return <div>{data.map(p => <PostCard key={p.id} post={p} />)}</div>
-}
+if (isPending) return <Skeleton />;
+if (error) return <ErrorState err={error} />;
+return <NotesTable initialData={data} />;
 ```
+
+### `useMutation` + 直接更新缓存
+
+```tsx
+"use client";
+
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+import type { Note } from "@/lib/db/schema";
+
+import { createNote } from "../actions";
+import { noteKeys } from "../queries/keys";
+import { NoteInput } from "../schemas";
+
+const queryClient = useQueryClient();
+
+const mutation = useMutation({
+  mutationFn: (input: NoteInput) => createNote(input),
+  onSuccess: (row) => {
+    // 直接把新数据 push 进 list cache,避免一次 refetch
+    queryClient.setQueryData<Note[]>(noteKeys.list(), (old = []) =>
+      row ? [row, ...old] : old,
+    );
+    toast.success("Created");
+  },
+  onError: (err) => {
+    toast.error(err instanceof Error ? err.message : "Failed");
+  },
+});
+```
+
+> Server Action 内部已经 `updateTag("notes:list")` 失效了 Cache Components。
+> 客户端这里再做 `setQueryData` 是为了让当前 tab 立刻看到新数据,不必等下次
+> RSC 重渲。两条路径(server cache tag / client query cache)是独立的。
 
 ---
 
@@ -244,20 +311,33 @@ function PostList() {
 
 ```tsx
 const mutation = useMutation({
-  mutationFn: ({ id, data }: { id: string; data: UpdatePostDto }) => post.update(id, data),
+  mutationFn: ({ id, data }: { id: number; data: NoteInput }) =>
+    updateNote(id, data),
+
+  // 1. 取消任何 in-flight refetch
   onMutate: async ({ id, data }) => {
-    await queryClient.cancelQueries({ queryKey: ['post', 'detail', id] })
-    const previous = queryClient.getQueryData(['post', 'detail', id])
-    queryClient.setQueryData(['post', 'detail', id], data)
-    return { previous }
+    await queryClient.cancelQueries({ queryKey: noteKeys.detail(id) });
+    const previous = queryClient.getQueryData<Note>(noteKeys.detail(id));
+    queryClient.setQueryData<Note>(noteKeys.detail(id), (old) =>
+      old ? { ...old, ...data } : old,
+    );
+    return { previous, id };
   },
-  onError: (err, { id }, context) => {
-    queryClient.setQueryData(['post', 'detail', id], context?.previous)
+
+  // 2. 失败回滚
+  onError: (err, vars, ctx) => {
+    if (ctx?.previous) {
+      queryClient.setQueryData(noteKeys.detail(ctx.id), ctx.previous);
+    }
+    toast.error("Save failed");
   },
-  onSettled: ({ id }) => {
-    queryClient.invalidateQueries({ queryKey: ['post', 'detail', id] })
+
+  // 3. 成功 / 失败都 invalidate 一下,跟 server 对齐
+  onSettled: (_data, _err, vars) => {
+    queryClient.invalidateQueries({ queryKey: noteKeys.detail(vars.id) });
+    queryClient.invalidateQueries({ queryKey: noteKeys.list() });
   },
-})
+});
 ```
 
 ---
@@ -266,86 +346,95 @@ const mutation = useMutation({
 
 ### Invalidation
 
-```typescript
-// 所有 post 相关
-queryClient.invalidateQueries({ queryKey: ['post'] })
+```ts
+// 整个 namespace
+queryClient.invalidateQueries({ queryKey: noteKeys.all() });
 
-// 特定详情
-queryClient.invalidateQueries({ queryKey: ['post', 'detail', postId] })
+// 单条详情
+queryClient.invalidateQueries({ queryKey: noteKeys.detail(noteId) });
 
 // 列表
-queryClient.invalidateQueries({ queryKey: ['post', 'list'] })
+queryClient.invalidateQueries({ queryKey: noteKeys.list() });
 ```
 
 ### Prefetching
 
-```typescript
-// 鼠标悬停预取
-const prefetch = (id: string) => {
-  queryClient.prefetchQuery(postQuery.detail(id))
-}
+```tsx
+const prefetch = (id: number) => {
+  queryClient.prefetchQuery(noteQueries.detail(id));
+};
 
-<Link to={`/post/${p.id}`} onMouseEnter={() => prefetch(p.id)}>
-  {p.title}
-</Link>
+<Link href={`/notes/${id}`} onMouseEnter={() => prefetch(id)}>
+  {title}
+</Link>;
 ```
 
-### ensureQueryData
+### setQueryData 直接更新
 
-```typescript
-// 数据不存在时才 fetch
-await queryClient.ensureQueryData(postQuery.detail(id))
+```ts
+// 删除后从 list 中移除
+queryClient.setQueryData<Note[]>(noteKeys.list(), (old = []) =>
+  old.filter((n) => n.id !== id),
+);
+
+// 失效具体详情
+queryClient.removeQueries({ queryKey: noteKeys.detail(id) });
 ```
 
 ---
 
 ## 常见错误
 
-### 1. hydration mismatch
+### 1. 在 `'use cache'` 函数里读 cookies
+
+→ 用 `_cached.ts` + `actions.ts` 两层。详见
+[`../nextjs-best-practices/references/data-layer.md`](../nextjs-best-practices/references/data-layer.md)。
+
+### 2. queryFn 漏了箭头包装
 
 ```tsx
-// ❌ 错误：服务端和客户端状态不一致
-function Component() {
-  const { data } = useQuery({
-    queryKey: ['data'],
-    queryFn: fetchData,
-  })
-  return <div>{data.map(...)}</div>
-}
+// ❌ TanStack 会把 QueryFunctionContext 传进去,Server Action zod 报错
+queryOptions({ queryKey: noteKeys.list(), queryFn: listNotes })
 
-// ✅ 正确：配合 Suspense
-<Suspense fallback={<Skeleton />}>
-  <Component />
-</Suspense>
+// ✓
+queryOptions({ queryKey: noteKeys.list(), queryFn: () => listNotes() })
 ```
 
-### 2. 使用 queryOptions 保持 key 一致
+### 3. 手动拼 queryKey 跟 invalidate 用的 key 不一致
 
 ```tsx
-// ❌ 错误：手动拼 key 容易不一致
-const { data } = useQuery({
-  queryKey: ['post', 'detail', id],
-  queryFn: () => post.get(id),
-})
+// ❌ 散落在 component 里
+const { data } = useQuery({ queryKey: ["notes", "list"], ... });
+queryClient.invalidateQueries({ queryKey: ["note", "list"] });  // 单数!失效不到
 
-// ✅ 正确：使用 queryOptions
-const { data } = useQuery(postQuery.detail(id))
+// ✓ 唯一来源 noteKeys 工厂
+const { data } = useQuery(noteQueries.list());
+queryClient.invalidateQueries({ queryKey: noteKeys.list() });
 ```
 
-### 3. 在 Server Component 使用 useQuery
+### 4. Server Component 用 useQuery
 
 ```tsx
-// ❌ 错误：Server Component 不能用 useQuery
+// ❌ Server Component 不能用 useQuery
 export default async function Page() {
-  const { data } = useQuery(...)  // 不支持！
-  return <div>{data}</div>
+  const { data } = useQuery(...);  // 报错
 }
 
-// ✅ 正确：Server Component 直接 await
+// ✓ Server Component 直接 await Server Action
 export default async function Page() {
-  const posts = await post.list()
-  return <PostList posts={posts} />
+  const data = await listNotes();
+  return <NotesTable initialData={data} />;
 }
+```
+
+### 5. Client 组件 async function
+
+```tsx
+// ❌ Client 组件不能是 async
+"use client";
+export default async function NotesTable() { ... }
+
+// ✓ async 在 server 端做,client 通过 props / hooks 拿数据
 ```
 
 ---
@@ -354,24 +443,29 @@ export default async function Page() {
 
 | v4 | v5 | 说明 |
 | --- | --- | --- |
-| `isLoading` | `isPending` | 更好地反映加载状态 |
+| `isLoading` | `isPending` | 更准确反映加载态 |
 | `cacheTime` | `gcTime` | 垃圾回收时间 |
-| `keepPreviousData` | `placeholderData` | 函数形式用于转换 |
-| `onError/onSuccess/onSettled` | 从 useQuery 移除 | 使用 useEffect 或 mutation 的 onSettled |
+| `keepPreviousData: true` | `placeholderData: keepPreviousData` | import keepPreviousData helper |
+| `onError/onSuccess/onSettled` 在 `useQuery` | 移除 | 改用 `useEffect` 或 `useMutation` 的回调 |
+| `useQueries({ queries: [...] })` | 同 | 接口未变 |
 
 ---
 
-## 禁止事项
+## 禁止
 
-- **不要**在 Server Component 使用 useQuery/useSuspenseQuery
-- **不要**手动拼 queryKey，使用 queryOptions 工厂函数
-- **不要**混用 SWR 和 TanStack Query
-- **不要**在 client 组件里用 async function（用 useEffect 或 React 19 use()）
+- ❌ Server Component 用 `useQuery` / `useSuspenseQuery`(它们是 client-only)
+- ❌ 手写 `queryKey: [...]` ——必须用 `xxxKeys.xxx()` 工厂
+- ❌ 混用 SWR(`@tanstack/react-query` 是项目唯一客户端缓存库)
+- ❌ Client 组件用 `async function`(用 `useEffect` 或 React 19 `use()` hook)
+- ❌ queryFn 直接传 Server Action 引用 —— 永远 `() => action()` 包一层
+- ❌ 在 `features/<domain>/index.ts` re-export `actions.ts` —— `"use server"` directive 必须在 import 点可见
+- ❌ 把 HTTP client 放 `lib/http/` —— 模板约定是 `lib/request/`(`app/api/` 已经占了 "api" 一词)
 
 ---
 
 ## 外部参考
 
 - [TanStack Query v5 Docs](https://tanstack.com/query/latest)
-- [TanStack Query GitHub](https://github.com/TanStack/query)
-- [ofetch](https://github.com/unjs/ofetch)
+- [Next 16 Cache Components](https://nextjs.org/docs/app/getting-started/caching-and-revalidating)
+- [`../nextjs-best-practices/references/data-layer.md`](../nextjs-best-practices/references/data-layer.md) —— 模板完整数据层
+- [`../nextjs-best-practices/references/features.md`](../nextjs-best-practices/references/features.md) —— 加新 feature 切片

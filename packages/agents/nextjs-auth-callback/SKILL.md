@@ -152,7 +152,8 @@ export function Callback() {
 
 ## 详细参考
 
-- [references/flow.md](./references/flow.md) — 端到端流程
+- [references/auth-flow.md](./references/auth-flow.md) — **opentemplate 内的完整链路**(proxy → SSO → SsoCallback → setSession → 跳转),含 RBAC / logout 扩展、安全防御汇总
+- [references/flow.md](./references/flow.md) — 通用端到端流程图(技术机制层)
 - [references/installation.md](./references/installation.md) — 完整安装步骤
 - [references/merge-guide.md](./references/merge-guide.md) — 已存在文件合并
 - [references/core-files.md](./references/core-files.md) — 所有核心文件代码

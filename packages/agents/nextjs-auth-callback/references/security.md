@@ -17,4 +17,4 @@
 | 项目 | 说明 | 何时实现 |
 | --- | --- | --- |
 | CSRF `state` 参数 | 如果登录服务支持就加上；不加的话，知道 redirect_uri 的攻击者可以构造任意 token 灌给 `authenticate` Action | 登录服务支持时 |
-| Token 签名验证 | 如果你收到的是 JWT，应该在 `auth()` 里用登录服务的 JWKS 验签 | 收到 JWT 时 |
+| Token 签名验证 | 如果你收到的是 JWT，应该在 `getSession()` 里用登录服务的 JWKS 验签 | 收到 JWT 时 |
