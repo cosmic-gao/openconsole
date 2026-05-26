@@ -10,6 +10,9 @@
 | 登录 / 鉴权 / 会话 / SSO 回调 | [`skill:nextjs-auth-callback`](./nextjs-auth-callback/SKILL.md) |
 | UI 组件使用 / 主题 / 布局 / 防闪烁 / `@openconsole/{atoms,shadcn}` | [`skill:ui`](./ui/SKILL.md) |
 | TanStack Query 客户端数据获取 | [`skill:tanstack-query`](./tanstack-query/SKILL.md) |
+| 表单 + zod + shadcn Form | [`skill:react-hook-form`](./react-hook-form/SKILL.md) |
+| Drizzle ORM —— schema / migrations / query patterns / `_cached.ts` | [`skill:drizzle-orm`](./drizzle-orm/SKILL.md) |
+| Redis —— `lib/redis/` 应用层 + `cache-handler.mjs` cache backend + 数据结构选择 + RQE | [`skill:redis-development`](./redis-development/SKILL.md) |
 | React 组合 / 性能 / 重渲优化 | [`skill:vercel-composition-patterns`](./vercel-composition-patterns/SKILL.md) |
 
 权威实现参考:`E:\opencode\oepntemplate`(企业内部模板,任何分歧以这个仓库为准)。
@@ -218,6 +221,7 @@
 **禁止**:SWR / axios / 自己拼 `Authorization: Bearer ${token}`(用 `getSessionHeaders()` 自动注入) / 在 `app/api/<entity>/route.ts` 写业务 CRUD(用 Server Action)。
 
 详见 [`skill:nextjs-best-practices/references/data-layer.md`](./nextjs-best-practices/references/data-layer.md)。
+具体到 ORM 写法见 [`skill:drizzle-orm`](./drizzle-orm/SKILL.md);Redis 数据结构 / 性能见 [`skill:redis-development`](./redis-development/SKILL.md)。
 
 ---
 
