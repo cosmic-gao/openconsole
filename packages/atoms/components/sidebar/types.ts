@@ -4,15 +4,13 @@ import type { LinkProps } from "next/link";
  * 侧边栏顶部品牌区 —— logo、名称、可选副标题。
  */
 export interface Brand {
-  /** 品牌名（如产品 / workspace 名）。 */
+  /** 品牌名；不单独渲染文字，仅用作图片 logo 的 `alt`。 */
   name: string;
   /**
    * 品牌标识，交给 {@link Icon} 自动判别：lucide 图标名（PascalCase，
    * 例如 `"Command"`）、内联 SVG 源码，或图片地址（URL / 路径 / data URI）。
    */
   logo: string;
-  /** 名称下方的副标题（例如套餐 / workspace 等级）。 */
-  description?: string;
 }
 
 /**
