@@ -1,16 +1,42 @@
 import type { LinkProps } from "next/link";
 
 /**
- * 侧边栏顶部品牌区 —— logo、名称、可选副标题。
+ * 侧边栏顶部品牌区 —— logo + 名称。
  */
 export interface Brand {
   /** 品牌名；不单独渲染文字，仅用作图片 logo 的 `alt`。 */
   name: string;
   /**
-   * 品牌标识，交给 {@link Icon} 自动判别：lucide 图标名（PascalCase，
-   * 例如 `"Command"`）、内联 SVG 源码，或图片地址（URL / 路径 / data URI）。
+   * 品牌标识，两种形态：
+   *
+   * - **字符串**：交给 {@link Icon} 自动判别（lucide 图标名 PascalCase /
+   *   内联 SVG 源码 / 图片地址）。渲染在方形品牌框内，明暗与展开/折叠共用
+   *   同一个 —— 适合方形图标 mark（例如 `"Command"`）。
+   * - **{@link BrandLogo} 对象**：按主题与折叠态切换的图片 logo，适合「宽
+   *   wordmark + 方形 favicon」的组合。展开时显示 `light` / `dark`（不套
+   *   品牌框，按原始比例展示），折叠到图标宽度时显示 `collapsed`。全部走
+   *   纯 CSS 切换（`dark:` 与 `group-data-[collapsible=icon]:`），不依赖
+   *   运行时主题 hook，无水合闪烁。
    */
-  logo: string;
+  logo: string | BrandLogo;
+}
+
+/**
+ * 按主题 / 折叠态切换的品牌 logo。每个字段都是一个 logo 源（lucide 图标名 /
+ * 内联 SVG / 图片地址），交给 {@link Icon} 渲染；缺省字段按 light 方向回退。
+ */
+export interface BrandLogo {
+  /** 展开态 logo（亮色主题）。通常是宽 wordmark 图片。 */
+  light: string;
+  /** 展开态 logo（暗色主题）。缺省回退到 {@link BrandLogo.light}。 */
+  dark?: string;
+  /** 折叠到图标宽度时的方形 mark（例如 favicon）。缺省回退到展开态 logo。 */
+  collapsed?: string;
+  /**
+   * 折叠态 mark（暗色主题）。缺省回退到 {@link BrandLogo.collapsed} →
+   * {@link BrandLogo.dark}。
+   */
+  collapsedDark?: string;
 }
 
 /**

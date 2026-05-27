@@ -388,9 +388,37 @@ interface AccountMenuItem {
 
 ```ts
 interface Brand {
-  name: string; // 不渲染文字，仅用作图片 logo 的 alt
-  logo: string; // lucide 图标名 / 内联 SVG / 图片地址
+  name: string;            // 不渲染文字，仅用作图片 logo 的 alt
+  logo: string | BrandLogo; // 字符串：方形品牌框里的图标；对象：按主题/折叠切换的图片 logo
 }
+
+// 按主题 / 折叠态切换的图片 logo（适合「宽 wordmark + 方形 favicon」）。
+// 展开显示 light/dark（不套品牌框），折叠到图标宽度显示 collapsed。
+// 全部走纯 CSS 切换（dark: 与 group-data-[collapsible=icon]:），无水合闪烁。
+interface BrandLogo {
+  light: string;          // 展开态 logo（亮色）
+  dark?: string;          // 展开态 logo（暗色），缺省回退 light
+  collapsed?: string;     // 折叠态方形 mark（如 favicon），缺省回退展开态 logo
+  collapsedDark?: string; // 折叠态 mark（暗色），缺省回退 collapsed → dark
+}
+```
+
+```tsx
+// 字符串：方形图标 mark（原有行为）
+<Sidebar brand={{ name: "OpenConsole", logo: "Command" }} menu={menu} />
+
+// 对象：展开宽 wordmark（随主题切换）、折叠 favicon
+<Sidebar
+  brand={{
+    name: "OpenConsole",
+    logo: {
+      light: "/logo.light.svg",
+      dark: "/logo.dark.svg",
+      collapsed: "/favicon.svg",
+    },
+  }}
+  menu={menu}
+/>
 ```
 
 ## 常见问题

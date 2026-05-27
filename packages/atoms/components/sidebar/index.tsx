@@ -20,6 +20,7 @@ import type { Brand as BrandData, MenuGroup, User } from "./types";
 export type {
   AccountMenuItem,
   Brand,
+  BrandLogo,
   MenuGroup,
   MenuItem,
   User,
