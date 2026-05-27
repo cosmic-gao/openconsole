@@ -1,6 +1,11 @@
 "use client";
 
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
 
 import {
   Button,
@@ -14,7 +19,6 @@ import {
 } from "@openconsole/shadcn";
 
 import { useLayout } from "../../providers/layout";
-
 import type { Brand as BrandData } from "./types";
 
 /**
@@ -35,7 +39,7 @@ export function Brand({ brand }: { brand: BrandData }) {
       <SidebarMenuItem className="group/brand flex h-12 items-center gap-2 px-2 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:px-0">
         <div className="relative size-8 shrink-0">
           <div className="bg-sidebar-primary text-sidebar-primary-foreground absolute inset-0 flex items-center justify-center rounded-md group-data-[collapsible=icon]:group-hover/brand:hidden">
-            <Icon name={brand.logo} className="size-4" />
+            <Icon name={brand.logo} alt={brand.name} className="size-4" />
           </div>
           {config.collapsible === "icon" && (
             <Tooltip>
@@ -48,9 +52,9 @@ export function Brand({ brand }: { brand: BrandData }) {
                   className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground absolute inset-0 hidden cursor-pointer group-data-[collapsible=icon]:group-hover/brand:flex"
                 >
                   {config.side === "right" ? (
-                    <ChevronsLeft />
+                    <PanelRightOpen />
                   ) : (
-                    <ChevronsRight />
+                    <PanelLeftOpen />
                   )}
                   <span className="sr-only">Expand sidebar</span>
                 </Button>
@@ -79,7 +83,11 @@ export function Brand({ brand }: { brand: BrandData }) {
                 aria-keyshortcuts="Control+B Meta+B"
                 className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer group-data-[collapsible=icon]:hidden"
               >
-                {config.side === "right" ? <ChevronsRight /> : <ChevronsLeft />}
+                {config.side === "right" ? (
+                  <PanelRightClose />
+                ) : (
+                  <PanelLeftClose />
+                )}
                 <span className="sr-only">Collapse sidebar</span>
               </Button>
             </TooltipTrigger>

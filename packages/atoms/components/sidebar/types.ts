@@ -6,7 +6,10 @@ import type { LinkProps } from "next/link";
 export interface Brand {
   /** 品牌名（如产品 / workspace 名）。 */
   name: string;
-  /** `lucide-react` 图标名，PascalCase（例如 `"Command"`）。 */
+  /**
+   * 品牌标识，交给 {@link Icon} 自动判别：lucide 图标名（PascalCase，
+   * 例如 `"Command"`）、内联 SVG 源码，或图片地址（URL / 路径 / data URI）。
+   */
   logo: string;
   /** 名称下方的副标题（例如套餐 / workspace 等级）。 */
   description?: string;

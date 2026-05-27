@@ -6,16 +6,15 @@ import type { ReactNode } from "react";
 
 import {
   Button,
+  cn,
   Separator,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  cn,
   useSidebar,
 } from "@openconsole/shadcn";
 
 import { useLayout } from "../providers/layout";
-
 import { Breadcrumbs, type BreadcrumbsProps } from "./breadcrumbs";
 import { Preferences } from "./preferences";
 import { ThemeSwitch } from "./theme-switch";
@@ -25,7 +24,7 @@ export interface HeaderProps extends React.ComponentProps<"header"> {
   /**
    * 导航插槽 —— 缺省为 `<Breadcrumbs />`（按 `usePathname()` 自动派生）。
    * 传入自定义 `ReactNode`（例如页面标题）覆盖，传 `false` 完全隐藏。
-   * 渲染在与侧边栏同侧，侧边栏折叠时旁边会出现展开按钮。
+   * 渲染在与侧边栏同侧；offcanvas 模式侧边栏滑出后，旁边会出现展开按钮。
    */
   breadcrumbs?: ReactNode | false;
   /**
@@ -52,7 +51,7 @@ export interface HeaderProps extends React.ComponentProps<"header"> {
  * backdrop-blur-md` 半透明虚化，桌面端紧凑 `md:h-14`。`<header>` 本身没有
  * 内边距 —— 两个内部 `<div>` 各自 `px-4`，让两段贴住视口边缘。
  *
- * `nav` 段（面包屑 + 折叠时自动出现的展开按钮）跟侧边栏同侧；`tools` 段
+ * `nav` 段（面包屑 + offcanvas 折叠时出现的展开按钮）跟侧边栏同侧；`tools` 段
  * （调用方 `actions` + 内置 `ThemeSwitch` / `Settings`）在另一侧。
  * `LayoutProvider` 的 `side` 切到 `"right"` 时自动镜像。
  *
@@ -71,14 +70,16 @@ export function Header({
   const { state, toggleSidebar } = useSidebar();
   const { config } = useLayout();
   const { side } = config;
-  const collapsed = config.collapsible !== "none" && state === "collapsed";
+  // 仅 offcanvas 折叠后侧边栏整体滑出视口，需要 header 提供展开入口；
+  // icon 模式折叠后侧边栏仍在（顶部 logo 悬浮即可展开），不再重复放按钮。
+  const hidden = config.collapsible === "offcanvas" && state === "collapsed";
 
   const crumbs =
     breadcrumbs === false
       ? null
       : (breadcrumbs ?? <Breadcrumbs {...breadcrumbsProps} />);
 
-  const trigger = collapsed ? (
+  const trigger = hidden ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
