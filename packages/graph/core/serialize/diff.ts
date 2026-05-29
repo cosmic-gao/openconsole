@@ -54,7 +54,7 @@ export function diff<N, E>(
   after: Graph<N, E>,
   options?: DiffOptions,
 ): GraphPatch<N, E> {
-  const eq = options?.equals ?? sameWeight;
+  const equals = options?.equals ?? sameWeight;
   const ops: GraphOp<N, E>[] = [];
 
   // 1. 删除 before 中存在但 after 中不存在的边
@@ -76,7 +76,7 @@ export function diff<N, E>(
     const beforeNode = before.nodes.get(nodeId);
     if (!beforeNode) {
       ops.push({ kind: 'addNode', data: dumpNode(afterNode) });
-    } else if (!eq(beforeNode.weight, afterNode.weight)) {
+    } else if (!equals(beforeNode.weight, afterNode.weight)) {
       ops.push({
         kind: 'setNodeWeight',
         id: nodeId,
@@ -91,7 +91,7 @@ export function diff<N, E>(
     const beforeEdge = before.edges.get(edgeId);
     if (!beforeEdge) {
       ops.push({ kind: 'addEdge', data: dumpEdge(afterEdge) });
-    } else if (!eq(beforeEdge.weight, afterEdge.weight)) {
+    } else if (!equals(beforeEdge.weight, afterEdge.weight)) {
       ops.push({
         kind: 'setEdgeWeight',
         id: edgeId,
@@ -139,13 +139,13 @@ export function apply<N, E>(
         graph.addEdge(loadEdge(graph, op.data));
         break;
       case 'setNodeWeight': {
-        const n = graph.getNode(op.id);
-        if (n) n.weight = op.to;
+        const node = graph.getNode(op.id);
+        if (node) node.weight = op.to;
         break;
       }
       case 'setEdgeWeight': {
-        const e = graph.getEdge(op.id);
-        if (e) e.weight = op.to;
+        const edge = graph.getEdge(op.id);
+        if (edge) edge.weight = op.to;
         break;
       }
     }

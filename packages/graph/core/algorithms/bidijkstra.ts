@@ -71,10 +71,10 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   if (start === end) return { distance: 0, path: [start] };
 
   // ─── 双侧搜索状态 ──────────────────────────────────────────
-  // fwd：从 start 出发的正向 Dijkstra
-  // bwd：从 end   出发的反向 Dijkstra（沿入边走 = 在反向图上正向走）
-  const fwd = open(start);
-  const bwd = open(end);
+  // forward：从 start 出发的正向 Dijkstra
+  // backward：从 end   出发的反向 Dijkstra（沿入边走 = 在反向图上正向走）
+  const forward = open(start);
+  const backward = open(end);
 
   // mu = 当前已知的"通过相遇点"的最短总距离；初始 ∞
   // meet = 最佳相遇节点；用于路径回溯
@@ -87,8 +87,8 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   const relax = (origin: NodeId, target: NodeId, cost: number, near: Side, far: Side): void => {
     if (near.settled.has(target)) return;
     const candidate = near.dist.get(origin)! + cost;
-    const cur = near.dist.get(target);
-    if (cur !== undefined && candidate >= cur) return;
+    const current = near.dist.get(target);
+    if (current !== undefined && candidate >= current) return;
     near.dist.set(target, candidate);
     near.link.set(target, origin);
     const handle = near.handles.get(target);
@@ -109,20 +109,20 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   };
 
   // ─── 主循环：交替扩展、提前终止 ─────────────────────────────
-  while (!fwd.heap.empty() && !bwd.heap.empty()) {
-    // 提前终止：未探索区域至少要 topF + topB 的代价才能跨越；
+  while (!forward.heap.empty() && !backward.heap.empty()) {
+    // 提前终止：未探索区域至少要 topForward + topBackward 的代价才能跨越；
     // 一旦这个下界 ≥ 当前已知 mu，再继续不可能改进 mu。
-    if (fwd.heap.peek()!.dist + bwd.heap.peek()!.dist >= mu) break;
+    if (forward.heap.peek()!.dist + backward.heap.peek()!.dist >= mu) break;
 
     // 平衡扩展：弹哪边 top 更小走哪边，让两侧已探索范围对称生长
-    if (fwd.heap.peek()!.dist <= bwd.heap.peek()!.dist) {
-      // 正向走一步：弹 fwd 最小、settle、用其出边 relax
-      const entry = fwd.heap.poll()!;
+    if (forward.heap.peek()!.dist <= backward.heap.peek()!.dist) {
+      // 正向走一步：弹 forward 最小、settle、用其出边 relax
+      const entry = forward.heap.poll()!;
       const node = entry.node;
-      fwd.handles.delete(node);
-      fwd.settled.add(node);
+      forward.handles.delete(node);
+      forward.settled.add(node);
       // 弹出时也检查是否相遇（可能 relax 时还没相遇，settle 时另一侧已经探到了）
-      const farDist = bwd.dist.get(node);
+      const farDist = backward.dist.get(node);
       if (farDist !== undefined) {
         const total = entry.dist + farDist;
         if (total < mu) {
@@ -133,15 +133,15 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
       for (const edge of graph.getOutgoing(node)) {
         const cost = edgeCost(edge);
         guard(cost, edge.id);
-        relax(node, edge.target, cost, fwd, bwd);
+        relax(node, edge.target, cost, forward, backward);
       }
     } else {
-      // 反向走一步：弹 bwd 最小、用其入边 relax（"反向图上的出边"）
-      const entry = bwd.heap.poll()!;
+      // 反向走一步：弹 backward 最小、用其入边 relax（"反向图上的出边"）
+      const entry = backward.heap.poll()!;
       const node = entry.node;
-      bwd.handles.delete(node);
-      bwd.settled.add(node);
-      const farDist = fwd.dist.get(node);
+      backward.handles.delete(node);
+      backward.settled.add(node);
+      const farDist = forward.dist.get(node);
       if (farDist !== undefined) {
         const total = farDist + entry.dist;
         if (total < mu) {
@@ -152,7 +152,7 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
       for (const edge of graph.getIncoming(node)) {
         const cost = edgeCost(edge);
         guard(cost, edge.id);
-        relax(node, edge.source, cost, bwd, fwd);
+        relax(node, edge.source, cost, backward, forward);
       }
     }
   }
@@ -160,22 +160,22 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   if (mu === Infinity || meet === undefined) return undefined;
 
   // ─── 路径重建 ──────────────────────────────────────────────
-  // fwd.link[v] = v 在正向最短路径上的前驱
-  // bwd.link[v] = v 在反向最短路径上的"前驱"（实际是正向意义上的后继）
-  // 1. 从 meet 沿 fwd.link 一路反走到 start，unshift 得到 start..meet 段
-  // 2. 从 bwd.link[meet] 开始沿 bwd.link 走到 end，push 得到 meet+1..end 段
+  // forward.link[v] = v 在正向最短路径上的前驱
+  // backward.link[v] = v 在反向最短路径上的"前驱"（实际是正向意义上的后继）
+  // 1. 从 meet 沿 forward.link 一路反走到 start，unshift 得到 start..meet 段
+  // 2. 从 backward.link[meet] 开始沿 backward.link 走到 end，push 得到 meet+1..end 段
   const path: NodeId[] = [];
-  let cur: NodeId | undefined = meet;
-  while (cur !== undefined) {
-    path.unshift(cur);
-    if (cur === start) break;
-    cur = fwd.link.get(cur);
+  let current: NodeId | undefined = meet;
+  while (current !== undefined) {
+    path.unshift(current);
+    if (current === start) break;
+    current = forward.link.get(current);
   }
-  cur = bwd.link.get(meet);
-  while (cur !== undefined) {
-    path.push(cur);
-    if (cur === end) break;
-    cur = bwd.link.get(cur);
+  current = backward.link.get(meet);
+  while (current !== undefined) {
+    path.push(current);
+    if (current === end) break;
+    current = backward.link.get(current);
   }
 
   return { distance: mu, path };

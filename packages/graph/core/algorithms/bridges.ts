@@ -75,7 +75,7 @@ export function bridges<E, G extends Catalog & Neighbors & IntoEdges<E>>(graph: 
      * 否则会把这条平行边漏掉、把 a-b 误判为桥。
      */
     readonly viaEdge: EdgeId | null;
-    readonly iter: Iterator<EdgeView<E>>;
+    readonly iterator: Iterator<EdgeView<E>>;
     /** DFS 树中的子数，根节点判割点时用 */
     children: number;
     /** 同 scc.ts 的 pending 技巧：上一轮 enter 的子，需回流 low */
@@ -104,7 +104,7 @@ export function bridges<E, G extends Catalog & Neighbors & IntoEdges<E>>(graph: 
     frames.push({
       node: v,
       viaEdge,
-      iter: incident(nodes[v]!)[Symbol.iterator](),
+      iterator: incident(nodes[v]!)[Symbol.iterator](),
       children: 0,
       pending: NONE,
     });
@@ -141,7 +141,7 @@ export function bridges<E, G extends Catalog & Neighbors & IntoEdges<E>>(graph: 
       }
 
       // ─── 步骤 B：处理下一条邻接边 ───────────────────────────
-      const step = frame.iter.next();
+      const step = frame.iterator.next();
       if (!step.done) {
         const edge = step.value;
         // 跳过父边（无向语义：父-子边在 DFS 树中走过一次就算了）

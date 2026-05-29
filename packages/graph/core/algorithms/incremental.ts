@@ -223,11 +223,11 @@ export class IncrementalTopo<N = unknown, E = unknown> {
    * 而不是全图重算。
    *
    * 步骤：
-   * 1. 从 v 正向收集"rank ≤ ru"的 fwd 区域（v 子树里需要往后挪的节点）
-   * 2. 从 u 反向收集"rank ≥ rv"的 bwd 区域（u 祖先里需要往前挪的节点）
-   * 3. 取这两个区域占用的所有 rank 槽位，排序后**bwd 占小槽位、fwd 占大槽位**
+   * 1. 从 v 正向收集"rank ≤ sourceRank"的 forward 区域（v 子树里需要往后挪的节点）
+   * 2. 从 u 反向收集"rank ≥ targetRank"的 backward 区域（u 祖先里需要往前挪的节点）
+   * 3. 取这两个区域占用的所有 rank 槽位，排序后**backward 占小槽位、forward 占大槽位**
    *    → 这样 u 必排在 v 之前，新边的拓扑约束自动满足
-   * 4. 如果 fwd 探测到 u 自己 → 形成环，降级 dirty 让下次查询走全量
+   * 4. 如果 forward 探测到 u 自己 → 形成环，降级 dirty 让下次查询走全量
    *
    * @see Pearce-Kelly 2007（参考文献见文件顶部）
    * @internal
@@ -238,52 +238,52 @@ export class IncrementalTopo<N = unknown, E = unknown> {
       this._dirty = true;
       return;
     }
-    const ru = this._ranks.get(sourceId);
-    const rv = this._ranks.get(targetId);
+    const sourceRank = this._ranks.get(sourceId);
+    const targetRank = this._ranks.get(targetId);
     // 节点未注册（事件流错乱或竞态）：降级
-    if (ru === undefined || rv === undefined) {
+    if (sourceRank === undefined || targetRank === undefined) {
       this._dirty = true;
       return;
     }
     // happy path：rank(u) < rank(v) 已经满足拓扑，O(1) 通过
-    if (ru < rv) return;
+    if (sourceRank < targetRank) return;
 
-    // 违反拓扑：rv ≤ ru，需要局部重排
-    const lb = rv;                  // 区域下界
-    const ub = ru;                  // 区域上界
+    // 违反拓扑：targetRank ≤ sourceRank，需要局部重排
+    const lowerBound = targetRank;
+    const upperBound = sourceRank;
     const graph = this._graph;
     const ranks = this._ranks;
 
-    // 正向收集：从 v 出发，沿 downstream 走，rank 在 [rv, ru] 区间的节点
+    // 正向收集：从 v 出发，沿 downstream 走，rank 在 [targetRank, sourceRank] 区间的节点
     // 第 4 参数 sourceId 是 abort 信号：DFS 中若摸到 u 自己 → 环，返回 null
-    const fwd = this._collect(targetId, (n) => graph.downstream(n), (r) => r <= ub, sourceId);
-    if (fwd === null) {
+    const forward = this._collect(targetId, (node) => graph.downstream(node), (rank) => rank <= upperBound, sourceId);
+    if (forward === null) {
       this._dirty = true;
       return;
     }
-    // 反向收集：从 u 出发，沿 upstream 走，同 [rv, ru] 区间
-    const bwd = this._collect(sourceId, (n) => graph.upstream(n), (r) => r >= lb);
+    // 反向收集：从 u 出发，沿 upstream 走，同 [targetRank, sourceRank] 区间
+    const backward = this._collect(sourceId, (node) => graph.upstream(node), (rank) => rank >= lowerBound);
 
     // 重排策略（关键）：
-    //   把 bwd ∪ fwd 占的所有 rank 槽位提取出来排序得到 slots
-    //   bwd 节点按原 rank 升序排，依次占 slots 的小一半
-    //   fwd 节点按原 rank 升序排，依次占 slots 的大一半
-    //   → 重排后 u（在 bwd 里） 的新 rank 一定小于 v（在 fwd 里）的新 rank
+    //   把 backward ∪ forward 占的所有 rank 槽位提取出来排序得到 slots
+    //   backward 节点按原 rank 升序排，依次占 slots 的小一半
+    //   forward 节点按原 rank 升序排，依次占 slots 的大一半
+    //   → 重排后 u（在 backward 里） 的新 rank 一定小于 v（在 forward 里）的新 rank
     const byRank = (a: NodeId, b: NodeId): number => ranks.get(a)! - ranks.get(b)!;
-    bwd.sort(byRank);
-    fwd.sort(byRank);
+    backward.sort(byRank);
+    forward.sort(byRank);
 
-    // bwd ∪ fwd 原本占用的槽位（无重叠：若相交即环，已在前向遍历拦截）
-    const slots: number[] = new Array(bwd.length + fwd.length);
+    // backward ∪ forward 原本占用的槽位（无重叠：若相交即环，已在前向遍历拦截）
+    const slots: number[] = new Array(backward.length + forward.length);
     let i = 0;
-    for (const n of bwd) slots[i++] = ranks.get(n)!;
-    for (const n of fwd) slots[i++] = ranks.get(n)!;
+    for (const node of backward) slots[i++] = ranks.get(node)!;
+    for (const node of forward) slots[i++] = ranks.get(node)!;
     slots.sort((a, b) => a - b);
 
-    // 重排：bwd 占小槽位、fwd 占大槽位
+    // 重排：backward 占小槽位、forward 占大槽位
     i = 0;
-    for (const n of bwd) ranks.set(n, slots[i++]!);
-    for (const n of fwd) ranks.set(n, slots[i++]!);
+    for (const node of backward) ranks.set(node, slots[i++]!);
+    for (const node of forward) ranks.set(node, slots[i++]!);
   }
 
   /**
@@ -294,19 +294,19 @@ export class IncrementalTopo<N = unknown, E = unknown> {
    */
   private _collect(
     start: NodeId,
-    expand: (n: NodeId) => Iterable<NodeId>,
-    accept: (r: number) => boolean,
+    expand: (node: NodeId) => Iterable<NodeId>,
+    accept: (rank: number) => boolean,
   ): NodeId[];
   private _collect(
     start: NodeId,
-    expand: (n: NodeId) => Iterable<NodeId>,
-    accept: (r: number) => boolean,
+    expand: (node: NodeId) => Iterable<NodeId>,
+    accept: (rank: number) => boolean,
     abort: NodeId,
   ): NodeId[] | null;
   private _collect(
     start: NodeId,
-    expand: (n: NodeId) => Iterable<NodeId>,
-    accept: (r: number) => boolean,
+    expand: (node: NodeId) => Iterable<NodeId>,
+    accept: (rank: number) => boolean,
     abort?: NodeId,
   ): NodeId[] | null {
     const visited = new Set<NodeId>([start]);
@@ -314,14 +314,14 @@ export class IncrementalTopo<N = unknown, E = unknown> {
     const stack: NodeId[] = [start];
     while (stack.length > 0) {
       const node = stack.pop()!;
-      for (const adj of expand(node)) {
-        if (visited.has(adj)) continue;
-        if (adj === abort) return null;
-        const rank = this._ranks.get(adj);
+      for (const neighbor of expand(node)) {
+        if (visited.has(neighbor)) continue;
+        if (neighbor === abort) return null;
+        const rank = this._ranks.get(neighbor);
         if (rank === undefined || !accept(rank)) continue;
-        visited.add(adj);
-        region.push(adj);
-        stack.push(adj);
+        visited.add(neighbor);
+        region.push(neighbor);
+        stack.push(neighbor);
       }
     }
     return region;

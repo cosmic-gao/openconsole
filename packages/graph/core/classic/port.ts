@@ -75,8 +75,8 @@ export abstract class Port<S extends Socket = Socket> {
    * @remarks
    * **swap-and-pop 操作演示**（假设 edges = [e0, e1, e2, e3, e4]，删除 e2）：
    *
-   * 1. 找 idx = 2（e2 的下标）
-   * 2. 末尾元素 e4 搬到 idx=2：edges = [e0, e1, e4, e3, e4]
+   * 1. 找 index = 2（e2 的下标）
+   * 2. 末尾元素 e4 搬到 index=2：edges = [e0, e1, e4, e3, e4]
    * 3. 更新 e4 的 _index 为 2
    * 4. pop 末尾：edges = [e0, e1, e4, e3]
    * 5. 从 _index 删除 e2
@@ -88,14 +88,14 @@ export abstract class Port<S extends Socket = Socket> {
    * @returns 是否成功解除（边原本存在则返回 `true`）
    */
   public detach(edge: EdgeId): boolean {
-    const idx = this._index.get(edge);
-    if (idx === undefined) return false;
-    const lastIdx = this.edges.length - 1;
-    if (idx !== lastIdx) {
+    const index = this._index.get(edge);
+    if (index === undefined) return false;
+    const lastIndex = this.edges.length - 1;
+    if (index !== lastIndex) {
       // 把末尾元素搬到被删位置；末尾本身待会儿 pop 即可
-      const last = this.edges[lastIdx]!;
-      this.edges[idx] = last;
-      this._index.set(last, idx);
+      const last = this.edges[lastIndex]!;
+      this.edges[index] = last;
+      this._index.set(last, index);
     }
     this.edges.pop();
     this._index.delete(edge);

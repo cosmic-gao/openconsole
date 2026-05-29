@@ -40,12 +40,11 @@ export class Dfs {
    * 工厂方法：从指定起点构造遍历器。
    *
    * @template G 实现 {@link Neighbors} 的图类型（仅用于类型推导，不保存引用）
-   * @param graph 图实例
+   * @param _graph 图实例
    * @param start 起点节点 ID
    * @returns 新建的遍历器
    */
-  public static start<G extends Neighbors>(graph: G, start: NodeId): Dfs {
-    void graph;
+  public static start<G extends Neighbors>(_graph: G, start: NodeId): Dfs {
     return new Dfs(start);
   }
 

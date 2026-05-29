@@ -35,7 +35,7 @@ export function dominator<G extends Catalog & Neighbors>(
   // ═══════════════════════════════════════════════════════════════════
   // 算法分四阶段：
   //   阶段 1：DFS 编号（dfn[i] = 第 i 个被访问的节点）
-  //   阶段 2：第二遍扫描收集前驱（preds[i] = 节点 i 的 dfs 序前驱列表）
+  //   阶段 2：第二遍扫描收集前驱（predecessors[i] = 节点 i 的 dfs 序前驱列表）
   //   阶段 3：主循环 —— 倒序求每个节点的 semi-dominator（半支配者）+ 部分 idom
   //   阶段 4：正序回填 —— 把 idom 候选修正为真 idom
   //
@@ -49,23 +49,23 @@ export function dominator<G extends Catalog & Neighbors>(
   // dfn[i] → NodeId：dfs 第 i 个访问的节点
   // num.get(id) → 该节点的 dfs 序号
   // parent[i] → 节点 i 的 DFS 树父节点 dfs 序
-  // preds[i] → 节点 i 的所有前驱（按 dfs 序），第二遍填
+  // predecessors[i] → 节点 i 的所有前驱（按 dfs 序），第二遍填
   const dfn: NodeId[] = [];
   const num = new Map<NodeId, number>();
   const parent: number[] = [];
-  const preds: number[][] = [];
+  const predecessors: number[][] = [];
 
   // 迭代 DFS：把递归改成显式栈，避免深图栈溢出。
-  type Frame = { v: NodeId; iter: Iterator<NodeId> };
-  const stack: Frame[] = [{ v: entry, iter: graph.downstream(entry)[Symbol.iterator]() }];
+  type Frame = { v: NodeId; iterator: Iterator<NodeId> };
+  const stack: Frame[] = [{ v: entry, iterator: graph.downstream(entry)[Symbol.iterator]() }];
   num.set(entry, 0);
   dfn.push(entry);
   parent.push(-1);              // entry 没有父
-  preds.push([]);
+  predecessors.push([]);
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1]!;
-    const step = frame.iter.next();
+    const step = frame.iterator.next();
     if (step.done) {
       stack.pop();
       continue;
@@ -73,13 +73,13 @@ export function dominator<G extends Catalog & Neighbors>(
     const child = step.value;
     if (!num.has(child)) {
       // tree edge：分配新 dfs 序、记录父子关系、下钻
-      const childIdx = dfn.length;
-      const parentIdx = num.get(frame.v)!;
-      num.set(child, childIdx);
+      const childIndex = dfn.length;
+      const parentIndex = num.get(frame.v)!;
+      num.set(child, childIndex);
       dfn.push(child);
-      parent.push(parentIdx);
-      preds.push([]);
-      stack.push({ v: child, iter: graph.downstream(child)[Symbol.iterator]() });
+      parent.push(parentIndex);
+      predecessors.push([]);
+      stack.push({ v: child, iterator: graph.downstream(child)[Symbol.iterator]() });
     }
     // child 已编号：跳过（非 tree edge 在此算法中不需要特殊处理）
   }
@@ -89,11 +89,11 @@ export function dominator<G extends Catalog & Neighbors>(
   // ─── 阶段 2：收集前驱（第二遍）──────────────────────────────────
   // 为什么要第二遍？因为 dfs 编号一边走一边定，下钻时还不知道未访问节点的最终编号；
   // 全部访问完后再走一遍，每个前驱的 dfs 序才是完整的。
-  // 不可达节点不在 num 中（不会被追加到 preds），所以这里只看可达图。
+  // 不可达节点不在 num 中（不会被追加到 predecessors），所以这里只看可达图。
   for (let i = 0; i < n; i++) {
-    for (const up of graph.upstream(dfn[i]!)) {
-      const ui = num.get(up);
-      if (ui !== undefined) preds[i]!.push(ui);
+    for (const predecessor of graph.upstream(dfn[i]!)) {
+      const predecessorIndex = num.get(predecessor);
+      if (predecessorIndex !== undefined) predecessors[i]!.push(predecessorIndex);
     }
   }
 
@@ -120,11 +120,11 @@ export function dominator<G extends Catalog & Neighbors>(
   // 写成迭代避免递归栈溢出 —— 先走到根，再回头一路更新。
   const compress = (v: number): void => {
     const path: number[] = [];
-    let cur = v;
-    // 走到根的前一站（ancestor[ancestor[cur]] === -1 时停）
-    while (ancestor[ancestor[cur]!]! !== -1) {
-      path.push(cur);
-      cur = ancestor[cur]!;
+    let current = v;
+    // 走到根的前一站（ancestor[ancestor[current]] === -1 时停）
+    while (ancestor[ancestor[current]!]! !== -1) {
+      path.push(current);
+      current = ancestor[current]!;
     }
     // 回头扫，按 link/eval 经典公式更新 label：
     //   若 semi(label[ancestor[w]]) < semi(label[w]) 则 label[w] = label[ancestor[w]]
@@ -154,9 +154,9 @@ export function dominator<G extends Catalog & Neighbors>(
     //       u 本身（若 dfn(u) < dfn(w)） 或 semi 链上某祖先的 dfn
     //     }
     //     evalNode(u) 一次拿到"链上 semi 最小者"，再读它的 semi 即可。
-    for (const u of preds[w]!) {
-      const ev = evalNode(u);
-      if (semi[ev]! < semi[w]!) semi[w] = semi[ev]!;
+    for (const u of predecessors[w]!) {
+      const evaluated = evalNode(u);
+      if (semi[evaluated]! < semi[w]!) semi[w] = semi[evaluated]!;
     }
     // 3b：把 w 暂存到"semi(w) 对应节点"的桶；等那个节点被 link 时统一处理。
     bucket[semi[w]!]!.push(w);

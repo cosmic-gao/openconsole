@@ -116,11 +116,11 @@ const zero = (): number => 0;
  */
 function trace(parent: ReadonlyMap<NodeId, NodeId>, start: NodeId, end: NodeId): NodeId[] {
   const path: NodeId[] = [end];
-  let cur: NodeId | undefined = end;
-  while (cur !== start) {
-    cur = parent.get(cur!);
-    if (cur === undefined) break;
-    path.push(cur);
+  let current: NodeId | undefined = end;
+  while (current !== start) {
+    current = parent.get(current!);
+    if (current === undefined) break;
+    path.push(current);
   }
   path.reverse();
   return path;

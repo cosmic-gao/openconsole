@@ -20,7 +20,7 @@ import type {
 const EMPTY: Iterable<never> = { *[Symbol.iterator]() { /* 空迭代器，无元素 */ } };
 
 /** inner 的能力位，构造时一次性探测，避免每次调用都做反射检测。 */
-interface Caps {
+interface Capabilities {
   readonly edges: boolean;
   readonly degree: boolean;
   readonly visitable: boolean;
@@ -63,13 +63,13 @@ implements
     IntoDegree,
     Visitable,
     NodeIndexable {
-  private readonly _caps: Caps;
+  private readonly _capabilities: Capabilities;
 
   /**
    * @param inner 原始图
    */
   public constructor(public readonly inner: G) {
-    this._caps = {
+    this._capabilities = {
       edges: typeof inner.getEdges === 'function',
       degree:
         typeof inner.inDegree === 'function' && typeof inner.outDegree === 'function',
@@ -94,7 +94,7 @@ implements
    * 否则返回空可迭代，确保与 {@link getEdges} 的回退行为一致。
    */
   public get edgeIds(): Iterable<EdgeId> {
-    return this._caps.edges ? this.inner.edgeIds : EMPTY;
+    return this._capabilities.edges ? this.inner.edgeIds : EMPTY;
   }
 
   /** {@inheritDoc Catalog.nodeCount} */
@@ -108,7 +108,7 @@ implements
    * @remarks 与 {@link edgeIds} 同步：inner 缺 `getEdges` 时返回 0。
    */
   public edgeCount(): number {
-    return this._caps.edges ? this.inner.edgeCount() : 0;
+    return this._capabilities.edges ? this.inner.edgeCount() : 0;
   }
 
   /**
@@ -133,19 +133,19 @@ implements
 
   /** 全图边视图（`source` / `target` 已互换）。 */
   public *getEdges(): Iterable<EdgeView<E>> {
-    if (!this._caps.edges) return;
+    if (!this._capabilities.edges) return;
     for (const view of this.inner.getEdges!()) yield flip(view as EdgeView<E>);
   }
 
   /** 反向后的入边 = 原图的出边（已翻转 `source` / `target`）。 */
   public *getIncoming(nodeId: NodeId): Iterable<EdgeView<E>> {
-    if (!this._caps.edges) return;
+    if (!this._capabilities.edges) return;
     for (const view of this.inner.getOutgoing!(nodeId)) yield flip(view as EdgeView<E>);
   }
 
   /** 反向后的出边 = 原图的入边（已翻转 `source` / `target`）。 */
   public *getOutgoing(nodeId: NodeId): Iterable<EdgeView<E>> {
-    if (!this._caps.edges) return;
+    if (!this._capabilities.edges) return;
     for (const view of this.inner.getIncoming!(nodeId)) yield flip(view as EdgeView<E>);
   }
 
@@ -161,7 +161,7 @@ implements
    *   或调用方自行缓存结果（如 {@link degrees}）。
    */
   public inDegree(nodeId: NodeId): number {
-    if (this._caps.degree) return this.inner.outDegree!(nodeId);
+    if (this._capabilities.degree) return this.inner.outDegree!(nodeId);
     let count = 0;
     for (const _ of this.inner.downstream(nodeId)) count++;
     return count;
@@ -173,7 +173,7 @@ implements
    * @remarks 反向后的出度 = 原图的入度。fallback 性能注记同 {@link inDegree}。
    */
   public outDegree(nodeId: NodeId): number {
-    if (this._caps.degree) return this.inner.inDegree!(nodeId);
+    if (this._capabilities.degree) return this.inner.inDegree!(nodeId);
     let count = 0;
     for (const _ of this.inner.upstream(nodeId)) count++;
     return count;
@@ -181,7 +181,7 @@ implements
 
   /** {@inheritDoc Visitable.marks} */
   public marks(): Map<NodeId, boolean> {
-    if (this._caps.visitable) return this.inner.marks!();
+    if (this._capabilities.visitable) return this.inner.marks!();
     const map = new Map<NodeId, boolean>();
     for (const id of this.nodeIds) map.set(id, false);
     return map;
@@ -189,7 +189,7 @@ implements
 
   /** {@inheritDoc Visitable.reset} */
   public reset(map: Map<NodeId, boolean>): void {
-    if (this._caps.visitable) {
+    if (this._capabilities.visitable) {
       this.inner.reset!(map);
       return;
     }
@@ -204,12 +204,12 @@ implements
    * 回退路径下调用方仍应在 `at(i) === undefined` 时跳过，以兼容未来稀疏 inner。
    */
   public bound(): number {
-    return this._caps.indexable ? this.inner.bound!() : this.inner.nodeCount();
+    return this._capabilities.indexable ? this.inner.bound!() : this.inner.nodeCount();
   }
 
   /** {@inheritDoc NodeIndexable.at} */
   public at(index: number): NodeId | undefined {
-    if (this._caps.indexable) return this.inner.at!(index);
+    if (this._capabilities.indexable) return this.inner.at!(index);
     let i = 0;
     for (const id of this.nodeIds) {
       if (i === index) return id;
@@ -220,7 +220,7 @@ implements
 
   /** {@inheritDoc NodeIndexable.indexOf} */
   public indexOf(nodeId: NodeId): number {
-    if (this._caps.indexable) return this.inner.indexOf!(nodeId);
+    if (this._capabilities.indexable) return this.inner.indexOf!(nodeId);
     let i = 0;
     for (const id of this.nodeIds) {
       if (id === nodeId) return i;

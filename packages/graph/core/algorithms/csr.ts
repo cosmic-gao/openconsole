@@ -37,9 +37,9 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
   public readonly inOffsets: Int32Array;
   /** 入邻的稠密节点索引数组。 */
   public readonly inTargets: Int32Array;
-  /** 节点稠密 idx → 原始 NodeId。 */
+  /** 节点稠密 index → 原始 NodeId。 */
   public readonly nodes: ReadonlyArray<NodeId>;
-  /** 原始 NodeId → 稠密 idx；用于 {@link indexOf}。 */
+  /** 原始 NodeId → 稠密 index；用于 {@link indexOf}。 */
   public readonly index: ReadonlyMap<NodeId, number>;
   /**
    * 可选：边权重数组，与 {@link outTargets} 一一对应。
@@ -108,18 +108,18 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
   public *upstream(nodeId: NodeId): Iterable<NodeId> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
-    const lo = this.inOffsets[i]!;
-    const hi = this.inOffsets[i + 1]!;
-    for (let k = lo; k < hi; k++) yield this.nodes[this.inTargets[k]!]!;
+    const start = this.inOffsets[i]!;
+    const end = this.inOffsets[i + 1]!;
+    for (let k = start; k < end; k++) yield this.nodes[this.inTargets[k]!]!;
   }
 
   /** {@inheritDoc Neighbors.downstream} */
   public *downstream(nodeId: NodeId): Iterable<NodeId> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
-    const lo = this.outOffsets[i]!;
-    const hi = this.outOffsets[i + 1]!;
-    for (let k = lo; k < hi; k++) yield this.nodes[this.outTargets[k]!]!;
+    const start = this.outOffsets[i]!;
+    const end = this.outOffsets[i + 1]!;
+    for (let k = start; k < end; k++) yield this.nodes[this.outTargets[k]!]!;
   }
 
   /** {@inheritDoc IntoDegree.inDegree} */
@@ -142,8 +142,8 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
   }
 
   /** {@inheritDoc NodeIndexable.at} */
-  public at(idx: number): NodeId | undefined {
-    return this.nodes[idx];
+  public at(index: number): NodeId | undefined {
+    return this.nodes[index];
   }
 
   /** {@inheritDoc NodeIndexable.indexOf} */
@@ -162,7 +162,7 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
     graph: G,
     weight?: (from: NodeId, to: NodeId) => number,
   ): Csr {
-    // ─── 节点编号：NodeId → 稠密 idx ────────────────────────
+    // ─── 节点编号：NodeId → 稠密 index ──────────────────────
     const nodes: NodeId[] = [];
     const index = new Map<NodeId, number>();
     for (const id of graph.nodeIds) {
@@ -180,16 +180,16 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
     const inOffsets = new Int32Array(n + 1);
     for (let i = 0; i < n; i++) {
       const id = nodes[i]!;
-      let out = 0;
+      let outgoing = 0;
       for (const t of graph.downstream(id)) {
-        if (index.has(t)) out++;          // 跳过孤儿
+        if (index.has(t)) outgoing++;     // 跳过孤儿
       }
-      outOffsets[i + 1] = out;
-      let inc = 0;
+      outOffsets[i + 1] = outgoing;
+      let incoming = 0;
       for (const s of graph.upstream(id)) {
-        if (index.has(s)) inc++;
+        if (index.has(s)) incoming++;
       }
-      inOffsets[i + 1] = inc;
+      inOffsets[i + 1] = incoming;
     }
 
     // ─── 前缀和：把"每节点度数"变成"每节点在 targets 中的起点" ───
@@ -211,7 +211,7 @@ export class Csr implements Walkable, IntoDegree, NodeIndexable {
     const outCursor = new Int32Array(n);
     const inCursor = new Int32Array(n);
 
-    // ─── 第二遍扫描：把邻居 idx 填入 targets ───────────────
+    // ─── 第二遍扫描：把邻居 index 填入 targets ─────────────
     // 写入位置 = 节点 i 的起点 (offsets[i]) + 已填数 (cursor[i])
     // 每填一个，cursor[i]++
     // 这种"游标推进"模式比预先排序更快：每条边只摸一次。

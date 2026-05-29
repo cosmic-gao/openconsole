@@ -25,34 +25,34 @@ export function reachable<G extends Neighbors>(
 ): boolean {
   if (source === target) return true;
 
-  const fwd = new Set<NodeId>([source]);
-  const bwd = new Set<NodeId>([target]);
-  let fwdFront: NodeId[] = [source];
-  let bwdFront: NodeId[] = [target];
+  const forward = new Set<NodeId>([source]);
+  const backward = new Set<NodeId>([target]);
+  let forwardFrontier: NodeId[] = [source];
+  let backwardFrontier: NodeId[] = [target];
 
-  while (fwdFront.length > 0 && bwdFront.length > 0) {
-    if (fwdFront.length <= bwdFront.length) {
+  while (forwardFrontier.length > 0 && backwardFrontier.length > 0) {
+    if (forwardFrontier.length <= backwardFrontier.length) {
       const next: NodeId[] = [];
-      for (const node of fwdFront) {
-        for (const adj of graph.downstream(node)) {
-          if (bwd.has(adj)) return true;
-          if (fwd.has(adj)) continue;
-          fwd.add(adj);
-          next.push(adj);
+      for (const node of forwardFrontier) {
+        for (const neighbor of graph.downstream(node)) {
+          if (backward.has(neighbor)) return true;
+          if (forward.has(neighbor)) continue;
+          forward.add(neighbor);
+          next.push(neighbor);
         }
       }
-      fwdFront = next;
+      forwardFrontier = next;
     } else {
       const next: NodeId[] = [];
-      for (const node of bwdFront) {
-        for (const adj of graph.upstream(node)) {
-          if (fwd.has(adj)) return true;
-          if (bwd.has(adj)) continue;
-          bwd.add(adj);
-          next.push(adj);
+      for (const node of backwardFrontier) {
+        for (const neighbor of graph.upstream(node)) {
+          if (forward.has(neighbor)) return true;
+          if (backward.has(neighbor)) continue;
+          backward.add(neighbor);
+          next.push(neighbor);
         }
       }
-      bwdFront = next;
+      backwardFrontier = next;
     }
   }
 
@@ -69,9 +69,9 @@ export function reachable<G extends Neighbors>(
  * @param node 起点
  */
 export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] {
-  const iter = dfs(reversed(graph), node);
-  iter.next(); // DFS 先 yield 起点本身，这里丢弃
-  return [...iter];
+  const iterator = dfs(reversed(graph), node);
+  iterator.next(); // DFS 先 yield 起点本身，这里丢弃
+  return [...iterator];
 }
 
 /**
@@ -82,7 +82,7 @@ export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] 
  * @param node 起点
  */
 export function descendants<G extends Neighbors>(graph: G, node: NodeId): NodeId[] {
-  const iter = dfs(graph, node);
-  iter.next(); // DFS 先 yield 起点本身，这里丢弃
-  return [...iter];
+  const iterator = dfs(graph, node);
+  iterator.next(); // DFS 先 yield 起点本身，这里丢弃
+  return [...iterator];
 }

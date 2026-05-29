@@ -30,10 +30,10 @@ export class Registry {
    * @returns 新插入位置的索引（= 旧长度）
    */
   public add(nodeId: NodeId): number {
-    const idx = this._order.length;
-    this._index.set(nodeId, idx);
+    const index = this._order.length;
+    this._index.set(nodeId, index);
     this._order.push(nodeId);
-    return idx;
+    return index;
   }
 
   /**
@@ -42,25 +42,25 @@ export class Registry {
    * @remarks
    * **swap-and-pop 示意**（_order = [A, B, C, D, E]，删除 B）：
    *
-   *   step 1：idx = 1（B 的位置）
-   *   step 2：末尾 E 搬到 idx=1 → [A, E, C, D, E]
+   *   step 1：index = 1（B 的位置）
+   *   step 2：末尾 E 搬到 index=1 → [A, E, C, D, E]
    *   step 3：更新 _index：E → 1
    *   step 4：pop 末尾 → [A, E, C, D]
    *
    * 收益：O(1) 删除，避免 Array#splice 的 O(n) 搬移。
-   * 代价：原来的 idx=1 不再是 B，而是 E。调用方不应在删除后假设 `at(i)` 仍指向同一节点。
+   * 代价：原来的 index=1 不再是 B，而是 E。调用方不应在删除后假设 `at(i)` 仍指向同一节点。
    *
    * @param nodeId 节点 ID
    * @returns 是否实际移除
    */
   public remove(nodeId: NodeId): boolean {
-    const idx = this._index.get(nodeId);
-    if (idx === undefined) return false;
-    const lastIdx = this._order.length - 1;
-    if (idx !== lastIdx) {
-      const lastId = this._order[lastIdx]!;
-      this._order[idx] = lastId;
-      this._index.set(lastId, idx);
+    const index = this._index.get(nodeId);
+    if (index === undefined) return false;
+    const lastIndex = this._order.length - 1;
+    if (index !== lastIndex) {
+      const lastId = this._order[lastIndex]!;
+      this._order[index] = lastId;
+      this._index.set(lastId, index);
     }
     this._order.pop();
     this._index.delete(nodeId);

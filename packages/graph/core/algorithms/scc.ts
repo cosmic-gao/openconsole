@@ -58,9 +58,9 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
     readonly node: number;
     /** 入栈时的 preorder。根判定需要原始值，rindex 可能被后向边拉低，必须独立保留。 */
     readonly mark: number;
-    readonly iter: Iterator<NodeId>;
+    readonly iterator: Iterator<NodeId>;
     /**
-     * 上一轮下钻的子节点 idx。
+     * 上一轮下钻的子节点 index。
      *
      * 迭代实现的关键 trick：递归版本在子调用 return 后 *立刻* 把
      * `low(parent) = min(low(parent), low(child))` 算出来；而迭代版本必须等下一轮
@@ -79,7 +79,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
     frames.push({
       node,
       mark,
-      iter: graph.downstream(nodes[node]!)[Symbol.iterator](),
+      iterator: graph.downstream(nodes[node]!)[Symbol.iterator](),
       pending: NONE,
     });
   };
@@ -108,7 +108,7 @@ export function scc<G extends Walkable>(graph: G): NodeId[][] {
       }
 
       // ─── 3b：处理下一条出边 ─────────────────────────────────
-      const step = frame.iter.next();
+      const step = frame.iterator.next();
       if (!step.done) {
         const target = index.get(step.value);
         if (target === undefined) continue;        // 孤儿邻居（不在 nodeIds 中）：见 internal/degree.ts

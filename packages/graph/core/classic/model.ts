@@ -273,10 +273,10 @@ export class Model<N = unknown, E = unknown> implements Subscribable<N, E> {
     let result: T;
     try {
       result = work();
-    } catch (err) {
+    } catch (error) {
       this._depth--;
       if (this._depth === 0) this._drain();
-      throw err;
+      throw error;
     }
     this._depth--;
     if (this._depth === 0) this._drain();

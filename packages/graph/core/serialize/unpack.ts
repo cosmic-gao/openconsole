@@ -8,9 +8,6 @@ import type { PortId, Node } from '../types';
 import { VERSION, type Compact, type CompactNode } from './compact';
 import { mergeLookup, type SocketLookup } from './sockets';
 
-// 兼容旧调用：转出 SocketLookup 让外部测试 / 调用方仍可从 './unpack' 直接 import。
-export type { SocketLookup };
-
 /**
  * 从压缩格式恢复完整图。
  *
