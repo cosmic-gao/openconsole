@@ -9,16 +9,20 @@
  *
  * 运行：pnpm --filter @openconsole/agent example
  */
-import { Agent } from "../index"; // 导入 barrel 会自动注册内置工具
+import { ChatOpenAI } from "@langchain/openai";
+
+import { Agent, models } from "../index"; // 导入 barrel 会自动注册内置工具
 
 async function main(): Promise<void> {
-  if (!process.env["AGENT_MODEL"] && !process.env["AGENT_MAIN_MODEL"]) {
-    console.error(
-      'Set AGENT_MODEL (e.g. "openai:gpt-4o-mini") and the matching API key first.',
-    );
-    process.exitCode = 1;
-    return;
-  }
+  models.register(
+    "main_llm",
+    new ChatOpenAI({
+      model: "MiniMax-M3", // “minimax 2.7”
+      apiKey:
+        "sk-cp-ALjB-RD09EIx8OiQpseV-gGC1TzBFn6lG-oJjkCnOkyzp1pQReJJD8s2iktZq8ZrtbwHclJ0wTy5cJSuTEA0ao-OZYCqKdtkzC9hwnEmhYnwxqu7w4DzVH8",
+      configuration: { baseURL: "https://api.minimaxi.com/v1" }, // 国内账号换成控制台给的对应 base URL
+    }),
+  );
 
   const agent = await Agent.create("search");
   const answer = await agent.run(

@@ -23,5 +23,13 @@ export { render, strip, type RenderOptions } from "./src/template";
 export { defaultAgentsDir, type LoadOptions } from "./src/load";
 export { type ParsedAgentFile, type Frontmatter } from "./src/parse";
 export { type BuildOptions, type BuiltAgent } from "./src/build";
+export {
+  Mcp,
+  defaultMcpServers,
+  type McpServers,
+  type McpOptions,
+} from "./src/mcp";
+export { Sandbox, type RunJsOptions, type RunJsResult } from "./src/sandbox";
+export { Skill, skillsDir } from "./src/skill";
 export * from "./src/types";
 export * from "./src/tools";
