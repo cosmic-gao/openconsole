@@ -1,0 +1,27 @@
+---
+llm: main_llm
+tools:
+  - web_search
+  - read_webpages_as_markdown
+  - think
+---
+
+<identity>
+CREW_ROLE
+</identity>
+
+<context>
+{{ @include(path="./prompts/static_context.prompt") }}
+</context>
+
+<base_instructions>
+{{ @include(path="./prompts/base_instructions.prompt") }}
+</base_instructions>
+
+<agents>
+CREW_INSTRUCTIONS
+</agents>
+
+<soul>
+CREW_PERSONALITY
+</soul>
