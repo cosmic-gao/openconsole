@@ -97,10 +97,10 @@ src/
   sandbox.ts    Sandbox.state/files/local/adapt + runJs —— deepagents backend + quickjs WASM
   skill.ts      Skill.dir/backend —— deepagents skills middleware
   tools/        内置工具(11)：think、ask；web_search、image_search、read_webpages_as_markdown、http_request、download；run_javascript(沙箱)、run_python；current_time、html_to_markdown
-agents/         内置定义：search.agent、explore.agent、crew.template.agent + prompts/
+agents/         内置定义：search.agent、explore.agent、code.agent、crew.template.agent + prompts/
 skills/         预置 SKILL.md：using-mcp、deep-research、using-sandbox
-examples/       search / chat / mcp / sandbox
-tests/          parse/template/load/crew/registry/build/model/subagent/sandbox/skill/mcp（41 用例）
+examples/       opencode —— 终端编码 agent（整合示例：对话 + 文件/shell + 工具）
+tests/          parse/template/load/crew/registry/build/model/subagent/sandbox/skill/mcp/io/tools（47 用例）
 ```
 
 ## `.agent` 文件格式
@@ -214,8 +214,6 @@ setSearchProvider({
 
 ```bash
 pnpm --filter @openconsole/agent typecheck   # tsc --noEmit
-pnpm --filter @openconsole/agent test        # vitest（41 个用例）
-pnpm --filter @openconsole/agent chat        # 终端交互对话（examples/chat.ts）
-pnpm --filter @openconsole/agent exec tsx examples/mcp.ts      # MCP 集成示例
-pnpm --filter @openconsole/agent exec tsx examples/sandbox.ts  # 沙箱示例
+pnpm --filter @openconsole/agent test        # vitest（47 个用例）
+pnpm --filter @openconsole/agent opencode    # 简化版 opencode：终端编码 agent（examples/opencode.ts）
 ```

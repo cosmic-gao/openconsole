@@ -10,8 +10,7 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && vitest run",
-    "example": "tsx examples/search.ts",
-    "chat": "tsx examples/chat.ts"
+    "opencode": "tsx examples/opencode.ts"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.4.0",

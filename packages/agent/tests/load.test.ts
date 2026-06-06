@@ -18,4 +18,12 @@ describe("Agent.load", () => {
     // @include 已把共享的提示词片段内联进来。
     expect(spec.prompt).toContain("DeepAgent-based runtime");
   });
+
+  it("loads the bundled code agent (used by the opencode example)", async () => {
+    const spec = await load("code");
+    expect(spec.modelId).toBe("main_llm");
+    expect(Object.keys(spec.tools)).toContain("run_python");
+    expect(spec.prompt).toContain("coding assistant");
+    expect(spec.prompt).not.toContain("{{");
+  });
 });
