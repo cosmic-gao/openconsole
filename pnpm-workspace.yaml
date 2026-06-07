@@ -10,6 +10,7 @@ allowBuilds:
   msw: true
   nx: true
   sharp: true
+  vue-demi: true
 
 # Supply-chain hardening — reject packages published within the last 24h.
 # Slows down zero-day malicious package adoption (npm worm pattern).

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chat",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@openconsole/chat", "dev:web"],
+      "port": 5173
+    }
+  ]
+}
