@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { Sandbox } from "../sandbox";
 import { Tool } from "../tool";
-import { err, ok } from "../types";
+import { err, ok } from "../../types";
 
 /**
  * `run_javascript` —— 在进程内 quickjs WASM 沙箱里安全执行 JS。

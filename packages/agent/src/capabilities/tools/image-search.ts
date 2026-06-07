@@ -2,7 +2,7 @@ import { SafeSearchType, searchImages } from "duck-duck-scrape";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok, type ToolResult } from "../types";
+import { err, ok, type ToolResult } from "../../types";
 
 /** `image_search` —— 图片搜索(DuckDuckGo,开源、免 key)。移植自 magic 的 `image_search`。 */
 export const imageSearchTool = Tool.define({

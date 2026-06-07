@@ -7,7 +7,7 @@
  *  - `observe` 中间件（见 ./middleware）：在工具/agent 生命周期里产出同构 {@link Event}。
  *
  * 设计：贴合底座、不造轮子——v3 投影已把 token/think/tool/subagent/usage 结构化，
- * 归一化只是字段搬运；v2 裸事件归一化（{@link fromRaw}）作为可插拔兜底。
+ * 归一化只是字段搬运。
  */
 
 /** 一次运行的 token 用量（聚合自各条消息的 usage）。 */
@@ -213,7 +213,7 @@ function lastTextOf(state: unknown): string {
  * 把 v3 流投影归一化为 {@link Event} 流（主路径）。
  *
  * 并发消费 messages / toolCalls / subagents 三路并交错产出，故 token 与 tool 事件
- * 按到达顺序穿插（对 UI 足够；需严格时间序请用 {@link fromRaw} 的 v2 路径）。
+ * 按到达顺序穿插（对 UI 足够）。
  */
 async function* toEvents(
   run: RunStream,
@@ -376,81 +376,7 @@ async function* toEvents(
 }
 
 // ——————————————————————————————————————————————————————————————
-// v2 兜底：裸 streamEvents(version:"v2") 事件 → Event（可插拔点）。
-// 子 agent 不做嵌套（拍平），仅作为 v3 不可用时的退路。
-// ——————————————————————————————————————————————————————————————
-
-/** v2 裸事件的最小结构。 */
-export interface RawEvent {
-  event: string;
-  name?: string;
-  run_id?: string;
-  data?: { chunk?: unknown; input?: unknown; output?: unknown };
-  metadata?: Record<string, unknown>;
-}
-
-/** 把 v2 裸 `streamEvents` 流归一化为 {@link Event} 流（兜底路径）。 */
-async function* fromRaw(
-  source: AsyncIterable<RawEvent>,
-): AsyncIterable<Event> {
-  const usageParts: UsageLike[] = [];
-  let lastText = "";
-
-  for await (const ev of source) {
-    switch (ev.event) {
-      case "on_chat_model_stream": {
-        const chunk = ev.data?.chunk as
-          | { text?: unknown; usage_metadata?: UsageLike }
-          | undefined;
-        const text = typeof chunk?.text === "string" ? chunk.text : "";
-        if (text) {
-          const node = ev.metadata?.["langgraph_node"];
-          yield typeof node === "string"
-            ? { type: "token", text, node }
-            : { type: "token", text };
-        }
-        if (chunk?.usage_metadata) usageParts.push(chunk.usage_metadata);
-        break;
-      }
-      case "on_tool_start": {
-        yield {
-          type: "tool_start",
-          id: ev.run_id ?? "",
-          name: ev.name ?? "",
-          input: ev.data?.input,
-        };
-        break;
-      }
-      case "on_tool_end": {
-        const out = ev.data?.output;
-        const data = readArtifact(out);
-        const content = textOf(out);
-        lastText = content || lastText;
-        const status = (out as { status?: unknown } | undefined)?.status;
-        yield {
-          type: "tool_end",
-          id: ev.run_id ?? "",
-          name: ev.name ?? "",
-          ok: status !== "error",
-          content,
-          ...(data !== undefined ? { data } : {}),
-        };
-        if (ev.name === "think") yield { type: "think", text: content };
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  yield usageParts.length > 0
-    ? { type: "done", text: lastText, usage: sumUsage(usageParts) }
-    : { type: "done", text: lastText };
-}
-
-// ——————————————————————————————————————————————————————————————
-// 对外命名空间：单词优先（events.of / events.raw / events.console）。
-// 内部实现函数保留描述性名（toEvents / fromRaw），仅经下面的 events 对象暴露。
+// 对外命名空间：单词优先（events.of / events.console）。
 // ——————————————————————————————————————————————————————————————
 
 /** 缺省事件 sink：开发态把工具/错误事件简洁打到 stderr（{@link observe} 中间件的默认）。 */
@@ -469,12 +395,10 @@ const consoleSink: EventSink = {
 
 /**
  * 事件工具集（单词优先命名空间）：
- *  - {@link events.of}：把 v3 流投影归一化为 {@link Event} 流（主路径）；
- *  - {@link events.raw}：把 v2 裸 streamEvents 流归一化为 Event 流（兜底）；
+ *  - {@link events.of}：把 v3 流投影归一化为 {@link Event} 流；
  *  - {@link events.console}：缺省 sink，把事件打到 stderr。
  */
 export const events = {
   of: toEvents,
-  raw: fromRaw,
   console: consoleSink,
 };

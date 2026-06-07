@@ -1,7 +1,7 @@
 import { LocalShellBackend, StateBackend } from "deepagents";
 import { describe, expect, it } from "vitest";
 
-import { Sandbox } from "../src/sandbox";
+import { Sandbox } from "../src/capabilities/sandbox";
 
 describe("Sandbox.runJs", () => {
   it("evaluates an expression", async () => {

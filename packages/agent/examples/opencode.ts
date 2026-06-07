@@ -23,7 +23,7 @@ import { Agent, checkpoint, models, Sandbox } from "../index";
 async function main(): Promise<void> {
   // 可选:MiniMax 中国区(设了 MINIMAX_API_KEY 就用,否则走 AGENT_MODEL)。
   // 切勿把密钥写进源码——从环境变量读取。
-  const minimaxKey = process.env["MINIMAX_API_KEY"];
+  const minimaxKey = process.env["MINIMAX_API_KEY"] || 'sk-cp-ALjB-RD09EIx8OiQpseV-gGC1TzBFn6lG-oJjkCnOkyzp1pQReJJD8s2iktZq8ZrtbwHclJ0wTy5cJSuTEA0ao-OZYCqKdtkzC9hwnEmhYnwxqu7w4DzVH8';
   if (minimaxKey) {
     models.register(
       "main_llm",

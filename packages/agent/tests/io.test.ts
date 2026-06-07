@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { registry } from "../src/registry";
-import { downloadTool, imageSearchTool, runPythonTool } from "../src/tools";
+import { registry } from "../src/kernel/registry";
+import { downloadTool, imageSearchTool, runPythonTool } from "../src/capabilities/tools";
 
 function text(out: unknown): string {
   return typeof out === "string"

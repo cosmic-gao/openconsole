@@ -3,7 +3,7 @@ import TurndownService from "turndown";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok, type ToolResult } from "../types";
+import { err, ok, type ToolResult } from "../../types";
 
 const turndown = new TurndownService({
   headingStyle: "atx",

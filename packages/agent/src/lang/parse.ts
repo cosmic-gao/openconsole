@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 
-import { SkillsConfigSchema, type SkillsConfig } from "./types";
+import { SkillsConfigSchema, type SkillsConfig } from "../types";
 
 /**
  * `.agent` 文件解析器。移植自 magic 的 `agentlang/agent/define/parser.py`。

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ModelRegistry } from "../src/model";
+import { ModelRegistry } from "../src/kernel/model";
 
 describe("ModelRegistry", () => {
   it("registers and resolves a provider:model alias", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cache, load } from "../src/load";
+import { cache, load } from "../src/lang/load";
 
 describe("load cache", () => {
   it("returns the same spec instance on repeated load (cache hit)", async () => {

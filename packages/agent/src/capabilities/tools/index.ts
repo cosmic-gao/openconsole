@@ -1,4 +1,4 @@
-import { registry, type ToolRegistry } from "../registry";
+import { registry, type ToolRegistry } from "../../kernel/registry";
 import { askTool } from "./ask";
 import { downloadTool } from "./download";
 import { fetchTool } from "./fetch";

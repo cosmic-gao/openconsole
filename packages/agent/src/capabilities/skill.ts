@@ -3,7 +3,7 @@ import { FilesystemBackend } from "deepagents";
 
 /** 本包内置 skills 目录的绝对路径(`packages/agent/skills`)。 */
 function skillsDir(): string {
-  return fileURLToPath(new URL("../skills/", import.meta.url));
+  return fileURLToPath(new URL("../../skills/", import.meta.url));
 }
 
 /**

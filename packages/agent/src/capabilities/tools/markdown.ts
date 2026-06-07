@@ -2,7 +2,7 @@ import TurndownService from "turndown";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { ok } from "../types";
+import { ok } from "../../types";
 
 const turndown = new TurndownService({
   headingStyle: "atx",

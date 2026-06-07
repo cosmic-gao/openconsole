@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { ok } from "../types";
+import { ok } from "../../types";
 
 /**
  * `think` —— 一块私有的推理/规划草稿区。移植自 magic 的 `thinking` 工具。

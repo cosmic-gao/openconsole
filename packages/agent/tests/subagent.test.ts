@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { subagent } from "../src/agent";
+import { subagent } from "../src/kernel/agent";
 
-import "../src/tools"; // 注册内置工具，供 subagent 按名解析
+import "../src/capabilities/tools"; // 注册内置工具，供 subagent 按名解析
 
 describe("subagent", () => {
   it("loads a bundled .agent into a SubAgent", async () => {

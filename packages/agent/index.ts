@@ -9,23 +9,23 @@ export {
   subagent,
   type CreateAgentOptions,
   type SubagentOptions,
-} from "./src/agent";
-export { Tool, type ToolDef } from "./src/tool";
+} from "./src/kernel/agent";
+export { Tool, type ToolDef } from "./src/capabilities/tool";
 export {
   Crew,
   type CrewInput,
   type CrewMeta,
   type CompiledCrew,
-} from "./src/crew";
-export { models, ModelRegistry, type ModelRef } from "./src/model";
-export { registry, ToolRegistry } from "./src/registry";
-export { render, strip, type RenderOptions } from "./src/template";
-export { cache, type LoadOptions } from "./src/load";
-export { type ParsedAgentFile, type Frontmatter } from "./src/parse";
-export { type BuildOptions, type BuiltAgent } from "./src/build";
-export { Mcp, type McpServers, type McpOptions } from "./src/mcp";
-export { Sandbox, type RunJsOptions, type RunJsResult } from "./src/sandbox";
-export { Skill } from "./src/skill";
+} from "./src/lang/crew";
+export { models, ModelRegistry, type ModelRef } from "./src/kernel/model";
+export { registry, ToolRegistry } from "./src/kernel/registry";
+export { render, strip, type RenderOptions } from "./src/lang/template";
+export { cache, type LoadOptions } from "./src/lang/load";
+export { type ParsedAgentFile, type Frontmatter } from "./src/lang/parse";
+export { type BuildOptions, type BuiltAgent } from "./src/kernel/build";
+export { Mcp, type McpServers, type McpOptions } from "./src/capabilities/mcp";
+export { Sandbox, type RunJsOptions, type RunJsResult } from "./src/capabilities/sandbox";
+export { Skill } from "./src/capabilities/skill";
 export {
   middlewares,
   MiddlewareRegistry,
@@ -35,7 +35,7 @@ export {
   type HorizonInject,
   type GuardPolicy,
   type GuardDecision,
-} from "./src/middleware";
+} from "./src/kernel/middleware";
 export {
   Hook,
   type Hooks,
@@ -43,14 +43,14 @@ export {
   type PostToolUse,
   type StopEvent,
   type PreToolDecision,
-} from "./src/hooks";
+} from "./src/capabilities/hooks";
 export {
   Session,
   type SessionOptions,
   type RunOptions,
   type Input,
   type RunnableGraph,
-} from "./src/session";
+} from "./src/kernel/session";
 export {
   events,
   type Event,
@@ -58,20 +58,22 @@ export {
   type EventSink,
   type ToEventsOptions,
   type RunStream,
-} from "./src/event";
+} from "./src/kernel/event";
 export {
   use,
-  collect,
   plugins,
+  manager,
   PluginRegistry,
+  PluginManager,
   type Plugin,
-  type PluginContext,
+  type PluginApi,
   type Teardown,
-  type UseTarget,
-} from "./src/plugin";
-export { builtins } from "./src/plugins";
-export { checkpoint } from "./src/store";
-export { makeRunPython, type PythonToolOptions } from "./src/tools/python";
+  type Order,
+  type ToolGate,
+} from "./src/kernel/plugin";
+export { builtins } from "./src/plugins/builtins";
+export { checkpoint } from "./src/capabilities/store";
+export { makeRunPython, type PythonToolOptions } from "./src/capabilities/tools/python";
 export type { FilesystemPermission } from "deepagents";
 export * from "./src/types";
-export * from "./src/tools";
+export * from "./src/capabilities/tools";

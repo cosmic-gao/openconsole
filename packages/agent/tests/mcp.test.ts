@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Mcp } from "../src/mcp";
+import { Mcp } from "../src/capabilities/mcp";
 
 describe("Mcp", () => {
   it("exposes connect and register", () => {

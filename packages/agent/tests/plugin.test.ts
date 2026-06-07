@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { MiddlewareRegistry } from "../src/middleware";
-import { ModelRegistry } from "../src/model";
-import { collect, plugins, use, type Plugin } from "../src/plugin";
-import { ToolRegistry } from "../src/registry";
-import { Tool } from "../src/tool";
-import { ok } from "../src/types";
+import { ModelRegistry } from "../src/kernel/model";
+import { PluginManager, plugins, type Plugin } from "../src/kernel/plugin";
+import { ToolRegistry } from "../src/kernel/registry";
+import { Tool } from "../src/capabilities/tool";
+import { ok, type AgentSpec } from "../src/types";
 
 function makeTool(name: string) {
   return Tool.define({
@@ -17,68 +16,119 @@ function makeTool(name: string) {
   });
 }
 
-describe("plugin", () => {
-  it("use merges tools/models into target registries, runs setup, and records the plugin", async () => {
+function makeSpec(): AgentSpec {
+  return { modelId: "openai:gpt-4o-mini", tools: {}, prompt: "base" };
+}
+
+/** 每个测试用独立 manager + 注册表，避免污染全局。 */
+function isolated() {
+  return new PluginManager(new ToolRegistry(), new ModelRegistry());
+}
+
+describe("plugin (rsbuild-style)", () => {
+  it("setup(api) contributes tools and models", async () => {
     const tools = new ToolRegistry();
     const models = new ModelRegistry();
-    const middlewares = new MiddlewareRegistry();
-    let setupRan = false;
+    const m = new PluginManager(tools, models);
     const p: Plugin = {
       name: "demo",
-      tools: [makeTool("echo")],
-      models: { demo_llm: "openai:gpt-4o-mini" },
-      setup: () => {
-        setupRan = true;
+      setup(api) {
+        api.addTool(makeTool("echo"));
+        api.addModel("fast_llm", "openai:gpt-4o-mini");
       },
     };
-    const off = await use([p], { tools, models, middlewares });
+    await m.use([p]);
     expect(tools.has("echo")).toBe(true);
-    expect(models.has("demo_llm")).toBe(true);
-    expect(setupRan).toBe(true);
+    expect(models.has("fast_llm")).toBe(true);
     expect(plugins.has("demo")).toBe(true);
-    await off();
   });
 
-  it("teardown runs setup-returned cleanups in reverse order", async () => {
-    const tools = new ToolRegistry();
-    const order: string[] = [];
-    const a: Plugin = {
-      name: "a",
-      setup: () => () => {
-        order.push("a");
-        return Promise.resolve();
+  it("modifySpec chains by order (pre → default → post)", async () => {
+    const m = isolated();
+    const p: Plugin = {
+      name: "spec",
+      setup(api) {
+        api.modifySpec((s) => ({ ...s, prompt: `${s.prompt} A` }), {
+          order: "post",
+        });
+        api.modifySpec((s) => ({ ...s, prompt: `${s.prompt} B` }), {
+          order: "pre",
+        });
+        api.modifySpec((s) => ({ ...s, prompt: `${s.prompt} C` }));
       },
     };
-    const b: Plugin = {
-      name: "b",
-      setup: () => () => {
-        order.push("b");
-        return Promise.resolve();
-      },
-    };
-    const off = await use([a, b], { tools });
-    await off();
-    expect(order).toEqual(["b", "a"]); // 后装的先卸
+    await m.use([p]);
+    expect(m.applySpec(makeSpec()).prompt).toBe("base B C A"); // pre→default→post
   });
 
-  it("warns when a plugin tool overrides an already-registered name", async () => {
+  it("compiles runtime hooks into a 'plugins' middleware (undefined when none)", async () => {
+    expect(isolated().middleware()).toBeUndefined();
+    const m = isolated();
+    await m.use([{ name: "h", setup: (api) => api.modifyPrompt(() => "ctx") }]);
+    expect(m.middleware()?.name).toBe("plugins");
+  });
+
+  it("topo-sorts plugins by pre/post (even when passed out of order)", async () => {
+    const m = isolated();
+    const seen: string[] = [];
+    const provider: Plugin = {
+      name: "provider",
+      setup: () => {
+        seen.push("provider");
+      },
+    };
+    const consumer: Plugin = {
+      name: "consumer",
+      pre: ["provider"], // provider 须在 consumer 之前
+      setup: () => {
+        seen.push("consumer");
+      },
+    };
+    await m.use([consumer, provider]); // 故意逆序传入
+    expect(seen).toEqual(["provider", "consumer"]);
+  });
+
+  it("expose/useExposed shares values across plugins", async () => {
+    const m = isolated();
+    let got: number | undefined;
+    const provider: Plugin = {
+      name: "p1",
+      setup: (api) => api.expose("answer", 42),
+    };
+    const consumer: Plugin = {
+      name: "p2",
+      pre: ["p1"],
+      setup: (api) => {
+        got = api.useExposed<number>("answer");
+      },
+    };
+    await m.use([provider, consumer]);
+    expect(got).toBe(42);
+  });
+
+  it("teardown removes hooks and exposed values", async () => {
+    const m = isolated();
+    const off = await m.use([
+      {
+        name: "t",
+        setup: (api) => {
+          api.modifyPrompt(() => "x");
+          api.expose("k", 1);
+        },
+      },
+    ]);
+    expect(m.middleware()).toBeDefined();
+    await off();
+    expect(m.middleware()).toBeUndefined();
+  });
+
+  it("warns when a plugin tool overrides an existing name", async () => {
     const tools = new ToolRegistry();
     tools.register(makeTool("dup"));
+    const m = new PluginManager(tools, new ModelRegistry());
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    await use([{ name: "p", tools: [makeTool("dup")] }], { tools });
+    await m.use([{ name: "p", setup: (api) => api.addTool(makeTool("dup")) }]);
     expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  it("collect gathers static tools + middleware and warns on mcp/setup plugins", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const got = collect([
-      { name: "x", tools: [makeTool("t1")] },
-      { name: "y", setup: () => undefined }, // 含 setup：build({plugins}) 忽略并告警
-    ]);
-    expect(got.tools.map((t) => t.name)).toEqual(["t1"]);
-    expect(got.middleware).toEqual([]);
-    expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
   });
 });

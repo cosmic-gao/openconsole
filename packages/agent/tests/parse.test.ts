@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parse, split } from "../src/parse";
+import { parse, split } from "../src/lang/parse";
 
 describe("Agent.parse", () => {
   it("parses llm, tools (list -> record), and body", () => {

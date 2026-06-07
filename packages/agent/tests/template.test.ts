@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { render, strip } from "../src/template";
+import { render, strip } from "../src/lang/template";
 
 describe("strip", () => {
   it("strips inline zh comments", () => {

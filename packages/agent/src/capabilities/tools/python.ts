@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok, type ToolResult } from "../types";
+import { err, ok, type ToolResult } from "../../types";
 
 /** 解释器命令；可用 AGENT_PYTHON 覆盖（默认 python3）。 */
 const PYTHON = process.env["AGENT_PYTHON"] ?? "python3";

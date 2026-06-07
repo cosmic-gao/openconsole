@@ -79,36 +79,42 @@ models.registerAll({
 
 `.agent` 的 `llm:` 即此处别名；`models.resolve` 先查注册表，未命中再回退到环境变量。
 
-## 目录结构（扁平、单词化）
+## 目录结构（微内核 · 能力分层）
 
 ```
 src/
-  types.ts      公共类型 + zod schema（AgentSpec、SkillsConfig、ToolResult）
-  parse.ts      Agent.parse / split —— 解析 .agent 的 YAML frontmatter
-  template.ts   render / strip —— {{ @… }} 展开 + 剥离 <!--zh-->
-  load.ts       Agent.load —— 读 .agent → 解析 → 渲染成系统提示词
-  model.ts      ModelRegistry / models —— 模型统一注册与解析
-  registry.ts   ToolRegistry / registry —— 工具按名注册与解析
-  tool.ts       Tool.define —— zod + ToolResult 桥接成 LangChain tool()
-  build.ts      Agent.build —— 把 AgentSpec 装配成 createDeepAgent(...)
-  agent.ts      Agent（parse/load/build/create + run/stream）+ subagent
-  crew.ts       Crew.compile —— IDENTITY/AGENTS/SOUL/TOOLS/SKILLS → 一个 .agent
-  mcp.ts        Mcp.connect/register/defaults —— @langchain/mcp-adapters
-  sandbox.ts    Sandbox.state/files/local/adapt + runJs —— deepagents backend + quickjs WASM
-  skill.ts      Skill.dir/backend —— deepagents skills middleware
-  middleware.ts horizon/observe/guard + MiddlewareRegistry —— LangChain v1 中间件扩展点
-  hooks.ts      Hook.middleware —— Claude Code 式 preToolUse/postToolUse/stop（编译成中间件）
-  session.ts    Session —— 多轮/thread/resume/fork/取消（复用 LangGraph checkpointer）
-  event.ts      events.of/raw/console —— 归一化统一事件流（token/tool/subagent/done…，有界背压）
-  plugin.ts     Plugin/use/collect —— 统一插件系统（聚合六个扩展点，可 npm 分发）
-  plugins.ts    builtins —— 预置插件样板
-  store.ts      checkpoint.memory/sqlite —— 持久化 checkpointer 工厂（SQLite 走可选依赖）
-  tools/        内置工具(11)：think、ask；web_search、image_search、read_webpages_as_markdown、http_request、download；run_javascript(沙箱)、run_python；current_time、html_to_markdown
-agents/         内置定义：search.agent、explore.agent、code.agent、crew.template.agent + prompts/
-skills/         预置 SKILL.md：using-mcp、deep-research、using-sandbox
-examples/       opencode —— 终端编码 agent（整合示例：对话 + 文件/shell + 工具）
-tests/          parse/template/load/crew/registry/build/model/subagent/sandbox/skill/mcp/io/tools/plugin/store/cache/event（60 用例）
+  types.ts            公共类型 + zod schema（AgentSpec/SkillsConfig/ToolResult）—— 零依赖共享基础
+  kernel/             内核：编排 + 运行时 + 注册表 + 插件宿主（顶层不依赖 capabilities）
+    agent.ts          Agent（parse/load/build/create + run/stream/session）+ subagent
+    build.ts          AgentSpec → createDeepAgent（装配期咨询 manager：applySpec + middleware）
+    plugin.ts         Plugin/PluginApi/PluginManager/use —— rsbuild 风格插件系统
+    session.ts        Session —— 多轮/thread/resume/fork/取消
+    event.ts          events.of/console —— 归一化统一事件流（有界背压）
+    registry.ts       ToolRegistry / registry —— 工具按名注册
+    model.ts          ModelRegistry / models —— 模型注册与解析
+    middleware.ts     horizon/observe/guard + MiddlewareRegistry
+  lang/               声明式 AGENT 定义层（.agent → 系统提示词）
+    parse.ts          解析 .agent 的 YAML frontmatter
+    template.ts       render / strip —— {{ @… }} 展开 + 剥离 <!--zh-->
+    load.ts           读 .agent → 解析 → 渲染（带编译缓存）
+    crew.ts           Crew.compile —— IDENTITY/AGENTS/SOUL/TOOLS/SKILLS → 一个 .agent
+  capabilities/       能力实现（经 Plugin / build 选项流入内核）
+    tool.ts           Tool.define —— zod + ToolResult 桥接成 LangChain tool()
+    mcp.ts            Mcp.connect/register/defaults —— @langchain/mcp-adapters
+    skill.ts          Skill.dir/backend —— deepagents skills middleware
+    sandbox.ts        Sandbox.state/files/local/adapt + runJs —— deepagents backend + quickjs WASM
+    store.ts          checkpoint.memory/sqlite —— 持久化 checkpointer（SQLite 可选依赖）
+    hooks.ts          Hook.middleware —— Claude Code 式 preToolUse/postToolUse/stop
+    tools/            内置工具(11)：think、ask；web_search、image_search、read_webpages_as_markdown、http_request、download；run_javascript、run_python；current_time、html_to_markdown
+  plugins/            官方预置插件
+    builtins.ts       把内置工具以 setup(api.addTool) 装配
+agents/               内置定义：search/explore/code/crew.template.agent + prompts/
+skills/               预置 SKILL.md：using-mcp、deep-research、using-sandbox
+examples/             opencode —— 终端编码 agent 整合示例
+tests/                62 用例（结构变、行为不变）
 ```
+
+依赖单向无环：`types` ← 各层；`lang` 只依赖 `types`；`kernel` 依赖 `lang`+`types`（**顶层不依赖 `capabilities`**——`addMcp`/`setSearch` 经动态 import 按需加载能力）；`capabilities` 依赖 `kernel`；`plugins` 依赖二者。
 
 ## `.agent` 文件格式
 
@@ -201,38 +207,53 @@ setSearchProvider({
 
 人机协作（HITL）：`Agent.create(name, { interruptOn: { ask: true }, checkpointer: checkpoint.memory() })`，在敏感工具前暂停等待批准。
 
-## 插件系统（统一扩展点）
+## 插件系统（rsbuild 风格）
 
-把原本分散的六个扩展入口（`registry`/`models`/`middlewares`/`SearchProvider`/`Sandbox`/`Mcp`）收拢成一个一等的 `Plugin`：一个插件 = 「一组贡献声明」+「一个可选异步 `setup`」，可打包成 npm 包分发（对齐 opencode / claude code）。`setup(ctx)` 拿到的就是现有那几个注册表，**不引入新的运行时概念**。
+参考 [rsbuild](https://rsbuild.rs/plugins/dev/) 的插件架构：一个 `Plugin` = `{ name, pre?, post?, setup(api) }`，**没有静态字段**，一切通过 `setup(api)` 命令式声明。运行时 hooks 被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线）；`await use([...])` 后自动作用到其后 `Agent.create` 的 agent。
 
-| 贡献       | 字段         | 落点                                                         |
-| ---------- | ------------ | ------------------------------------------------------------ |
-| 工具       | `tools`      | 进 `registry`，`.agent` 可按名引用                           |
-| 模型别名   | `models`     | 进 `models`                                                  |
-| 中间件     | `middleware` | 进 `middlewares`（hooks/guard/horizon/observe 编译后都是它） |
-| MCP server | `mcp`        | `setup` 阶段连接并注册工具，teardown 自动关闭                |
-| 异步初始化 | `setup`      | 连 MCP / 动态 import / 读盘；返回可选 teardown               |
+`api` 提供四类能力：
 
-两条装配路径：`use()` 全局（唯一会跑 `setup`、连 MCP 的入口），`build/create({ plugins })` 按 agent（同步，仅取 tools + middleware）。
+| 类别          | 方法                                                                     | 说明                                                                  |
+| ------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| 贡献          | `addTool` / `addModel` / `addMcp` / `setSearch`                          | 注册工具 / 模型别名 / MCP / 搜索后端                                  |
+| 装配期 modify | `modifySpec(fn, {order})`                                                | 链式改 `AgentSpec`（model/tools/prompt）                              |
+| 运行时 hooks  | `modifyPrompt` / `modifyToolCall` / `onToolResult` / `onStart` / `onEnd` | 编译成 middleware（wrapModelCall/wrapToolCall/beforeAgent/afterAgent） |
+| 通信          | `expose` / `useExposed`                                                  | 插件间共享值                                                          |
+
+顺序：插件间用 `pre`/`post` 声明依赖（装配前拓扑排序）；同阶段多个 hook 用 `order: "pre"|"default"|"post"` 排序。
 
 ```ts
-import { Agent, use, type Plugin } from "@openconsole/agent";
+import { Agent, use, Tool, ok, type Plugin } from "@openconsole/agent";
+import { z } from "zod";
 
 const myPlugin: Plugin = {
   name: "my-tools",
-  tools: [/* Tool.define(...) */],
-  models: { fast_llm: "openai:gpt-4o-mini" },
-  async setup() {
-    /* 连 MCP / 动态 import；可 return async () => {...} 作 teardown */
+  pre: ["builtins"], // 在 builtins 之后装（拓扑顺序）
+  setup(api) {
+    api.addTool(
+      Tool.define({
+        name: "echo",
+        description: "Echo the input.",
+        schema: z.object({ text: z.string() }),
+        execute: ({ text }) => ok(text),
+      }),
+    );
+    api.addModel("fast_llm", "openai:gpt-4o-mini");
+    api.modifyPrompt(() => "Always answer concisely."); // 每轮追加系统提示词
+    api.modifyToolCall((c) =>
+      c.name === "execute" ? { deny: "read-only" } : undefined,
+    ); // 拦截工具调用
+    api.expose("ready", true);
+    // 需要 IO 时 setup 可 async：await api.addMcp({ ... })
   },
 };
 
-const off = await use([myPlugin]); // 全局装配：.agent 现可按名引用插件工具、用其模型别名
+const off = await use([myPlugin]); // 装配 → 工具/hooks 即对其后 create 的 agent 生效
 const agent = await Agent.create("search");
-await off(); // 逆序卸载 + 关闭 MCP 连接
+await off(); // 移除本批 hooks/exposed、关闭其 MCP 连接
 ```
 
-预置插件：`builtins`（本包全部内置工具的显式装配入口）。默认 MCP servers 用 `Mcp.defaults` 自行组合成插件即可。
+进阶：`new PluginManager(tools, models)` 可建独立管理器做隔离装配 / 测试；全局单例 `manager` 在 `build` 装配时被咨询。预置插件 `builtins` 把内置工具以 `setup(api.addTool)` 形式装配。
 
 ## 性能
 

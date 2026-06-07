@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { currentTimeTool, httpRequestTool, toMarkdownTool } from "../src/tools";
+import { currentTimeTool, httpRequestTool, toMarkdownTool } from "../src/capabilities/tools";
 
 /** content_and_artifact 工具的 invoke(args) 返回 content(string);兼容取值。 */
 function text(out: unknown): string {

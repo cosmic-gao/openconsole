@@ -2,7 +2,7 @@ import { search as ddgSearch, SafeSearchType } from "duck-duck-scrape";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok, type ToolResult } from "../types";
+import { err, ok, type ToolResult } from "../../types";
 
 /** 一条网页搜索结果。 */
 export interface SearchHit {

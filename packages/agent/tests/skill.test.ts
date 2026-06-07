@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { split } from "../src/parse";
-import { Skill } from "../src/skill";
+import { split } from "../src/lang/parse";
+import { Skill } from "../src/capabilities/skill";
 
 describe("Skill", () => {
   it("locates the bundled skills directory", () => {

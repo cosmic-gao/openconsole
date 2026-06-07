@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok } from "../types";
+import { err, ok } from "../../types";
 
 /**
  * `current_time` —— 获取当前日期时间(可指定 IANA 时区)。

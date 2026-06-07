@@ -5,7 +5,7 @@ import {
   type Connection,
 } from "@langchain/mcp-adapters";
 
-import { registry as defaultRegistry, type ToolRegistry } from "./registry";
+import { registry as defaultRegistry, type ToolRegistry } from "../kernel/registry";
 
 /** MCP server 配置:server 名 -> 连接(stdio / http / sse)。 */
 export type McpServers = Record<string, Connection>;

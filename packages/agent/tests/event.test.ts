@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { events, type Event, type RunStream } from "../src/event";
+import { events, type Event, type RunStream } from "../src/kernel/event";
 
 function stream<T>(...items: T[]): AsyncIterable<T> {
   async function* g(): AsyncIterable<T> {
@@ -80,33 +80,9 @@ describe("toEvents", () => {
   });
 });
 
-describe("fromRaw", () => {
-  it("normalizes v2 raw events into an Event stream", async () => {
-    const raw = stream(
-      {
-        event: "on_chat_model_stream",
-        data: {
-          chunk: {
-            text: "Hi",
-            usage_metadata: {
-              input_tokens: 1,
-              output_tokens: 1,
-              total_tokens: 2,
-            },
-          },
-        },
-        metadata: { langgraph_node: "agent" },
-      },
-      {
-        event: "on_tool_end",
-        name: "web_search",
-        run_id: "r1",
-        data: { output: { content: "ok", status: "success" } },
-      },
-    );
-    const out = await drain(events.raw(raw));
-    expect(out.map((e) => e.type)).toEqual(
-      expect.arrayContaining(["token", "tool_end", "done"]),
-    );
+describe("events.of (only path)", () => {
+  it("is the single v3 normalization entry; events.raw was removed", () => {
+    expect(typeof events.of).toBe("function");
+    expect((events as Record<string, unknown>)["raw"]).toBeUndefined();
   });
 });

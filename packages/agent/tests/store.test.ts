@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkpoint } from "../src/store";
+import { checkpoint } from "../src/capabilities/store";
 
 /** 探测可选依赖是否已安装，让测试对「装了 / 没装」两种环境都成立。 */
 async function sqlitePresent(): Promise<boolean> {

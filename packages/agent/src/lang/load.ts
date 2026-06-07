@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { parse } from "./parse";
 import { render } from "./template";
-import { isSkillsConfigEmpty, type AgentSpec } from "./types";
+import { isSkillsConfigEmpty, type AgentSpec } from "../types";
 
 /**
  * Agent 加载器。移植自 magic 的 `AgentLoader`：读取 `<dir>/<name>.agent`，
@@ -20,7 +20,7 @@ export interface LoadOptions {
 /** 本包随附的内置 `agents/` 目录。 */
 export function defaultAgentsDir(): string {
   // 基于当前模块 URL 解析，使内置目录无论从何处被引用都能正确定位
-  return fileURLToPath(new URL("../agents/", import.meta.url));
+  return fileURLToPath(new URL("../../agents/", import.meta.url));
 }
 
 /**

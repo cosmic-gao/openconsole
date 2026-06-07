@@ -2,7 +2,7 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { z } from "zod";
 
-import type { ToolResult } from "./types";
+import type { ToolResult } from "../types";
 
 /**
  * 工具定义。把 magic 的 `BaseTool` 模式（zod 参数 + `execute -> ToolResult`）

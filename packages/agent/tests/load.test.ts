@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { load } from "../src/load";
+import { load } from "../src/lang/load";
 
 describe("Agent.load", () => {
   it("loads and fully renders the bundled search agent", async () => {

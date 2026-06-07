@@ -3,9 +3,9 @@ import type { StructuredTool } from "@langchain/core/tools";
 import type { SubAgent } from "deepagents";
 
 import { build, type BuildOptions, type BuiltAgent } from "./build";
-import { defaultAgentsDir, load, type LoadOptions } from "./load";
+import { defaultAgentsDir, load, type LoadOptions } from "../lang/load";
 import { models, type ModelRef } from "./model";
-import { parse } from "./parse";
+import { parse } from "../lang/parse";
 import { registry as defaultRegistry, type ToolRegistry } from "./registry";
 import { Session, type RunnableGraph, type SessionOptions } from "./session";
 

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { err, ok, type ToolResult } from "../types";
+import { err, ok, type ToolResult } from "../../types";
 
 /**
  * `download` —— 把一个 URL 下载并保存到本地工作目录。移植自 magic 的 `download_from_urls`。

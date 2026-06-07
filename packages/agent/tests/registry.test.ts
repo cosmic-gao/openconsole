@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { ToolRegistry } from "../src/registry";
-import { Tool } from "../src/tool";
+import { ToolRegistry } from "../src/kernel/registry";
+import { Tool } from "../src/capabilities/tool";
 import { ok } from "../src/types";
 
 function makeTool(name: string) {

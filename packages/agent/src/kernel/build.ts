@@ -11,9 +11,9 @@ import {
 import type { AgentMiddleware } from "langchain";
 
 import { models, type ModelRef } from "./model";
-import { collect, type Plugin } from "./plugin";
+import { manager } from "./plugin";
 import { registry as defaultRegistry, type ToolRegistry } from "./registry";
-import type { AgentSpec } from "./types";
+import type { AgentSpec } from "../types";
 
 /**
  * {@link build} 的选项。所有可变部分都通过 `opts` 覆盖 —— 扩展方式是
@@ -53,8 +53,6 @@ export interface BuildOptions {
   responseFormat?: SupportedResponseFormat;
   /** 只读的 context schema（不跨调用持久化），供中间件经 runtime.context 读取。 */
   contextSchema?: InteropZodObject;
-  /** 直接装配到本 agent 的插件：仅取其 tools + middleware（含 mcp/setup 的请先 `await use(plugin)`）。 */
-  plugins?: Plugin[];
 }
 
 /**
@@ -65,16 +63,17 @@ export interface BuildOptions {
  * middleware / memory / permissions / responseFormat / contextSchema 一并透传给 createDeepAgent。
  */
 export function build(spec: AgentSpec, options: BuildOptions = {}) {
-  const model = options.model ?? models.resolve(spec.modelId);
+  // 装配期：先应用已装配插件的 modifySpec（链式改 model/tools/prompt）。
+  const finalSpec = manager.applySpec(spec);
+  const model = options.model ?? models.resolve(finalSpec.modelId);
   const reg = options.registry ?? defaultRegistry;
-  const baseTools = options.tools ?? reg.get(Object.keys(spec.tools));
-  // 插件的纯静态贡献（tools + middleware）并入本 agent；含 mcp/setup 的插件需先 await use()。
-  const extra = options.plugins
-    ? collect(options.plugins)
-    : { tools: [], middleware: [] };
-  const tools =
-    extra.tools.length > 0 ? [...baseTools, ...extra.tools] : baseTools;
-  const middleware = [...(options.middleware ?? []), ...extra.middleware];
+  const tools = options.tools ?? reg.get(Object.keys(finalSpec.tools));
+  // 插件运行时 hooks 编译出的中间件 + 用户传入的中间件。
+  const pluginMw = manager.middleware();
+  const middleware = [
+    ...(options.middleware ?? []),
+    ...(pluginMw ? [pluginMw] : []),
+  ];
 
   // 注意：这里不手动挂载文件系统/任务/摘要等中间件 —— createDeepAgent 默认已内置它们。
   // systemPrompt 直接取已渲染好的 spec.prompt（模板展开 + 注释剥离均已在 Agent.load 阶段完成）。
@@ -83,7 +82,7 @@ export function build(spec: AgentSpec, options: BuildOptions = {}) {
   return createDeepAgent({
     model,
     tools,
-    systemPrompt: spec.prompt,
+    systemPrompt: finalSpec.prompt,
     ...(options.subagents !== undefined
       ? { subagents: options.subagents }
       : {}),

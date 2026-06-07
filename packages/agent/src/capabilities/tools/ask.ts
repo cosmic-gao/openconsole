@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { Tool } from "../tool";
-import { ok } from "../types";
+import { ok } from "../../types";
 
 /**
  * `ask` —— 向用户提问。移植自 magic 的 `ask_user`（一个会暂停运行的 USER_TOOL_CALL）。

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Crew } from "../src/crew";
-import { parse } from "../src/parse";
+import { Crew } from "../src/lang/crew";
+import { parse } from "../src/lang/parse";
 
 const template = [
   "---",

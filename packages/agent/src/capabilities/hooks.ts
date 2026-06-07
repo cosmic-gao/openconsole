@@ -13,17 +13,16 @@ import { createMiddleware, type AgentMiddleware } from "langchain";
  * `preToolUse` 的决策：
  *  - `void` / `{decision:"allow"}`：放行；
  *  - `{decision:"deny"}`：拒绝，回填一条 error ToolMessage，工具不执行；
- *  - `{decision:"modify"}`：改参后放行；
- *  - `{decision:"ask"}`：本期**等价 deny**（见下）。要真正的人工确认，请用 deepagents
- *    原生 HITL：`build({ interruptOn: { [tool]: true }, checkpointer: true })`。
- *    保留 `"ask"` 字面量是为前向兼容，hooks 不自造 `runtime.interrupt`。
+ *  - `{decision:"modify"}`：改参后放行。
+ *
+ * 需要真正的人工确认，请用 deepagents 原生 HITL：
+ * `build({ interruptOn: { [tool]: true }, checkpointer: true })`。
  */
 export type PreToolDecision =
   | void
   | { decision: "allow" }
   | { decision: "deny"; reason?: string }
-  | { decision: "modify"; args: Record<string, unknown> }
-  | { decision: "ask"; reason?: string };
+  | { decision: "modify"; args: Record<string, unknown> };
 
 /** 工具执行前事件。 */
 export interface PreToolUse {
@@ -49,7 +48,7 @@ export interface StopEvent {
 
 /** 生命周期钩子集合。每个钩子均可选。 */
 export interface Hooks {
-  /** 工具执行前：放行 / 拒绝 / 改参 / 请求人工确认（见 {@link PreToolDecision}）。 */
+  /** 工具执行前：放行 / 拒绝 / 改参（见 {@link PreToolDecision}）。 */
   preToolUse?: (e: PreToolUse) => PreToolDecision | Promise<PreToolDecision>;
   /** 工具执行后：观测或后处理。返回新的 ToolMessage 则替换原结果。 */
   postToolUse?: (
@@ -75,13 +74,9 @@ export const Hook = {
             toolCallId: id,
             runtime: request.runtime,
           });
-          if (d && (d.decision === "deny" || d.decision === "ask")) {
-            const reason =
-              d.decision === "ask"
-                ? `requires approval: ${d.reason ?? "use interruptOn for HITL"}`
-                : (d.reason ?? "blocked by hook");
+          if (d && d.decision === "deny") {
             return new ToolMessage({
-              content: `Denied: ${reason}`,
+              content: `Denied: ${d.reason ?? "blocked by hook"}`,
               tool_call_id: id,
               status: "error",
             });
