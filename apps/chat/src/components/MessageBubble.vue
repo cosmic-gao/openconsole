@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { Check, Loader2, Wrench, X } from "lucide-vue-next";
+import { computed } from "vue";
 
 import type { ChatMessage } from "@/composables/useChat";
 
-defineProps<{ message: ChatMessage }>();
+const props = defineProps<{ message: ChatMessage }>();
+
+// 去掉首尾空白：MiniMax 在 </think> 后常吐 \n\n\n，纯空白会判真而渲染出空框、
+// 真答案也会因此顶部带空隙。trim 后既不渲染空框，正文也贴边。
+const answer = computed(() => props.message.answer.trim());
 </script>
 
 <template>
@@ -48,10 +53,10 @@ defineProps<{ message: ChatMessage }>();
 
       <!-- 正文 -->
       <div
-        v-if="message.answer"
+        v-if="answer"
         class="whitespace-pre-wrap break-words rounded-lg rounded-bl-sm border border-border bg-card px-4 py-2 text-sm text-card-foreground"
       >
-        {{ message.answer }}
+        {{ answer }}
       </div>
 
       <!-- 流式占位（尚无任何输出时） -->

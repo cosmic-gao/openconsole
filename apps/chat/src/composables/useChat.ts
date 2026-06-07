@@ -80,12 +80,15 @@ export function useChat() {
         if (reasoning) msg.reasoning += reasoning;
         if (answer) msg.answer += answer;
         if (ev.usage) msg.usage = ev.usage;
-        // 兜底：既无正文也无工具（模型只输出 <think> 就收尾）——优先用 done.text 恢复正文，
-        // 实在没有才给提示，避免「回复内容丢失」的观感。
-        if (!msg.answer.trim() && msg.tools.length === 0) {
+        // 兜底：本轮没有可见正文（只思考，或调了工具却没给最终回答）。优先用 done.text 恢复
+        // 正文，否则按是否调过工具给不同提示，避免留下一个空框、看着像「回复丢失」。
+        if (!msg.answer.trim()) {
           const ft = (ev.text ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
           if (ft) msg.answer = ft;
-          else msg.note = "本轮模型只思考、未给出回答；可重述需求或再发一次。";
+          else
+            msg.note = msg.tools.length
+              ? "本轮调用了工具但没给出最终回答；可追问「然后呢」或重述需求。"
+              : "本轮模型只思考、未给出回答；可重述需求或再发一次。";
         }
         break;
       }
