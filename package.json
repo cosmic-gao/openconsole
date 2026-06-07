@@ -8,6 +8,7 @@
     "pnpm": ">=11.2.0"
   },
   "scripts": {
+    "chat": "pnpm --filter @openconsole/chat dev",
     "test": "pnpm -r run test",
     "test:coverage": "pnpm -r run test:coverage",
     "typecheck": "pnpm -r run typecheck",
