@@ -1,12 +1,17 @@
 import type { StructuredTool } from "@langchain/core/tools";
+import type { InteropZodObject } from "@langchain/core/utils/types";
 import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph";
 import {
   createDeepAgent,
   type AnyBackendProtocol,
+  type FilesystemPermission,
   type SubAgent,
+  type SupportedResponseFormat,
 } from "deepagents";
+import type { AgentMiddleware } from "langchain";
 
 import { models, type ModelRef } from "./model";
+import { collect, type Plugin } from "./plugin";
 import { registry as defaultRegistry, type ToolRegistry } from "./registry";
 import type { AgentSpec } from "./types";
 
@@ -15,7 +20,7 @@ import type { AgentSpec } from "./types";
  * 「传值」而非「继承」。默认值在 DeepAgent 内置运行时之上复现 magic 的接线方式
  *（文件系统、任务、子代理、历史摘要等已由 `createDeepAgent` 默认提供）。
  *
- * 注意：memory / permissions / responseFormat / middleware 等 createDeepAgent 选项本期未透传（见 Phase-2）。
+ * middleware / memory / permissions / responseFormat / contextSchema 均透传给 createDeepAgent。
  */
 export interface BuildOptions {
   /** 覆盖模型。默认为 `models.resolve(spec.modelId)`。 */
@@ -38,6 +43,18 @@ export interface BuildOptions {
   store?: BaseStore;
   /** 代理名称。 */
   name?: string;
+  /** 追加在 DeepAgent 内置中间件之后的自定义中间件（见 ./middleware 与 ./hooks）。 */
+  middleware?: AgentMiddleware[];
+  /** 要加载的记忆文件路径（AGENTS.md）；启动时读入并并进系统提示词。 */
+  memory?: string[];
+  /** 文件系统权限规则：按声明顺序首匹配胜、默认 allow；作用于 ls/read_file/write_file/edit_file/glob/grep。 */
+  permissions?: FilesystemPermission[];
+  /** 结构化输出格式（Zod schema 或 createAgent 支持的其它格式）；设置后图 state 产出 structuredResponse。 */
+  responseFormat?: SupportedResponseFormat;
+  /** 只读的 context schema（不跨调用持久化），供中间件经 runtime.context 读取。 */
+  contextSchema?: InteropZodObject;
+  /** 直接装配到本 agent 的插件：仅取其 tools + middleware（含 mcp/setup 的请先 `await use(plugin)`）。 */
+  plugins?: Plugin[];
 }
 
 /**
@@ -45,12 +62,19 @@ export interface BuildOptions {
  * `spec.prompt` 成为系统提示词，`spec.tools` 的名字解析为工具实例，
  * 运行时的其余部分都来自 DeepAgent 的默认实现。
  *
- * 注意：memory / permissions / responseFormat / middleware 等 createDeepAgent 选项本期未透传（见 Phase-2）。
+ * middleware / memory / permissions / responseFormat / contextSchema 一并透传给 createDeepAgent。
  */
 export function build(spec: AgentSpec, options: BuildOptions = {}) {
   const model = options.model ?? models.resolve(spec.modelId);
   const reg = options.registry ?? defaultRegistry;
-  const tools = options.tools ?? reg.get(Object.keys(spec.tools));
+  const baseTools = options.tools ?? reg.get(Object.keys(spec.tools));
+  // 插件的纯静态贡献（tools + middleware）并入本 agent；含 mcp/setup 的插件需先 await use()。
+  const extra = options.plugins
+    ? collect(options.plugins)
+    : { tools: [], middleware: [] };
+  const tools =
+    extra.tools.length > 0 ? [...baseTools, ...extra.tools] : baseTools;
+  const middleware = [...(options.middleware ?? []), ...extra.middleware];
 
   // 注意：这里不手动挂载文件系统/任务/摘要等中间件 —— createDeepAgent 默认已内置它们。
   // systemPrompt 直接取已渲染好的 spec.prompt（模板展开 + 注释剥离均已在 Agent.load 阶段完成）。
@@ -73,6 +97,15 @@ export function build(spec: AgentSpec, options: BuildOptions = {}) {
       : {}),
     ...(options.store !== undefined ? { store: options.store } : {}),
     ...(options.name !== undefined ? { name: options.name } : {}),
+    ...(middleware.length > 0 ? { middleware } : {}),
+    ...(options.memory !== undefined ? { memory: options.memory } : {}),
+    ...(options.permissions !== undefined ? { permissions: options.permissions } : {}),
+    ...(options.responseFormat !== undefined
+      ? { responseFormat: options.responseFormat }
+      : {}),
+    ...(options.contextSchema !== undefined
+      ? { contextSchema: options.contextSchema }
+      : {}),
   });
 }
 

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,24 @@ export function defaultAgentsDir(): string {
   return fileURLToPath(new URL("../agents/", import.meta.url));
 }
 
+/**
+ * 编译缓存：键 = `${file}|${mtimeMs}|${vars}`，值 = 已渲染好的 {@link AgentSpec}。
+ * 避免每次 {@link load} 都重复读盘 + 递归展开 @include + 渲染（render 含文件 IO，最值得缓存）。
+ *
+ * 失效粒度为**主 `.agent` 文件**的 mtime；其 @include 的子文件被改动不会自动失效——
+ * 开发时用 {@link cache.clear} 或设环境变量 `AGENT_NO_CACHE=1` 旁路缓存。
+ * 命中返回的是共享的 spec 引用，调用方应将其视为只读。
+ */
+const specCache = new Map<string, AgentSpec>();
+const cacheDisabled = process.env["AGENT_NO_CACHE"] === "1";
+
+/** 编译缓存控制（单词优先命名空间）：`cache.clear()` 清空 {@link load} 的编译缓存。 */
+export const cache = {
+  clear(): void {
+    specCache.clear();
+  },
+};
+
 /** 加载一个 `.agent` 定义并完整渲染为 {@link AgentSpec}。 */
 export async function load(
   name: string,
@@ -30,6 +48,21 @@ export async function load(
 ): Promise<AgentSpec> {
   const dir = options.agentsDir ?? defaultAgentsDir();
   const file = resolve(dir, `${name}.agent`);
+
+  // 编译缓存查找：按主文件 mtime + vars 命中。stat 失败（如文件不存在）则跳过缓存，
+  // 让下面的 readFile 抛出更明确的错误。
+  let cacheKey: string | undefined;
+  if (!cacheDisabled) {
+    try {
+      const { mtimeMs } = await stat(file);
+      cacheKey = `${file}|${mtimeMs}|${JSON.stringify(options.vars ?? {})}`;
+      const cached = specCache.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      /* stat 失败：不缓存，继续照常读取 */
+    }
+  }
+
   const text = await readFile(file, "utf8");
   const parsed = parse(text);
   // baseDir 设为 .agent 文件所在目录，使正文里的 @include 相对路径能正确解析
@@ -52,5 +85,6 @@ export async function load(
       );
     }
   }
+  if (cacheKey) specCache.set(cacheKey, spec);
   return spec;
 }

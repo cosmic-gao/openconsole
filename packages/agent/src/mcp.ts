@@ -17,7 +17,7 @@ export type McpOptions = Omit<ClientConfig, "mcpServers">;
  * 预置的官方 reference servers(均为 MIT 开源,stdio + npx 启动)。
  * 连上即获得文件系统、长期记忆、顺序思考等工具。需本机有 npx 与网络拉包。
  */
-export const defaultMcpServers: McpServers = {
+const defaults: McpServers = {
   filesystem: {
     transport: "stdio",
     command: "npx",
@@ -40,6 +40,9 @@ export const defaultMcpServers: McpServers = {
  * 转成 LangChain 工具,可直接交给 agent 或注册进 {@link registry}。
  */
 export const Mcp = {
+  /** 预置的官方 reference servers（filesystem / memory / sequential-thinking，MIT，stdio + npx）。 */
+  defaults,
+
   /**
    * 连接一组 MCP server,返回其工具与底层 client。
    * 用完记得 `await client.close()` 释放连接。

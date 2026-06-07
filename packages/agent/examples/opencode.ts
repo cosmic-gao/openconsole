@@ -4,8 +4,9 @@
  *  - 真实磁盘文件工具 + shell:`Sandbox.local()` backend 让 agent 自动获得 deepagents 的
  *    ls / read_file / write_file / edit_file / glob / grep / execute,作用于当前工作目录;
  *  - 内置工具:think / web_search / read_webpages_as_markdown / http_request / run_javascript / run_python;
- *  - 多轮对话:LangGraph checkpointer + 固定 thread_id,自动保留上下文;
- *  - 模型:AGENT_MODEL=...(+ key),或设 MINIMAX_API_KEY 走 MiniMax 中国区。
+ *  - 多轮对话 + 标准化事件流:`agent.session()` 封装 checkpointer + thread_id,`session.stream()`
+ *    产出 token / tool / done 事件,边生成边渲染;
+ *  - 模型:设 MINIMAX_API_KEY 走 MiniMax 中国区,或 AGENT_MODEL=...(+ 对应 key)。
  *
  * ⚠️ `Sandbox.local()` 在宿主机执行命令/读写文件(弱隔离),仅在你信任的本地项目里用。
  *    需要隔离时换 `Sandbox.state()`(虚拟FS)或 `Sandbox.adapt(...)` 接自托管沙箱。
@@ -15,22 +16,14 @@
  */
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { BaseMessage } from "@langchain/core/messages";
-import { MemorySaver } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 
-import { Agent, models, Sandbox } from "../index";
-
-/** 取图结果里最后一条消息的文本。 */
-function lastText(state: unknown): string {
-  const messages = (state as { messages?: BaseMessage[] }).messages;
-  const last = messages?.[messages.length - 1];
-  return typeof last?.text === "string" ? last.text : "";
-}
+import { Agent, checkpoint, models, Sandbox } from "../index";
 
 async function main(): Promise<void> {
-  // 可选:MiniMax 中国区(设了 key 就用,否则走 AGENT_MODEL)
-  const minimaxKey = 'sk-cp-ALjB-RD09EIx8OiQpseV-gGC1TzBFn6lG-oJjkCnOkyzp1pQReJJD8s2iktZq8ZrtbwHclJ0wTy5cJSuTEA0ao-OZYCqKdtkzC9hwnEmhYnwxqu7w4DzVH8'
+  // 可选:MiniMax 中国区(设了 MINIMAX_API_KEY 就用,否则走 AGENT_MODEL)。
+  // 切勿把密钥写进源码——从环境变量读取。
+  const minimaxKey = process.env["MINIMAX_API_KEY"];
   if (minimaxKey) {
     models.register(
       "main_llm",
@@ -53,12 +46,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  // 编码 agent:真实磁盘 backend(文件 + shell)+ 多轮 checkpointer
+  // 编码 agent:真实磁盘 backend(文件 + shell)+ 多轮 checkpointer。
+  // 默认进程内内存(重启即失忆);要跨重启保留会话,先装可选依赖
+  // `@langchain/langgraph-checkpoint-sqlite`,再换成 `await checkpoint.sqlite("opencode.db")`。
   const agent = await Agent.create("code", {
     backend: Sandbox.local({ rootDir: process.cwd() }),
-    checkpointer: new MemorySaver(),
+    checkpointer: checkpoint.memory(),
   });
-  let thread = "opencode";
+  let session = agent.session({ thread: "opencode" });
 
   const rl = createInterface({ input: stdin, output: stdout });
   console.log(
@@ -71,16 +66,20 @@ async function main(): Promise<void> {
       if (input === "") continue;
       if (input === "/exit" || input === "/quit") break;
       if (input === "/reset") {
-        thread = `opencode-${Date.now()}`;
+        session = session.resume(`opencode-${Date.now()}`);
         console.log("（已开新会话）");
         continue;
       }
       try {
-        const state = await agent.graph.invoke(
-          { messages: [{ role: "user", content: input }] },
-          { configurable: { thread_id: thread } },
-        );
-        console.log(`\nagent › ${lastText(state)}`);
+        stdout.write("\nagent › ");
+        for await (const ev of session.stream(input)) {
+          if (ev.type === "token") stdout.write(ev.text);
+          else if (ev.type === "tool_start") stdout.write(`\n  · ${ev.name}…`);
+          else if (ev.type === "tool_end" && !ev.ok)
+            stdout.write(`\n  · ${ev.name} 失败`);
+          else if (ev.type === "error") stdout.write(`\n[错误] ${ev.message}`);
+        }
+        stdout.write("\n");
       } catch (e) {
         console.error(`\n[错误] ${e instanceof Error ? e.message : String(e)}`);
       }

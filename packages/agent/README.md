@@ -93,14 +93,21 @@ src/
   build.ts      Agent.build —— 把 AgentSpec 装配成 createDeepAgent(...)
   agent.ts      Agent（parse/load/build/create + run/stream）+ subagent
   crew.ts       Crew.compile —— IDENTITY/AGENTS/SOUL/TOOLS/SKILLS → 一个 .agent
-  mcp.ts        Mcp.connect/register + defaultMcpServers —— @langchain/mcp-adapters
+  mcp.ts        Mcp.connect/register/defaults —— @langchain/mcp-adapters
   sandbox.ts    Sandbox.state/files/local/adapt + runJs —— deepagents backend + quickjs WASM
   skill.ts      Skill.dir/backend —— deepagents skills middleware
+  middleware.ts horizon/observe/guard + MiddlewareRegistry —— LangChain v1 中间件扩展点
+  hooks.ts      Hook.middleware —— Claude Code 式 preToolUse/postToolUse/stop（编译成中间件）
+  session.ts    Session —— 多轮/thread/resume/fork/取消（复用 LangGraph checkpointer）
+  event.ts      events.of/raw/console —— 归一化统一事件流（token/tool/subagent/done…，有界背压）
+  plugin.ts     Plugin/use/collect —— 统一插件系统（聚合六个扩展点，可 npm 分发）
+  plugins.ts    builtins —— 预置插件样板
+  store.ts      checkpoint.memory/sqlite —— 持久化 checkpointer 工厂（SQLite 走可选依赖）
   tools/        内置工具(11)：think、ask；web_search、image_search、read_webpages_as_markdown、http_request、download；run_javascript(沙箱)、run_python；current_time、html_to_markdown
 agents/         内置定义：search.agent、explore.agent、code.agent、crew.template.agent + prompts/
 skills/         预置 SKILL.md：using-mcp、deep-research、using-sandbox
 examples/       opencode —— 终端编码 agent（整合示例：对话 + 文件/shell + 工具）
-tests/          parse/template/load/crew/registry/build/model/subagent/sandbox/skill/mcp/io/tools（47 用例）
+tests/          parse/template/load/crew/registry/build/model/subagent/sandbox/skill/mcp/io/tools/plugin/store/cache/event（60 用例）
 ```
 
 ## `.agent` 文件格式
@@ -121,7 +128,7 @@ const agent = await Agent.create("search", {
 
 ## MCP 集成
 
-基于 LangChain 官方 `@langchain/mcp-adapters`（MIT）。`Mcp.connect` 拿到工具，`Mcp.register` 连接并把工具注册进 `registry`（于是任意 `.agent` 的 `tools:` 可按名引用）。预置官方 reference servers（`defaultMcpServers`：`filesystem`、`memory`、`sequential-thinking`，stdio + npx，均 MIT）：
+基于 LangChain 官方 `@langchain/mcp-adapters`（MIT）。`Mcp.connect` 拿到工具，`Mcp.register` 连接并把工具注册进 `registry`（于是任意 `.agent` 的 `tools:` 可按名引用）。预置官方 reference servers（`Mcp.defaults`：`filesystem`、`memory`、`sequential-thinking`，stdio + npx，均 MIT）：
 
 ```ts
 import { Agent, Mcp, registry } from "@openconsole/agent";
@@ -192,7 +199,49 @@ setSearchProvider({
 });
 ```
 
-人机协作（HITL）：`Agent.create(name, { interruptOn: { ask: true }, checkpointer: new MemorySaver() })`，在敏感工具前暂停等待批准。
+人机协作（HITL）：`Agent.create(name, { interruptOn: { ask: true }, checkpointer: checkpoint.memory() })`，在敏感工具前暂停等待批准。
+
+## 插件系统（统一扩展点）
+
+把原本分散的六个扩展入口（`registry`/`models`/`middlewares`/`SearchProvider`/`Sandbox`/`Mcp`）收拢成一个一等的 `Plugin`：一个插件 = 「一组贡献声明」+「一个可选异步 `setup`」，可打包成 npm 包分发（对齐 opencode / claude code）。`setup(ctx)` 拿到的就是现有那几个注册表，**不引入新的运行时概念**。
+
+| 贡献       | 字段         | 落点                                                         |
+| ---------- | ------------ | ------------------------------------------------------------ |
+| 工具       | `tools`      | 进 `registry`，`.agent` 可按名引用                           |
+| 模型别名   | `models`     | 进 `models`                                                  |
+| 中间件     | `middleware` | 进 `middlewares`（hooks/guard/horizon/observe 编译后都是它） |
+| MCP server | `mcp`        | `setup` 阶段连接并注册工具，teardown 自动关闭                |
+| 异步初始化 | `setup`      | 连 MCP / 动态 import / 读盘；返回可选 teardown               |
+
+两条装配路径：`use()` 全局（唯一会跑 `setup`、连 MCP 的入口），`build/create({ plugins })` 按 agent（同步，仅取 tools + middleware）。
+
+```ts
+import { Agent, use, type Plugin } from "@openconsole/agent";
+
+const myPlugin: Plugin = {
+  name: "my-tools",
+  tools: [/* Tool.define(...) */],
+  models: { fast_llm: "openai:gpt-4o-mini" },
+  async setup() {
+    /* 连 MCP / 动态 import；可 return async () => {...} 作 teardown */
+  },
+};
+
+const off = await use([myPlugin]); // 全局装配：.agent 现可按名引用插件工具、用其模型别名
+const agent = await Agent.create("search");
+await off(); // 逆序卸载 + 关闭 MCP 连接
+```
+
+预置插件：`builtins`（本包全部内置工具的显式装配入口）。默认 MCP servers 用 `Mcp.defaults` 自行组合成插件即可。
+
+## 性能
+
+| 措施              | API / 开关                                             | 说明                                                                                          |
+| ----------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| 编译缓存          | 自动；`cache.clear()` / `AGENT_NO_CACHE=1` 旁路        | `Agent.load` 按「主文件 mtime + vars」缓存已渲染 spec，省去重复读盘 + `@include` 递归 + 渲染   |
+| 持久 checkpointer | `checkpoint.memory()` / `await checkpoint.sqlite(path)` | SQLite 让 session 的 history/resume/fork 跨重启保留；SQLite 走可选依赖（`pnpm add @langchain/langgraph-checkpoint-sqlite`） |
+| 事件流背压        | 自动（有界通道，默认水位 256）                         | 高吞吐下 token/工具事件不在内存无界堆积，生产端随消费端自然减速                                |
+| 并发              | 由 LangGraph 提供                                       | 并行工具调用 / 并行子 agent；`events.of` 三路并发消费                                            |
 
 ## 设计原则
 
@@ -208,12 +257,12 @@ setSearchProvider({
 
 ## Phase-2 路线图
 
-完整工具目录（magic 余下约 70 个：媒体理解/生成、文档转换、slides/dashboard 等）、完整 crew/claw 运行时与发布链路、`AgentHorizon` 式系统上下文注入（自定义中间件）、socket/事件流式。
+完整工具目录（magic 余下约 70 个：媒体理解/生成、文档转换、slides/dashboard 等）、完整 crew/claw 运行时与发布链路、permission modes（plan/auto/ask）与 slash commands、headless server 层（多端接入）。（`AgentHorizon` 式上下文注入、统一事件流、插件系统、编译缓存 / 持久化均已落地。）
 
 ## 开发
 
 ```bash
 pnpm --filter @openconsole/agent typecheck   # tsc --noEmit
-pnpm --filter @openconsole/agent test        # vitest（47 个用例）
+pnpm --filter @openconsole/agent test        # vitest（60 个用例）
 pnpm --filter @openconsole/agent opencode    # 简化版 opencode：终端编码 agent（examples/opencode.ts）
 ```

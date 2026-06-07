@@ -3,10 +3,11 @@ import type { StructuredTool } from "@langchain/core/tools";
 import type { SubAgent } from "deepagents";
 
 import { build, type BuildOptions, type BuiltAgent } from "./build";
-import { load, type LoadOptions } from "./load";
+import { defaultAgentsDir, load, type LoadOptions } from "./load";
 import { models, type ModelRef } from "./model";
 import { parse } from "./parse";
 import { registry as defaultRegistry, type ToolRegistry } from "./registry";
+import { Session, type RunnableGraph, type SessionOptions } from "./session";
 
 /** {@link Agent.create} 的选项：加载选项 + 全部 {@link BuildOptions}。 */
 export interface CreateAgentOptions extends BuildOptions {
@@ -32,6 +33,8 @@ function lastText(state: unknown): string {
 export class Agent {
   private constructor(readonly graph: BuiltAgent) {}
 
+  /** 本包内置 `agents/` 目录的绝对路径。 */
+  static dir = defaultAgentsDir;
   /** 将 `.agent` 文件文本解析为 frontmatter 字段与原始正文。 */
   static parse = parse;
   /** 加载一个 `.agent` 定义并完整渲染为 {@link AgentSpec}。 */
@@ -64,6 +67,14 @@ export class Agent {
   /** 以流式方式返回一轮对话的图 state 更新（LangGraph stream）。 */
   stream(query: string) {
     return this.graph.stream({ messages: [{ role: "user", content: query }] });
+  }
+
+  /**
+   * 在当前 agent 上开一个会话：多轮（固定 thread_id）、可取消、产出标准化 {@link Event} 流。
+   * 多轮/恢复要持久化，需在 {@link Agent.create} 时带 checkpointer。
+   */
+  session(options: SessionOptions = {}): Session {
+    return Session.open(this.graph as unknown as RunnableGraph, options);
   }
 }
 

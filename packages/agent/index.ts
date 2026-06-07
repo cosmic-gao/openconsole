@@ -20,16 +20,58 @@ export {
 export { models, ModelRegistry, type ModelRef } from "./src/model";
 export { registry, ToolRegistry } from "./src/registry";
 export { render, strip, type RenderOptions } from "./src/template";
-export { defaultAgentsDir, type LoadOptions } from "./src/load";
+export { cache, type LoadOptions } from "./src/load";
 export { type ParsedAgentFile, type Frontmatter } from "./src/parse";
 export { type BuildOptions, type BuiltAgent } from "./src/build";
-export {
-  Mcp,
-  defaultMcpServers,
-  type McpServers,
-  type McpOptions,
-} from "./src/mcp";
+export { Mcp, type McpServers, type McpOptions } from "./src/mcp";
 export { Sandbox, type RunJsOptions, type RunJsResult } from "./src/sandbox";
-export { Skill, skillsDir } from "./src/skill";
+export { Skill } from "./src/skill";
+export {
+  middlewares,
+  MiddlewareRegistry,
+  horizon,
+  observe,
+  guard,
+  type HorizonInject,
+  type GuardPolicy,
+  type GuardDecision,
+} from "./src/middleware";
+export {
+  Hook,
+  type Hooks,
+  type PreToolUse,
+  type PostToolUse,
+  type StopEvent,
+  type PreToolDecision,
+} from "./src/hooks";
+export {
+  Session,
+  type SessionOptions,
+  type RunOptions,
+  type Input,
+  type RunnableGraph,
+} from "./src/session";
+export {
+  events,
+  type Event,
+  type Usage,
+  type EventSink,
+  type ToEventsOptions,
+  type RunStream,
+} from "./src/event";
+export {
+  use,
+  collect,
+  plugins,
+  PluginRegistry,
+  type Plugin,
+  type PluginContext,
+  type Teardown,
+  type UseTarget,
+} from "./src/plugin";
+export { builtins } from "./src/plugins";
+export { checkpoint } from "./src/store";
+export { makeRunPython, type PythonToolOptions } from "./src/tools/python";
+export type { FilesystemPermission } from "deepagents";
 export * from "./src/types";
 export * from "./src/tools";
