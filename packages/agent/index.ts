@@ -69,8 +69,11 @@ export {
   type PluginApi,
   type Teardown,
   type Order,
-  type ToolGate,
+  type HookMap,
+  type HookName,
+  type ChatParams,
 } from "./src/kernel/plugin";
+export { bus, createBus, type BusEvents } from "./src/kernel/bus";
 export { builtins } from "./src/plugins/builtins";
 export { checkpoint } from "./src/capabilities/store";
 export { makeRunPython, type PythonToolOptions } from "./src/capabilities/tools/python";

@@ -1,6 +1,8 @@
+import { SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createBus } from "../src/kernel/bus";
 import { ModelRegistry } from "../src/kernel/model";
 import { PluginManager, plugins, type Plugin } from "../src/kernel/plugin";
 import { ToolRegistry } from "../src/kernel/registry";
@@ -20,9 +22,9 @@ function makeSpec(): AgentSpec {
   return { modelId: "openai:gpt-4o-mini", tools: {}, prompt: "base" };
 }
 
-/** 每个测试用独立 manager + 注册表，避免污染全局。 */
+/** 每个测试用独立 manager + 注册表 + 事件总线，避免污染全局。 */
 function isolated() {
-  return new PluginManager(new ToolRegistry(), new ModelRegistry());
+  return new PluginManager(new ToolRegistry(), new ModelRegistry(), createBus());
 }
 
 describe("plugin (rsbuild-style)", () => {
@@ -64,7 +66,15 @@ describe("plugin (rsbuild-style)", () => {
   it("compiles runtime hooks into a 'plugins' middleware (undefined when none)", async () => {
     expect(isolated().middleware()).toBeUndefined();
     const m = isolated();
-    await m.use([{ name: "h", setup: (api) => api.modifyPrompt(() => "ctx") }]);
+    await m.use([
+      {
+        name: "h",
+        setup: (api) =>
+          api.hook("system.transform", (_i, o) => {
+            o.system += "ctx";
+          }),
+      },
+    ]);
     expect(m.middleware()?.name).toBe("plugins");
   });
 
@@ -112,7 +122,9 @@ describe("plugin (rsbuild-style)", () => {
       {
         name: "t",
         setup: (api) => {
-          api.modifyPrompt(() => "x");
+          api.hook("system.transform", (_i, o) => {
+            o.system += "x";
+          });
           api.expose("k", 1);
         },
       },
@@ -130,5 +142,82 @@ describe("plugin (rsbuild-style)", () => {
     await m.use([{ name: "p", setup: (api) => api.addTool(makeTool("dup")) }]);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("hook('chat.params') merges sampling params into modelSettings", async () => {
+    const m = isolated();
+    await m.use([
+      {
+        name: "p",
+        setup: (api) =>
+          api.hook("chat.params", (_i, o) => {
+            o.temperature = 0.1;
+            o.topP = 0.9;
+          }),
+      },
+    ]);
+    const mw = m.middleware();
+    expect(mw?.name).toBe("plugins");
+    let seen: { modelSettings?: Record<string, unknown> } | undefined;
+    await mw?.wrapModelCall?.(
+      {
+        systemMessage: new SystemMessage(""),
+        state: { messages: [] },
+        runtime: {},
+        tools: [],
+        modelSettings: {},
+      } as never,
+      ((req: { modelSettings?: Record<string, unknown> }) => {
+        seen = req;
+        return Promise.resolve({} as never);
+      }) as never,
+    );
+    expect(seen?.modelSettings).toMatchObject({ temperature: 0.1, top_p: 0.9 });
+  });
+
+  it("hook('permission.ask') deny short-circuits with an error ToolMessage", async () => {
+    const m = isolated();
+    await m.use([
+      {
+        name: "p",
+        setup: (api) =>
+          api.hook("permission.ask", (i, o) => {
+            if (i.tool === "danger") o.status = "deny";
+          }),
+      },
+    ]);
+    const mw = m.middleware();
+    let called = false;
+    const res = (await mw?.wrapToolCall?.(
+      { toolCall: { id: "1", name: "danger", args: {} }, runtime: {} } as never,
+      (() => {
+        called = true;
+        return Promise.resolve(
+          new ToolMessage({ content: "ran", tool_call_id: "1" }),
+        );
+      }) as never,
+    )) as ToolMessage;
+    expect(called).toBe(false);
+    expect(res.status).toBe("error");
+  });
+
+  it("hook('event') receives published bus events; teardown unsubscribes", async () => {
+    const bus = createBus();
+    const m = new PluginManager(new ToolRegistry(), new ModelRegistry(), bus);
+    const got: string[] = [];
+    const off = await m.use([
+      {
+        name: "p",
+        setup: (api) =>
+          api.hook("event", (i) => {
+            got.push(i.event.type);
+          }),
+      },
+    ]);
+    bus.emit("tool_start", { type: "tool_start", id: "1", name: "x", input: {} });
+    expect(got).toEqual(["tool_start"]);
+    await off();
+    bus.emit("tool_start", { type: "tool_start", id: "2", name: "y", input: {} });
+    expect(got).toEqual(["tool_start"]); // teardown 后不再收到
   });
 });

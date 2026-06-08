@@ -1,16 +1,15 @@
 /**
- * 插件层 —— rsbuild 风格的插件架构。
+ * 插件层 —— rsbuild 风格的装配 + opencode 风格的统一 hook 切口。
  *
  * 一个 {@link Plugin} = `{ name, pre?, post?, setup(api) }`。**没有静态贡献字段**，一切
- * 通过 `setup(api)` 命令式声明（对齐 rsbuild：`api.addTool` / `api.modifyXxx` / `api.onXxx`）。
+ * 通过 `setup(api)` 命令式声明：
+ *  - **贡献**：`addTool` / `addModel` / `addMcp` / `setSearch` / `setSandbox`（进进程级注册表）；
+ *  - **装配期修改**：`modifySpec`（链式改 {@link AgentSpec}）；
+ *  - **运行时 hook**：`hook(name, (input, output) => …)` —— opencode 风格的点分命名 + `(input, output)`
+ *    **原地 mutate**。除 `"event"` 外都被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，
+ *    不自造 hook 总线），经 {@link build} 自动挂到 agent 上；`"event"` 订阅 {@link bus} 事件总线。
  *
- * 两类介入：
- *  - **贡献**：`addTool` / `addModel` / `addMcp` / `setSearch`（进进程级注册表）；
- *  - **生命周期 hooks**：`modifyPrompt` / `modifyToolCall` / `onToolResult` / `onStart` / `onEnd`
- *    —— 它们被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线），
- *    经 {@link build} 自动挂到 agent 上；`modifySpec` 则在装配期链式改 {@link AgentSpec}。
- *
- * 顺序：插件间用 `pre`/`post` 声明依赖（装配前拓扑排序）；同一阶段多个 hook 用 `order`
+ * 顺序：插件间用 `pre`/`post` 声明依赖（装配前拓扑排序）；同一 hook 多个 handler 用 `order`
  *（`pre`/`default`/`post`）排序。插件间可用 `expose`/`useExposed` 共享值。
  *
  * 生效：`await use([...])` 跑插件 setup → 收集贡献与 hooks 进全局 {@link manager}；其后
@@ -20,54 +19,93 @@ import { SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import type { Signal } from "@openconsole/signal";
 import type { AnyBackendProtocol } from "deepagents";
 import { createMiddleware, type AgentMiddleware } from "langchain";
 
-import type { McpServers } from "../capabilities/mcp";
+import { bus as defaultBus, type BusEvents } from "./bus";
+import type { Event } from "./event";
 import { models as defaultModels, ModelRegistry, type ModelRef } from "./model";
 import { registry as defaultRegistry, ToolRegistry } from "./registry";
+import type { McpServers } from "../capabilities/mcp";
 import type { SearchProvider } from "../capabilities/tools/search";
 import type { AgentSpec } from "../types";
 
-/** 钩子在所属阶段内的执行序：`pre` 最先、`post` 最后、`default` 居中。 */
+/** 钩子在所属 hook 内的执行序：`pre` 最先、`post` 最后、`default` 居中。 */
 export type Order = "pre" | "default" | "post";
 
-/** 插件卸载函数：移除本批注册的 hooks/modifiers/exposed 并关闭其 MCP 连接。 */
+/** 插件卸载函数：移除本批 hooks/modifiers/exposed、解绑 bus 订阅并关闭其 MCP 连接。 */
 export type Teardown = () => Promise<void>;
 
-/** `modifyToolCall` 的返回：放行（void）/ 拒绝（回填 error）/ 改参后放行。 */
-export type ToolGate =
-  | void
-  | { deny: string }
-  | { args: Record<string, unknown> };
+/** hook handler 的返回（同步或异步的 void）。 */
+type HookReturn = void | Promise<void>;
+type Args = Record<string, unknown>;
 
-/** 运行时 hook 的公共上下文。`runtime` 为中间件运行时（含 context/signal 等）。 */
-interface RuntimeCtx {
-  messages: BaseMessage[];
-  runtime: unknown;
+/** `chat.params` 可调的采样参数（落到 LangChain `ModelRequest.modelSettings`，每轮 re-bind）。 */
+export interface ChatParams {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxOutputTokens?: number;
+  /** 其余 provider 特定项，原样并入 modelSettings。 */
+  options?: Record<string, unknown>;
 }
-/** 一次工具调用（modifyToolCall 的入参）。 */
-interface ToolCallCtx {
-  name: string;
-  args: Record<string, unknown>;
-  id: string;
-  runtime: unknown;
+
+/**
+ * 运行时 hook 映射（opencode 风格：点分命名 + `(input, output)` 原地 mutate）。
+ *
+ * 除 `"event"`（订阅 {@link bus} 观测）外，其余在编译出的 "plugins" 中间件里被调用：
+ *  - `system.transform` / `chat.params` / `tool.definition` → `wrapModelCall`；
+ *  - `permission.ask` / `tool.execute.after` → `wrapToolCall`；
+ *  - `agent.start` / `agent.end` → `beforeAgent` / `afterAgent`。
+ */
+export interface HookMap {
+  /** 改/替换发给模型的系统提示；`output.system` 初始为当前系统消息文本（改它即替换）。 */
+  "system.transform": (
+    input: { messages: BaseMessage[]; runtime: unknown },
+    output: { system: string },
+  ) => HookReturn;
+  /** 改本轮采样参数（合并进 modelSettings）。 */
+  "chat.params": (
+    input: { messages: BaseMessage[]; runtime: unknown },
+    output: ChatParams,
+  ) => HookReturn;
+  /** 改某工具发给模型的定义；`output.description` 初始为工具现值（`parameters` 为 best-effort）。 */
+  "tool.definition": (
+    input: { name: string; runtime: unknown },
+    output: { description: string; parameters?: unknown },
+  ) => HookReturn;
+  /** 工具调用前的权限决策：mutate `output.status`（`deny` 短路）/ `output.args`（改参）。 */
+  "permission.ask": (
+    input: { tool: string; args: Args; toolCallId: string; runtime: unknown },
+    output: { status: "allow" | "deny" | "ask"; reason?: string; args?: Args },
+  ) => HookReturn;
+  /** 工具调用后：替换 `output.result`。 */
+  "tool.execute.after": (
+    input: { tool: string; args: Args; toolCallId: string; runtime: unknown },
+    output: { result: ToolMessage },
+  ) => HookReturn;
+  /** agent 开始时触发一次（观测/副作用，无 output）。 */
+  "agent.start": (input: {
+    messages: BaseMessage[];
+    runtime: unknown;
+  }) => HookReturn;
+  /** agent 结束时触发一次（观测/副作用，无 output）。 */
+  "agent.end": (input: {
+    messages: BaseMessage[];
+    runtime: unknown;
+  }) => HookReturn;
+  /** 订阅事件总线 {@link bus}：观测工具/运行时事件（无 output）。 */
+  event: (input: { event: Event }) => HookReturn;
 }
-/** 工具结果（onToolResult 的入参）。 */
-interface ToolResultCtx {
-  name: string;
-  args: Record<string, unknown>;
-  result: ToolMessage;
-  runtime: unknown;
-}
+
+/** 全部 hook 名。 */
+export type HookName = keyof HookMap;
 
 type SpecModifier = (spec: AgentSpec) => AgentSpec | void;
-type PromptHook = (ctx: RuntimeCtx) => string | Promise<string>;
-type ToolCallHook = (call: ToolCallCtx) => ToolGate | Promise<ToolGate>;
-type ToolResultHook = (
-  e: ToolResultCtx,
-) => void | ToolMessage | Promise<void | ToolMessage>;
-type LifecycleHook = (ctx: RuntimeCtx) => void | Promise<void>;
+
+/** 桶内统一存储用的弱类型 hook（入口 {@link PluginApi.hook} 按名保证强类型，调用处再还原）。 */
+type StoredHook = (input: unknown, output: unknown) => HookReturn;
 
 /** 注册项：带 `order` 与来源 `plugin`，便于排序与卸载。 */
 interface Entry<T> {
@@ -76,10 +114,17 @@ interface Entry<T> {
   plugin: string;
 }
 
+/** `use()` 一批注册的记账（供 teardown 精确移除）。 */
+interface Added {
+  spec: Entry<SpecModifier>[];
+  hooks: Array<[HookName, Entry<StoredHook>]>;
+  busUnsubs: Array<() => void>;
+  exposedKeys: string[];
+}
+
 /**
  * `setup(api)` 拿到的把手。rsbuild 式：贡献用 `addXxx`，装配期修改用 `modifySpec`，
- * 运行时介入用 `modify*` 与 `on*` hooks，插件间通信用 `expose/useExposed`。
- * 每个注册方法可选 `{ order }` 控制同阶段内执行序。
+ * 运行时介入用统一的 `hook(name, handler)`，插件间通信用 `expose/useExposed`。
  */
 export interface PluginApi {
   /** 当前插件名。 */
@@ -103,17 +148,16 @@ export interface PluginApi {
   /** 装配前链式修改 {@link AgentSpec}（model/tools/prompt）。 */
   modifySpec(fn: SpecModifier, opts?: { order?: Order }): void;
 
-  // —— 运行时 hooks（编译成 middleware）——
-  /** 每轮模型调用前，返回要追加到系统提示词末尾的文本（链式）。 */
-  modifyPrompt(fn: PromptHook, opts?: { order?: Order }): void;
-  /** 工具调用前：放行 / 拒绝 / 改参。 */
-  modifyToolCall(fn: ToolCallHook, opts?: { order?: Order }): void;
-  /** 工具调用后：观察，或返回新 ToolMessage 替换结果。 */
-  onToolResult(fn: ToolResultHook, opts?: { order?: Order }): void;
-  /** agent 开始时触发一次。 */
-  onStart(fn: LifecycleHook, opts?: { order?: Order }): void;
-  /** agent 结束时触发一次。 */
-  onEnd(fn: LifecycleHook, opts?: { order?: Order }): void;
+  // —— 运行时 hook（opencode 风格统一入口）——
+  /**
+   * 注册一个运行时 hook。`handler` 接 `(input, output)`，**原地修改 `output`** 影响行为
+   *（`"event"` / `"agent.*"` 仅 `input`，纯观测）。同名多 handler 用 `opts.order` 排序。
+   */
+  hook<K extends HookName>(
+    name: K,
+    handler: HookMap[K],
+    opts?: { order?: Order },
+  ): void;
 
   // —— 插件间通信 ——
   /** 暴露一个值供其它插件 {@link PluginApi.useExposed}（靠 pre/post 保证时序）。 */
@@ -182,37 +226,75 @@ function topoSort(plugins: Plugin[]): Plugin[] {
   return out;
 }
 
+/** 取消息文本（防御非字符串 content）。 */
+function textOfMessage(
+  msg: { text?: unknown; content?: unknown } | undefined,
+): string {
+  if (!msg) return "";
+  if (typeof msg.text === "string") return msg.text;
+  if (typeof msg.content === "string") return msg.content;
+  return "";
+}
+
+/** {@link ChatParams} → LangChain modelSettings（丢弃 undefined；按通用约定映射键名）。 */
+function toModelSettings(p: ChatParams): Record<string, unknown> {
+  const s: Record<string, unknown> = {};
+  if (p.temperature !== undefined) s["temperature"] = p.temperature;
+  if (p.topP !== undefined) s["top_p"] = p.topP;
+  if (p.topK !== undefined) s["top_k"] = p.topK;
+  if (p.maxOutputTokens !== undefined) s["max_tokens"] = p.maxOutputTokens;
+  if (p.options) Object.assign(s, p.options);
+  return s;
+}
+
+/** 从工具结果 ToolMessage 取 ok/content/artifact（与 observe 中间件同构）。 */
+function readToolMessage(result: ToolMessage): {
+  ok: boolean;
+  content: string;
+  data?: Record<string, unknown>;
+} {
+  const content =
+    typeof result.text === "string"
+      ? result.text
+      : typeof result.content === "string"
+        ? result.content
+        : "";
+  const artifact = (result as { artifact?: unknown }).artifact;
+  const data =
+    artifact && typeof artifact === "object"
+      ? (artifact as Record<string, unknown>)
+      : undefined;
+  return {
+    ok: result.status !== "error",
+    content,
+    ...(data !== undefined ? { data } : {}),
+  };
+}
+
 /**
- * 插件管理器：跑 setup、收集贡献与 hooks、把 hooks 编译成中间件、装配期改 spec。
- * 进程级单例为 {@link manager}；可 `new` 出独立实例用于隔离测试。
+ * 插件管理器：跑 setup、收集贡献与 hooks、把 hooks 编译成中间件、装配期改 spec、向事件总线发布。
+ * 进程级单例为 {@link manager}；可 `new` 出独立实例（含独立 bus）用于隔离装配 / 测试。
  */
 export class PluginManager {
   private readonly specMods: Entry<SpecModifier>[] = [];
-  private readonly promptHooks: Entry<PromptHook>[] = [];
-  private readonly toolCallHooks: Entry<ToolCallHook>[] = [];
-  private readonly toolResultHooks: Entry<ToolResultHook>[] = [];
-  private readonly startHooks: Entry<LifecycleHook>[] = [];
-  private readonly endHooks: Entry<LifecycleHook>[] = [];
+  private readonly hooks = new Map<HookName, Entry<StoredHook>[]>();
   private readonly exposed = new Map<string, unknown>();
 
   constructor(
     private readonly tools: ToolRegistry = defaultRegistry,
     private readonly models: ModelRegistry = defaultModels,
+    private readonly bus: Signal<BusEvents> = defaultBus,
   ) {}
 
   /** 装配一组插件：拓扑排序 → 依序 setup → 收集贡献/hooks。返回 {@link Teardown}。 */
   async use(list: Plugin[]): Promise<Teardown> {
     const ordered = topoSort(list);
     const clients: MultiServerMCPClient[] = [];
-    // 记录本批注册的 Entry/键，供 teardown 精确移除
-    const added = {
-      spec: [] as Entry<SpecModifier>[],
-      prompt: [] as Entry<PromptHook>[],
-      toolCall: [] as Entry<ToolCallHook>[],
-      toolResult: [] as Entry<ToolResultHook>[],
-      start: [] as Entry<LifecycleHook>[],
-      end: [] as Entry<LifecycleHook>[],
-      exposedKeys: [] as string[],
+    const added: Added = {
+      spec: [],
+      hooks: [],
+      busUnsubs: [],
+      exposedKeys: [],
     };
 
     for (const plugin of ordered) {
@@ -221,18 +303,16 @@ export class PluginManager {
     }
 
     return async () => {
-      const drop = <T>(arr: Entry<T>[], rm: Entry<T>[]) => {
-        for (const e of rm) {
-          const i = arr.indexOf(e);
-          if (i >= 0) arr.splice(i, 1);
-        }
+      const drop = <T>(arr: Entry<T>[], e: Entry<T>) => {
+        const i = arr.indexOf(e);
+        if (i >= 0) arr.splice(i, 1);
       };
-      drop(this.specMods, added.spec);
-      drop(this.promptHooks, added.prompt);
-      drop(this.toolCallHooks, added.toolCall);
-      drop(this.toolResultHooks, added.toolResult);
-      drop(this.startHooks, added.start);
-      drop(this.endHooks, added.end);
+      for (const e of added.spec) drop(this.specMods, e);
+      for (const [name, e] of added.hooks) {
+        const bucket = this.hooks.get(name);
+        if (bucket) drop(bucket, e);
+      }
+      for (const off of added.busUnsubs) off();
       for (const k of added.exposedKeys) this.exposed.delete(k);
       for (const c of clients) await c.close();
     };
@@ -248,96 +328,191 @@ export class PluginManager {
     return out;
   }
 
-  /** 把当前所有运行时 hooks 编译成一个中间件；无 hooks 时返回 undefined。 */
+  /** 把当前所有运行时 hooks 编译成一个中间件；无 hook 且无 bus 订阅时返回 undefined。 */
   middleware(): AgentMiddleware | undefined {
-    const prompt = byOrder(this.promptHooks);
-    const toolCall = byOrder(this.toolCallHooks);
-    const toolResult = byOrder(this.toolResultHooks);
-    const start = byOrder(this.startHooks);
-    const end = byOrder(this.endHooks);
-    if (
-      !prompt.length &&
-      !toolCall.length &&
-      !toolResult.length &&
-      !start.length &&
-      !end.length
-    ) {
+    const sorted = (n: HookName) => byOrder(this.hooks.get(n) ?? []);
+    const sysHooks = sorted("system.transform");
+    const paramHooks = sorted("chat.params");
+    const defHooks = sorted("tool.definition");
+    const permHooks = sorted("permission.ask");
+    const afterHooks = sorted("tool.execute.after");
+    const startHooks = sorted("agent.start");
+    const endHooks = sorted("agent.end");
+
+    const needModel =
+      sysHooks.length > 0 || paramHooks.length > 0 || defHooks.length > 0;
+    const needTool = permHooks.length > 0 || afterHooks.length > 0;
+    // 有订阅者才发布事件（signal.emit 无监听开销极小，但据此决定是否挂 wrapToolCall）
+    const needEmit = this.bus.has();
+    const needStart = startHooks.length > 0;
+    const needEnd = endHooks.length > 0;
+    if (!needModel && !needTool && !needEmit && !needStart && !needEnd) {
       return undefined;
     }
 
+    const emitBus = this.bus;
     return createMiddleware({
       name: "plugins",
-      ...(prompt.length
+      ...(needModel
         ? {
             wrapModelCall: async (request, handler) => {
-              let sys = request.systemMessage;
-              for (const e of prompt) {
-                const extra = await e.fn({
-                  messages: request.state.messages,
-                  runtime: request.runtime,
-                });
-                if (extra) sys = sys.concat(new SystemMessage(`\n\n${extra}`));
+              let req = request;
+              // system.transform：取当前系统消息文本，跑 hook，变更则替换 systemMessage（替换语义）
+              if (sysHooks.length > 0) {
+                const current = textOfMessage(req.systemMessage);
+                const output = { system: current };
+                for (const e of sysHooks)
+                  await (e.fn as unknown as HookMap["system.transform"])(
+                    { messages: req.state.messages, runtime: req.runtime },
+                    output,
+                  );
+                if (output.system !== current)
+                  req = {
+                    ...req,
+                    systemMessage: new SystemMessage(output.system),
+                  };
               }
-              return handler(
-                sys === request.systemMessage
-                  ? request
-                  : { ...request, systemMessage: sys },
-              );
+              // chat.params：攒采样参数，合并进 modelSettings
+              if (paramHooks.length > 0) {
+                const output: ChatParams = {};
+                for (const e of paramHooks)
+                  await (e.fn as unknown as HookMap["chat.params"])(
+                    { messages: req.state.messages, runtime: req.runtime },
+                    output,
+                  );
+                const settings = toModelSettings(output);
+                if (Object.keys(settings).length > 0)
+                  req = {
+                    ...req,
+                    modelSettings: { ...req.modelSettings, ...settings },
+                  };
+              }
+              // tool.definition：逐个工具跑 hook，description 变更则浅克隆替换（保留原型链）
+              if (defHooks.length > 0 && req.tools.length > 0) {
+                const updated = [...req.tools];
+                let changed = false;
+                for (let i = 0; i < updated.length; i++) {
+                  const t = updated[i] as { name?: string; description?: string };
+                  const desc = t.description ?? "";
+                  const output: { description: string; parameters?: unknown } = {
+                    description: desc,
+                  };
+                  for (const e of defHooks)
+                    await (e.fn as unknown as HookMap["tool.definition"])(
+                      { name: t.name ?? "", runtime: req.runtime },
+                      output,
+                    );
+                  if (output.description !== desc) {
+                    updated[i] = Object.assign(
+                      Object.create(Object.getPrototypeOf(updated[i])),
+                      updated[i],
+                      { description: output.description },
+                    ) as (typeof updated)[number];
+                    changed = true;
+                  }
+                }
+                if (changed) req = { ...req, tools: updated };
+              }
+              return handler(req);
             },
           }
         : {}),
-      ...(toolCall.length || toolResult.length
+      ...(needTool || needEmit
         ? {
             wrapToolCall: async (request, handler) => {
-              let req = request;
-              const id = req.toolCall.id ?? "";
-              for (const e of toolCall) {
-                const gate = await e.fn({
-                  name: req.toolCall.name,
-                  args: req.toolCall.args,
-                  id,
-                  runtime: req.runtime,
-                });
-                if (gate && "deny" in gate) {
-                  return new ToolMessage({
-                    content: `Blocked by plugin "${e.plugin}": ${gate.deny}`,
-                    tool_call_id: id,
-                    status: "error",
-                  });
+              const id = request.toolCall.id ?? "";
+              const name = request.toolCall.name;
+              let toolCall = request.toolCall;
+              // permission.ask：决策（deny 短路 / 改参）
+              if (permHooks.length > 0) {
+                const output: {
+                  status: "allow" | "deny" | "ask";
+                  reason?: string;
+                  args?: Args;
+                } = { status: "allow" };
+                for (const e of permHooks) {
+                  await (e.fn as unknown as HookMap["permission.ask"])(
+                    {
+                      tool: name,
+                      args: toolCall.args,
+                      toolCallId: id,
+                      runtime: request.runtime,
+                    },
+                    output,
+                  );
+                  if (output.status === "deny")
+                    return new ToolMessage({
+                      content: `Blocked by plugin "${e.plugin}": ${output.reason ?? "permission denied"}`,
+                      tool_call_id: id,
+                      status: "error",
+                    });
                 }
-                if (gate && "args" in gate) {
-                  req = { ...req, toolCall: { ...req.toolCall, args: gate.args } };
-                }
+                // "ask" 无内置 HITL：退化为放行（真正人工确认用 deepagents interruptOn + checkpointer）
+                if (output.args) toolCall = { ...toolCall, args: output.args };
               }
+              const req =
+                toolCall === request.toolCall ? request : { ...request, toolCall };
+
+              if (needEmit)
+                emitBus.emit("tool_start", {
+                  type: "tool_start",
+                  id,
+                  name,
+                  input: toolCall.args,
+                });
+              const t0 = Date.now();
               let result = await handler(req);
-              if (toolResult.length && result instanceof ToolMessage) {
-                for (const e of toolResult) {
-                  const replaced = await e.fn({
-                    name: req.toolCall.name,
-                    args: req.toolCall.args,
-                    result,
-                    runtime: req.runtime,
+              if (result instanceof ToolMessage) {
+                if (needEmit) {
+                  const { ok, content, data } = readToolMessage(result);
+                  emitBus.emit("tool_end", {
+                    type: "tool_end",
+                    id,
+                    name,
+                    ok,
+                    content,
+                    ...(data !== undefined ? { data } : {}),
+                    durationMs: Date.now() - t0,
                   });
-                  if (replaced) result = replaced;
+                }
+                if (afterHooks.length > 0) {
+                  const output = { result };
+                  for (const e of afterHooks)
+                    await (e.fn as unknown as HookMap["tool.execute.after"])(
+                      {
+                        tool: name,
+                        args: toolCall.args,
+                        toolCallId: id,
+                        runtime: request.runtime,
+                      },
+                      output,
+                    );
+                  result = output.result;
                 }
               }
               return result;
             },
           }
         : {}),
-      ...(start.length
+      ...(needStart
         ? {
             beforeAgent: async (state, runtime) => {
-              for (const e of start)
-                await e.fn({ messages: state.messages, runtime });
+              for (const e of startHooks)
+                await (e.fn as unknown as HookMap["agent.start"])({
+                  messages: state.messages,
+                  runtime,
+                });
             },
           }
         : {}),
-      ...(end.length
+      ...(needEnd
         ? {
             afterAgent: async (state, runtime) => {
-              for (const e of end)
-                await e.fn({ messages: state.messages, runtime });
+              for (const e of endHooks)
+                await (e.fn as unknown as HookMap["agent.end"])({
+                  messages: state.messages,
+                  runtime,
+                });
             },
           }
         : {}),
@@ -347,29 +522,13 @@ export class PluginManager {
   /** 为某个插件构造 {@link PluginApi}（注册写入本管理器，并记入 `added` 供 teardown）。 */
   private makeApi(
     plugin: Plugin,
-    added: {
-      spec: Entry<SpecModifier>[];
-      prompt: Entry<PromptHook>[];
-      toolCall: Entry<ToolCallHook>[];
-      toolResult: Entry<ToolResultHook>[];
-      start: Entry<LifecycleHook>[];
-      end: Entry<LifecycleHook>[];
-      exposedKeys: string[];
-    },
+    added: Added,
     clients: MultiServerMCPClient[],
   ): PluginApi {
     const name = plugin.name;
     const tools = this.tools;
-    const tap = <T>(
-      pool: Entry<T>[],
-      bucket: Entry<T>[],
-      fn: T,
-      order: Order,
-    ): void => {
-      const entry: Entry<T> = { fn, order, plugin: name };
-      pool.push(entry);
-      bucket.push(entry);
-    };
+    const hooksMap = this.hooks;
+    const emitBus = this.bus;
     return {
       name,
       context: { cwd: process.cwd() },
@@ -399,18 +558,38 @@ export class PluginManager {
           "setSandbox: backend is wired per-agent via build({ backend }); a plugin cannot set it globally",
         );
       },
-      modifySpec: (fn, o) =>
-        tap(this.specMods, added.spec, fn, o?.order ?? "default"),
-      modifyPrompt: (fn, o) =>
-        tap(this.promptHooks, added.prompt, fn, o?.order ?? "default"),
-      modifyToolCall: (fn, o) =>
-        tap(this.toolCallHooks, added.toolCall, fn, o?.order ?? "default"),
-      onToolResult: (fn, o) =>
-        tap(this.toolResultHooks, added.toolResult, fn, o?.order ?? "default"),
-      onStart: (fn, o) =>
-        tap(this.startHooks, added.start, fn, o?.order ?? "default"),
-      onEnd: (fn, o) =>
-        tap(this.endHooks, added.end, fn, o?.order ?? "default"),
+      modifySpec: (fn, o) => {
+        const entry: Entry<SpecModifier> = {
+          fn,
+          order: o?.order ?? "default",
+          plugin: name,
+        };
+        this.specMods.push(entry);
+        added.spec.push(entry);
+      },
+      hook<K extends HookName>(
+        hookName: K,
+        handler: HookMap[K],
+        o?: { order?: Order },
+      ): void {
+        // "event"：直接订阅事件总线；其余进 hook 桶供 middleware() 编译
+        if (hookName === "event") {
+          const off = emitBus.watch((_type, payload) =>
+            (handler as HookMap["event"])({ event: payload as Event }),
+          );
+          added.busUnsubs.push(off);
+          return;
+        }
+        const entry: Entry<StoredHook> = {
+          fn: handler as unknown as StoredHook,
+          order: o?.order ?? "default",
+          plugin: name,
+        };
+        const bucket = hooksMap.get(hookName);
+        if (bucket) bucket.push(entry);
+        else hooksMap.set(hookName, [entry]);
+        added.hooks.push([hookName, entry]);
+      },
       expose: (id, value) => {
         this.exposed.set(id, value);
         added.exposedKeys.push(id);
@@ -455,7 +634,7 @@ export const manager = new PluginManager();
  * ```ts
  * const off = await use([myPlugin, await import("@x/plugin").then((m) => m.default)]);
  * const agent = await Agent.create("search"); // 插件的工具/hooks 已生效
- * await off(); // 移除本批 hooks/exposed、关闭其 MCP 连接
+ * await off(); // 移除本批 hooks/exposed、解绑 bus 订阅、关闭其 MCP 连接
  * ```
  */
 export function use(list: Plugin[]): Promise<Teardown> {

@@ -87,9 +87,10 @@ src/
   kernel/             内核：编排 + 运行时 + 注册表 + 插件宿主（顶层不依赖 capabilities）
     agent.ts          Agent（parse/load/build/create + run/stream/session）+ subagent
     build.ts          AgentSpec → createDeepAgent（装配期咨询 manager：applySpec + middleware）
-    plugin.ts         Plugin/PluginApi/PluginManager/use —— rsbuild 风格插件系统
+    plugin.ts         Plugin/PluginApi/PluginManager/use —— rsbuild 装配 + opencode 式统一 hook
+    bus.ts            bus —— @openconsole/signal 事件总线（插件 event hook 订阅 / 中间件发布）
     session.ts        Session —— 多轮/thread/resume/fork/取消
-    event.ts          events.of/console —— 归一化统一事件流（有界背压）
+    event.ts          events.of/console —— 归一化统一事件流（有界背压，面向调用方）
     registry.ts       ToolRegistry / registry —— 工具按名注册
     model.ts          ModelRegistry / models —— 模型注册与解析
     middleware.ts     horizon/observe/guard + MiddlewareRegistry
@@ -111,7 +112,7 @@ src/
 agents/               内置定义：search/explore/code/crew.template.agent + prompts/
 skills/               预置 SKILL.md：using-mcp、deep-research、using-sandbox
 examples/             opencode —— 终端编码 agent 整合示例
-tests/                62 用例（结构变、行为不变）
+tests/                65 用例（结构变、行为不变）
 ```
 
 依赖单向无环：`types` ← 各层；`lang` 只依赖 `types`；`kernel` 依赖 `lang`+`types`（**顶层不依赖 `capabilities`**——`addMcp`/`setSearch` 经动态 import 按需加载能力）；`capabilities` 依赖 `kernel`；`plugins` 依赖二者。
@@ -209,7 +210,7 @@ setSearchProvider({
 
 ## 插件系统（rsbuild 风格）
 
-参考 [rsbuild](https://rsbuild.rs/plugins/dev/) 的插件架构：一个 `Plugin` = `{ name, pre?, post?, setup(api) }`，**没有静态字段**，一切通过 `setup(api)` 命令式声明。运行时 hooks 被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线）；`await use([...])` 后自动作用到其后 `Agent.create` 的 agent。
+参考 [rsbuild](https://rsbuild.rs/plugins/dev/) 的装配架构 + [opencode](https://github.com/anomalyco/opencode) 的 hook 形态：一个 `Plugin` = `{ name, pre?, post?, setup(api) }`，**没有静态字段**，一切通过 `setup(api)` 命令式声明。运行时 hook 走统一入口 `api.hook(name, (input, output) => …)`（点分命名 + `(input, output)` **原地 mutate**），除 `"event"` 外被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线）；`"event"` 订阅 `@openconsole/signal` 事件总线 `bus`。`await use([...])` 后自动作用到其后 `Agent.create` 的 agent。
 
 `api` 提供四类能力：
 
@@ -217,7 +218,8 @@ setSearchProvider({
 | ------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | 贡献          | `addTool` / `addModel` / `addMcp` / `setSearch`                          | 注册工具 / 模型别名 / MCP / 搜索后端                                  |
 | 装配期 modify | `modifySpec(fn, {order})`                                                | 链式改 `AgentSpec`（model/tools/prompt）                              |
-| 运行时 hooks  | `modifyPrompt` / `modifyToolCall` / `onToolResult` / `onStart` / `onEnd` | 编译成 middleware（wrapModelCall/wrapToolCall/beforeAgent/afterAgent） |
+| 运行时 hook   | `hook(name, (input, output) => …)`，name ∈ `system.transform`·`chat.params`·`tool.definition`·`permission.ask`·`tool.execute.after`·`agent.start`·`agent.end` | `(input,output)` 原地 mutate；编译成 middleware（wrapModelCall/wrapToolCall/beforeAgent/afterAgent） |
+| 事件总线      | `hook("event", ({ event }) => …)`                                        | 订阅 `@openconsole/signal` 事件总线 `bus`（工具/运行时事件，可观测）  |
 | 通信          | `expose` / `useExposed`                                                  | 插件间共享值                                                          |
 
 顺序：插件间用 `pre`/`post` 声明依赖（装配前拓扑排序）；同阶段多个 hook 用 `order: "pre"|"default"|"post"` 排序。
@@ -239,10 +241,15 @@ const myPlugin: Plugin = {
       }),
     );
     api.addModel("fast_llm", "openai:gpt-4o-mini");
-    api.modifyPrompt(() => "Always answer concisely."); // 每轮追加系统提示词
-    api.modifyToolCall((c) =>
-      c.name === "execute" ? { deny: "read-only" } : undefined,
-    ); // 拦截工具调用
+    api.hook("system.transform", (_i, o) => {
+      o.system += "\n\nAlways answer concisely."; // 改/追加系统提示词（o.system 初始为当前系统消息文本）
+    });
+    api.hook("permission.ask", (i, o) => {
+      if (i.tool === "execute") o.status = "deny"; // 拦截工具调用（deny 短路）
+    });
+    api.hook("event", ({ event }) => {
+      if (event.type === "tool_end") console.error("tool:", event.name); // 订阅事件总线
+    });
     api.expose("ready", true);
     // 需要 IO 时 setup 可 async：await api.addMcp({ ... })
   },
@@ -253,7 +260,7 @@ const agent = await Agent.create("search");
 await off(); // 移除本批 hooks/exposed、关闭其 MCP 连接
 ```
 
-进阶：`new PluginManager(tools, models)` 可建独立管理器做隔离装配 / 测试；全局单例 `manager` 在 `build` 装配时被咨询。预置插件 `builtins` 把内置工具以 `setup(api.addTool)` 形式装配。
+进阶：`new PluginManager(tools, models, bus)` 可建独立管理器（含独立事件总线）做隔离装配 / 测试；全局单例 `manager` 在 `build` 装配时被咨询。预置插件 `builtins` 把内置工具以 `setup(api.addTool)` 形式装配。事件总线 `bus`（`@openconsole/signal`）是无背压的多订阅 pub/sub，与面向调用方、带背压的 `events.of` 流管道职责不同——前者给插件/观测者，后者给 `session.stream` 消费。
 
 ## 性能
 

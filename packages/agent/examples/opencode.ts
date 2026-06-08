@@ -154,14 +154,15 @@ function sessionPlugin(getMode: () => Mode): Plugin {
   return {
     name: "opencode-session",
     setup(api) {
-      api.modifyPrompt(() => {
+      // system.transform：output.system 初始为当前系统消息文本，这里追加当前模式提示。
+      api.hook("system.transform", (_input, output) => {
         const mode =
           getMode() === "plan"
             ? "MODE=plan (read-only): do NOT write files or run commands; only explain and propose a plan."
             : "MODE=build: you may read, write files, and run shell commands.";
         // 反「只思考不行动」：MiniMax-M2 等推理模型多轮时偶发只输出 <think> 就收尾，
         // 明确要求每轮必须落地为用户可见答案或一次工具调用。
-        return `${mode}\nAlways end your turn with a user-facing answer or a tool call — never stop after only thinking.`;
+        output.system += `\n\n${mode}\nAlways end your turn with a user-facing answer or a tool call — never stop after only thinking.`;
       });
     },
   };
