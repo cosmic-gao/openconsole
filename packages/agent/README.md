@@ -87,7 +87,7 @@ src/
   kernel/             内核：编排 + 运行时 + 注册表 + 插件宿主（顶层不依赖 capabilities）
     agent.ts          Agent（parse/load/build/create + run/stream/session）+ subagent
     build.ts          AgentSpec → createDeepAgent（装配期咨询 manager：applySpec + middleware）
-    plugin.ts         Plugin/PluginApi/PluginManager/use —— rsbuild 装配 + opencode 式统一 hook
+    plugin.ts         Plugin/PluginApi/PluginManager/use —— rsbuild 装配 + opencode 式命名空间 hook
     bus.ts            bus —— @openconsole/signal 事件总线（插件 event hook 订阅 / 中间件发布）
     session.ts        Session —— 多轮/thread/resume/fork/取消
     event.ts          events.of/console —— 归一化统一事件流（有界背压，面向调用方）
@@ -210,7 +210,7 @@ setSearchProvider({
 
 ## 插件系统（rsbuild 风格）
 
-参考 [rsbuild](https://rsbuild.rs/plugins/dev/) 的装配架构 + [opencode](https://github.com/anomalyco/opencode) 的 hook 形态：一个 `Plugin` = `{ name, pre?, post?, setup(api) }`，**没有静态字段**，一切通过 `setup(api)` 命令式声明。运行时 hook 走统一入口 `api.hook(name, (input, output) => …)`（点分命名 + `(input, output)` **原地 mutate**），除 `"event"` 外被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线）；`"event"` 订阅 `@openconsole/signal` 事件总线 `bus`。`await use([...])` 后自动作用到其后 `Agent.create` 的 agent。
+参考 [rsbuild](https://rsbuild.rs/plugins/dev/) 的装配架构 + [opencode](https://github.com/anomalyco/opencode) 的 hook 形态：一个 `Plugin` = `{ name, pre?, post?, setup(api) }`，**没有静态字段**，一切通过 `setup(api)` 命令式声明。运行时 hook 走 `api` 上的具名方法/命名空间（`api.transform.system/params/tool`、`api.permission`、`api.result`、`api.start/end`、`api.event`），全部 `(input, output)` **原地 mutate**；除 `api.event`（订阅 `@openconsole/signal` 事件总线 `bus`）外，被**编译成一个 LangChain `createMiddleware`**（贴合 DeepAgent 底座，不自造 hook 总线）。`await use([...])` 后自动作用到其后 `Agent.create` 的 agent。
 
 `api` 提供四类能力：
 
@@ -218,8 +218,8 @@ setSearchProvider({
 | ------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | 贡献          | `addTool` / `addModel` / `addMcp` / `setSearch`                          | 注册工具 / 模型别名 / MCP / 搜索后端                                  |
 | 装配期 modify | `modifySpec(fn, {order})`                                                | 链式改 `AgentSpec`（model/tools/prompt）                              |
-| 运行时 hook   | `hook(name, (input, output) => …)`，name ∈ `system.transform`·`chat.params`·`tool.definition`·`permission.ask`·`tool.execute.after`·`agent.start`·`agent.end` | `(input,output)` 原地 mutate；编译成 middleware（wrapModelCall/wrapToolCall/beforeAgent/afterAgent） |
-| 事件总线      | `hook("event", ({ event }) => …)`                                        | 订阅 `@openconsole/signal` 事件总线 `bus`（工具/运行时事件，可观测）  |
+| 运行时 hook   | `transform.system` / `transform.params` / `transform.tool`；`permission`；`result`；`start` / `end` | `(input,output)` 原地 mutate；编译成 middleware（wrapModelCall/wrapToolCall/beforeAgent/afterAgent） |
+| 事件总线      | `event(({ event }) => …)`                                                | 订阅 `@openconsole/signal` 事件总线 `bus`（工具/运行时事件，可观测）  |
 | 通信          | `expose` / `useExposed`                                                  | 插件间共享值                                                          |
 
 顺序：插件间用 `pre`/`post` 声明依赖（装配前拓扑排序）；同阶段多个 hook 用 `order: "pre"|"default"|"post"` 排序。
@@ -241,13 +241,13 @@ const myPlugin: Plugin = {
       }),
     );
     api.addModel("fast_llm", "openai:gpt-4o-mini");
-    api.hook("system.transform", (_i, o) => {
+    api.transform.system((_i, o) => {
       o.system += "\n\nAlways answer concisely."; // 改/追加系统提示词（o.system 初始为当前系统消息文本）
     });
-    api.hook("permission.ask", (i, o) => {
+    api.permission((i, o) => {
       if (i.tool === "execute") o.status = "deny"; // 拦截工具调用（deny 短路）
     });
-    api.hook("event", ({ event }) => {
+    api.event(({ event }) => {
       if (event.type === "tool_end") console.error("tool:", event.name); // 订阅事件总线
     });
     api.expose("ready", true);

@@ -148,16 +148,28 @@ export interface PluginApi {
   /** 装配前链式修改 {@link AgentSpec}（model/tools/prompt）。 */
   modifySpec(fn: SpecModifier, opts?: { order?: Order }): void;
 
-  // —— 运行时 hook（opencode 风格统一入口）——
-  /**
-   * 注册一个运行时 hook。`handler` 接 `(input, output)`，**原地修改 `output`** 影响行为
-   *（`"event"` / `"agent.*"` 仅 `input`，纯观测）。同名多 handler 用 `opts.order` 排序。
-   */
-  hook<K extends HookName>(
-    name: K,
-    handler: HookMap[K],
-    opts?: { order?: Order },
-  ): void;
+  // —— 运行时 hook（具名方法 / 命名空间，opencode 风格切口）——
+  // 全部 `(input, output)` 原地 mutate（`start`/`end`/`event` 仅 `input`，纯观测）；
+  // 同切口多 handler 用 `opts.order` 排序。内部仍归一到 {@link HookMap} 的点分名。
+  /** 改「发给模型的请求」：system（系统提示）/ params（采样参数）/ tool（工具定义）。 */
+  readonly transform: {
+    /** 改/替换系统提示（`output.system` 初始为当前系统消息文本）。 */
+    system(handler: HookMap["system.transform"], opts?: { order?: Order }): void;
+    /** 改本轮采样参数（合并进 modelSettings）。 */
+    params(handler: HookMap["chat.params"], opts?: { order?: Order }): void;
+    /** 改某工具发给模型的定义（description / parameters）。 */
+    tool(handler: HookMap["tool.definition"], opts?: { order?: Order }): void;
+  };
+  /** 工具调用前的权限决策：mutate `output.status`（`deny` 短路）/ `output.args`（改参）。 */
+  permission(handler: HookMap["permission.ask"], opts?: { order?: Order }): void;
+  /** 工具调用后：替换 `output.result`。 */
+  result(handler: HookMap["tool.execute.after"], opts?: { order?: Order }): void;
+  /** agent 开始时触发一次（观测）。 */
+  start(handler: HookMap["agent.start"], opts?: { order?: Order }): void;
+  /** agent 结束时触发一次（观测）。 */
+  end(handler: HookMap["agent.end"], opts?: { order?: Order }): void;
+  /** 订阅事件总线 {@link bus}：观测工具/运行时事件。 */
+  event(handler: HookMap["event"]): void;
 
   // —— 插件间通信 ——
   /** 暴露一个值供其它插件 {@link PluginApi.useExposed}（靠 pre/post 保证时序）。 */
@@ -529,6 +541,22 @@ export class PluginManager {
     const tools = this.tools;
     const hooksMap = this.hooks;
     const emitBus = this.bus;
+    // 把一个 handler 注册到指定 hook 桶（所有命名空间方法共用此入口）。
+    const register = (
+      hookName: HookName,
+      handler: unknown,
+      opts?: { order?: Order },
+    ): void => {
+      const entry: Entry<StoredHook> = {
+        fn: handler as StoredHook,
+        order: opts?.order ?? "default",
+        plugin: name,
+      };
+      const bucket = hooksMap.get(hookName);
+      if (bucket) bucket.push(entry);
+      else hooksMap.set(hookName, [entry]);
+      added.hooks.push([hookName, entry]);
+    };
     return {
       name,
       context: { cwd: process.cwd() },
@@ -567,28 +595,22 @@ export class PluginManager {
         this.specMods.push(entry);
         added.spec.push(entry);
       },
-      hook<K extends HookName>(
-        hookName: K,
-        handler: HookMap[K],
-        o?: { order?: Order },
-      ): void {
-        // "event"：直接订阅事件总线；其余进 hook 桶供 middleware() 编译
-        if (hookName === "event") {
-          const off = emitBus.watch((_type, payload) =>
-            (handler as HookMap["event"])({ event: payload as Event }),
-          );
-          added.busUnsubs.push(off);
-          return;
-        }
-        const entry: Entry<StoredHook> = {
-          fn: handler as unknown as StoredHook,
-          order: o?.order ?? "default",
-          plugin: name,
-        };
-        const bucket = hooksMap.get(hookName);
-        if (bucket) bucket.push(entry);
-        else hooksMap.set(hookName, [entry]);
-        added.hooks.push([hookName, entry]);
+      // 运行时 hook：transform 命名空间 + 顶层方法，内部归一到 HookMap 点分名
+      transform: {
+        system: (handler, o) => register("system.transform", handler, o),
+        params: (handler, o) => register("chat.params", handler, o),
+        tool: (handler, o) => register("tool.definition", handler, o),
+      },
+      permission: (handler, o) => register("permission.ask", handler, o),
+      result: (handler, o) => register("tool.execute.after", handler, o),
+      start: (handler, o) => register("agent.start", handler, o),
+      end: (handler, o) => register("agent.end", handler, o),
+      // "event"：直接订阅事件总线（不进 hook 桶/中间件），teardown 时解绑
+      event: (handler) => {
+        const off = emitBus.watch((_type, payload) =>
+          handler({ event: payload as Event }),
+        );
+        added.busUnsubs.push(off);
       },
       expose: (id, value) => {
         this.exposed.set(id, value);

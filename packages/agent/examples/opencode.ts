@@ -155,7 +155,7 @@ function sessionPlugin(getMode: () => Mode): Plugin {
     name: "opencode-session",
     setup(api) {
       // system.transform：output.system 初始为当前系统消息文本，这里追加当前模式提示。
-      api.hook("system.transform", (_input, output) => {
+      api.transform.system((_input, output) => {
         const mode =
           getMode() === "plan"
             ? "MODE=plan (read-only): do NOT write files or run commands; only explain and propose a plan."

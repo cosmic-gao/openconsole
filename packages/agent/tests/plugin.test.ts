@@ -70,7 +70,7 @@ describe("plugin (rsbuild-style)", () => {
       {
         name: "h",
         setup: (api) =>
-          api.hook("system.transform", (_i, o) => {
+          api.transform.system((_i, o) => {
             o.system += "ctx";
           }),
       },
@@ -122,7 +122,7 @@ describe("plugin (rsbuild-style)", () => {
       {
         name: "t",
         setup: (api) => {
-          api.hook("system.transform", (_i, o) => {
+          api.transform.system((_i, o) => {
             o.system += "x";
           });
           api.expose("k", 1);
@@ -144,13 +144,13 @@ describe("plugin (rsbuild-style)", () => {
     warn.mockRestore();
   });
 
-  it("hook('chat.params') merges sampling params into modelSettings", async () => {
+  it("transform.params merges sampling params into modelSettings", async () => {
     const m = isolated();
     await m.use([
       {
         name: "p",
         setup: (api) =>
-          api.hook("chat.params", (_i, o) => {
+          api.transform.params((_i, o) => {
             o.temperature = 0.1;
             o.topP = 0.9;
           }),
@@ -175,13 +175,13 @@ describe("plugin (rsbuild-style)", () => {
     expect(seen?.modelSettings).toMatchObject({ temperature: 0.1, top_p: 0.9 });
   });
 
-  it("hook('permission.ask') deny short-circuits with an error ToolMessage", async () => {
+  it("permission deny short-circuits with an error ToolMessage", async () => {
     const m = isolated();
     await m.use([
       {
         name: "p",
         setup: (api) =>
-          api.hook("permission.ask", (i, o) => {
+          api.permission((i, o) => {
             if (i.tool === "danger") o.status = "deny";
           }),
       },
@@ -201,7 +201,7 @@ describe("plugin (rsbuild-style)", () => {
     expect(res.status).toBe("error");
   });
 
-  it("hook('event') receives published bus events; teardown unsubscribes", async () => {
+  it("event receives published bus events; teardown unsubscribes", async () => {
     const bus = createBus();
     const m = new PluginManager(new ToolRegistry(), new ModelRegistry(), bus);
     const got: string[] = [];
@@ -209,7 +209,7 @@ describe("plugin (rsbuild-style)", () => {
       {
         name: "p",
         setup: (api) =>
-          api.hook("event", (i) => {
+          api.event((i) => {
             got.push(i.event.type);
           }),
       },
