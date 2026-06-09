@@ -36,3 +36,28 @@
     flex-direction: row-reverse;
   }
 }
+
+/*
+ * Navigation pending indicator (paired with menu.tsx `useLinkStatus`):
+ * spin + a 100ms-delayed fade-in. Navigations faster than the delay finish
+ * before the fade starts, so the spinner never appears — no flash on instant
+ * routes. Stays a single <svg> node, so size/color keep flowing from the
+ * sidebar button's `[&>svg]:size-4` rules.
+ */
+@keyframes oc-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes oc-pending-in {
+  from {
+    opacity: 0;
+  }
+}
+@layer utilities {
+  .animate-pending {
+    animation:
+      oc-spin 1s linear infinite,
+      oc-pending-in 150ms linear 100ms backwards;
+  }
+}

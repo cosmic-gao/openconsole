@@ -147,8 +147,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 #### `<Breadcrumbs>` + `useBreadcrumbs()`
 
 ```tsx
-<Breadcrumbs labels={{ "/dashboard/orders/123": "订单 #123" }} />
-<Breadcrumbs items={[{ title: "向导", link: "/wizard" }, { title: "第 2 步", link: "/wizard/2" }]} />
+<Breadcrumbs />                                          // 自动从 pathname 派生
+<Breadcrumbs items={[{ label: "向导", href: "/wizard" }, { label: "第 2 步" }]} />
+<Breadcrumbs leading={{ label: "工作台", href: "/app", icon: "House" }} limit={3} />
+<Breadcrumbs onItemClick={(crumb, i, e) => { e.preventDefault(); router.push(...); }} />
 ```
 
 要无头渲染：
@@ -357,10 +359,12 @@ interface MenuGroup {
 interface MenuItem {
   label: string;
   icon?: string; // lucide-react 图标名，PascalCase
-  href?: LinkProps["href"];
+  href?: LinkProps["href"]; // 导航项 → <Link>，导航中显示 pending 态
+  onSelect?: () => void; // 动作项 → <button>，与 href 互斥（新建/退出等）
+  match?: MatchStrategy; // 子页/详情页命中策略，默认 "prefix"；详见类型定义
   children?: MenuItem[]; // 只渲染一层，更深层级会被忽略
   badge?: string;
-  badgeColor?: "violet" | "green";
+  color?: "violet" | "green"; // 徽章配色，搭配 badge
 }
 ```
 
@@ -388,7 +392,7 @@ interface AccountMenuItem {
 
 ```ts
 interface Brand {
-  name: string;            // 不渲染文字，仅用作图片 logo 的 alt
+  name: string; // 不渲染文字，仅用作图片 logo 的 alt
   logo: string | BrandLogo; // 字符串：方形品牌框里的图标；对象：按主题/折叠切换的图片 logo
 }
 
@@ -396,9 +400,9 @@ interface Brand {
 // 展开显示 light/dark（不套品牌框），折叠到图标宽度显示 collapsed。
 // 全部走纯 CSS 切换（dark: 与 group-data-[collapsible=icon]:），无水合闪烁。
 interface BrandLogo {
-  light: string;          // 展开态 logo（亮色）
-  dark?: string;          // 展开态 logo（暗色），缺省回退 light
-  collapsed?: string;     // 折叠态方形 mark（如 favicon），缺省回退展开态 logo
+  light: string; // 展开态 logo（亮色）
+  dark?: string; // 展开态 logo（暗色），缺省回退 light
+  collapsed?: string; // 折叠态方形 mark（如 favicon），缺省回退展开态 logo
   collapsedDark?: string; // 折叠态 mark（暗色），缺省回退 collapsed → dark
 }
 ```

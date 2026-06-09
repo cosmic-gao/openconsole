@@ -3,15 +3,14 @@
 import * as React from "react";
 
 import {
-  Sidebar as SidebarPrimitive,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
+  Sidebar as SidebarPrimitive,
   SidebarRail,
 } from "@openconsole/shadcn";
 
 import { useLayout } from "../../providers/layout";
-
 import { Account } from "./account";
 import { Brand } from "./brand";
 import { Menu } from "./menu";
@@ -21,6 +20,7 @@ export type {
   AccountMenuItem,
   Brand,
   BrandLogo,
+  MatchStrategy,
   MenuGroup,
   MenuItem,
   User,

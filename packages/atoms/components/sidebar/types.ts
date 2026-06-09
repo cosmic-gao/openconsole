@@ -79,22 +79,59 @@ export interface User {
 }
 
 /**
- * 递归菜单项。`href` 表示叶子链接；`children` 表示父级分组。
- * 有 `children` 没 `href` 的项作为可折叠分组渲染。
+ * 菜单项「命中（高亮）」策略，用于子页 / 详情页的菜单选中逻辑。默认 `"prefix"`。
+ *
+ * - `"prefix"`：精确相等，或当前路径落在 `href` 的子路径下 —— 子页 / 详情页
+ *   仍点亮父链接（例如 `/agents` 在 `/agents/123/chat` 时高亮）。
+ * - `"exact"`：仅精确相等，适合 `/` 这类不希望被子路径连带点亮的项。
+ * - `string[]`：在 `href` 之外**追加**的命中前缀 —— 用于详情页 URL 不落在
+ *   `href` 之下的场景（例如菜单项 `href="/agents"`，详情页却在 `/chat/:id`，
+ *   传 `["/chat"]` 即可让它在详情页保持高亮）。
+ * - `(pathname) => boolean`：完全自定义判断，返回 `true` 视为最高优先级命中。
+ *
+ * 多项同时命中时，只有「最具体」的一项会高亮（命中前缀最长 / 精确 / 自定义
+ * 优先），避免父子或相邻前缀项同时点亮 —— 见 `Menu` 的最长前缀匹配。
+ */
+export type MatchStrategy =
+  | "exact"
+  | "prefix"
+  | string[]
+  | ((pathname: string) => boolean);
+
+/**
+ * 递归菜单项,有三种形态:
+ *
+ * - **导航项**:有 `href` → 渲染为 `<Link>`,导航中显示 pending 态。
+ * - **动作项**:有 `onSelect` 无 `href` → 渲染为 `<button>`,点击触发回调
+ *   (新建、退出、打开命令面板等非路由操作)。`href` 与 `onSelect` 互斥;
+ *   同时给时以 `href` 为准。注意 `onSelect` 是函数,**不可**从 Server
+ *   Component 序列化下传,动作项需在 Client Component 内定义。
+ * - **分组项**:有 `children` → 作为可折叠父级渲染(展开内联子菜单 / 折叠时
+ *   弹出 flyout)。父级自身的 `onSelect` 被忽略(点击只切换展开)。
  */
 export interface MenuItem {
   /** 显示文本。 */
   label: string;
-  /** `lucide-react` 图标名，例如 `"LayoutDashboard"`。 */
+  /** `lucide-react` 图标名,例如 `"LayoutDashboard"`。 */
   icon?: string;
-  /** 路由地址；父级项可省略。 */
+  /** 路由地址(导航项);父级与动作项可省略。 */
   href?: LinkProps["href"];
-  /** 嵌套子项；只渲染一层，更深层级会被忽略。 */
+  /**
+   * 点击回调(动作项),与 `href` 互斥。用于不改变路由的操作,例如
+   * 「新建会话」「退出登录」「打开命令面板」。
+   */
+  onSelect?: () => void;
+  /**
+   * 命中(高亮)策略,决定子页 / 详情页下本项是否选中。缺省 `"prefix"`。
+   * 详见 {@link MatchStrategy}。动作项默认不参与路由命中,需要时可传函数。
+   */
+  match?: MatchStrategy;
+  /** 嵌套子项;只渲染一层,更深层级会被忽略。 */
   children?: MenuItem[];
   /** 渲染在 label 后的小徽章。 */
   badge?: string;
-  /** 徽章配色，仅支持 `violet`（默认）与 `green`。 */
-  badgeColor?: "violet" | "green";
+  /** 徽章配色,仅支持 `violet`(默认)与 `green`;搭配 `badge` 使用。 */
+  color?: "violet" | "green";
 }
 
 /**

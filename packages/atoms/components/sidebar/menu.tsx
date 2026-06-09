@@ -1,13 +1,14 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
-import Link from "next/link";
+import { ChevronRight, LoaderCircle } from "lucide-react";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import {
   Badge,
+  cn,
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -26,10 +27,10 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  cn,
   useSidebar,
 } from "@openconsole/shadcn";
-import type { MenuGroup, MenuItem } from "./types";
+
+import type { MatchStrategy, MenuGroup, MenuItem } from "./types";
 
 /** 类型守卫所需的「父级项」形态：children 至少有一项。 */
 type Parent = MenuItem & { children: MenuItem[] };
@@ -39,27 +40,83 @@ function isParent(item: MenuItem): item is Parent {
   return Array.isArray(item.children) && item.children.length > 0;
 }
 
+/** 自定义函数 / 显式命中的优先级 —— 永远胜过任何基于长度的前缀命中。 */
+const EXPLICIT_SCORE = Number.MAX_SAFE_INTEGER;
+
 /**
- * 判断某个 href 是否匹配当前 pathname。
+ * 计算某项相对当前 pathname 的「匹配相关度」：越大越相关，`-1` 表示未命中。
  *
- * 精确相等，或 pathname 落在该 href 的子路径下（嵌套子路由也算命中，
- * 例如 `/agents` 在 `/agents/123/chat` 时仍高亮）。根路径 `/` 只精确匹配，
- * 避免它在所有页面都命中。
+ * 相关度即命中前缀的长度（精确相等取整串长度，子路径前缀取该前缀长度），
+ * 因此「最长前缀匹配」天然等价于「相关度最高者胜」。`match` 策略见
+ * {@link MatchStrategy}：`exact` 关闭子路径前缀；数组追加额外前缀；函数返回
+ * `true` 取最高优先级。根路径 `/` 仅精确命中，避免在所有页面被点亮。
  */
-function matchesHref(pathname: string, href: MenuItem["href"]): boolean {
-  if (typeof href !== "string") return false;
-  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+function relevance(pathname: string, item: MenuItem): number {
+  const match: MatchStrategy = item.match ?? "prefix";
+  if (typeof match === "function") return match(pathname) ? EXPLICIT_SCORE : -1;
+
+  const exactOnly = match === "exact";
+  const extra = Array.isArray(match) ? match : [];
+  const targets = [item.href, ...extra].filter(
+    (h): h is string => typeof h === "string",
+  );
+
+  let best = -1;
+  for (const target of targets) {
+    if (pathname === target) {
+      best = Math.max(best, target.length);
+    } else if (
+      !exactOnly &&
+      target !== "/" &&
+      pathname.startsWith(`${target}/`)
+    ) {
+      best = Math.max(best, target.length);
+    }
+  }
+  return best;
 }
 
 /**
- * 判断本项是否「激活」。
+ * 跨所有分组，挑出当前 pathname 下「最具体」的那一项（叶子或父级自身）。
  *
- * - 叶子项：href 命中当前 pathname（含子路径）。
- * - 父级项：children 中任一项 href 命中当前 pathname。
+ * 父级 href 与其子项一同参与竞争（如分组索引页 `/settings` 自身命中）；
+ * 相关度相同则先遍历者胜（稳定）。返回的引用用于驱动高亮 —— 全局只点亮一项，
+ * 从根本上避免父子 / 相邻前缀项同时高亮。
  */
-function isActive(pathname: string, item: MenuItem): boolean {
-  if (matchesHref(pathname, item.href)) return true;
-  return item.children?.some((c) => matchesHref(pathname, c.href)) ?? false;
+function pick(groups: MenuGroup[], pathname: string): MenuItem | null {
+  let winner: MenuItem | null = null;
+  let best = -1;
+  const consider = (item: MenuItem) => {
+    const score = relevance(pathname, item);
+    if (score > best) {
+      best = score;
+      winner = item;
+    }
+  };
+  for (const group of groups) {
+    for (const item of group.items) {
+      consider(item);
+      item.children?.forEach(consider);
+    }
+  }
+  return winner;
+}
+
+/** 当前命中项（最具体）的上下文 —— 由 `Menu` 统一解析后下发。 */
+const ActiveContext = React.createContext<MenuItem | null>(null);
+
+/** 读取当前命中项；未命中为 `null`。 */
+function useActiveItem(): MenuItem | null {
+  return React.useContext(ActiveContext);
+}
+
+/**
+ * 本项是否高亮：自身即命中项，或（父级）命中项落在其子项中。
+ */
+function useItemActive(item: MenuItem): boolean {
+  const active = useActiveItem();
+  if (!active) return false;
+  return active === item || (item.children?.includes(active) ?? false);
 }
 
 function NavBadge({
@@ -84,6 +141,64 @@ function NavBadge({
   );
 }
 
+/** 菜单项主体：前导图标 + 文本 + 徽章。`icon` 省略时回退到 `item.icon` 的静态图标。 */
+function ItemContent({ item, icon }: { item: MenuItem; icon?: ReactNode }) {
+  return (
+    <>
+      {icon ?? (item.icon ? <Icon name={item.icon} /> : null)}
+      <span>{item.label}</span>
+      {item.badge && <NavBadge color={item.color}>{item.badge}</NavBadge>}
+    </>
+  );
+}
+
+/**
+ * 链接项的前导图标：导航进行中显示 spinner 取代图标，给出「正在加载」反馈。
+ * spinner 延迟 100ms 才淡入（见 `animate-pending`），秒开的导航根本不显示，
+ * 避免一闪而过。依赖 `useLinkStatus`，**只能**渲染在 `<Link>` 子树内。
+ */
+function PendingIcon({ name }: { name?: string }) {
+  const { pending } = useLinkStatus();
+  if (pending) return <LoaderCircle className="animate-pending" />;
+  return name ? <Icon name={name} /> : null;
+}
+
+/**
+ * 渲染一个叶子 / 子项的可点击本体，作为 shadcn 按钮原语的 `asChild` 子节点：
+ *
+ * - 有 `href` → `<Link>`（前导图标随导航显示 pending 态）；
+ * - 有 `onSelect` → `<button>`（触发动作后一并执行 `onNavigate`）；
+ * - 皆无 → 不可点击 `<span>`（罕见的纯标签项）。
+ *
+ * 返回**真实元素**（非组件），外层 `Slot` 才能正确把样式 / `data-*` / ref
+ * 合并到 `<a>` / `<button>` 上。
+ */
+function renderTarget(item: MenuItem, onNavigate?: () => void): ReactElement {
+  if (item.href !== undefined) {
+    return (
+      <Link href={item.href} onClick={onNavigate}>
+        <ItemContent item={item} icon={<PendingIcon name={item.icon} />} />
+      </Link>
+    );
+  }
+  if (item.onSelect) {
+    const handleSelect = () => {
+      item.onSelect?.();
+      onNavigate?.();
+    };
+    return (
+      <button type="button" onClick={handleSelect}>
+        <ItemContent item={item} />
+      </button>
+    );
+  }
+  return (
+    <span>
+      <ItemContent item={item} />
+    </span>
+  );
+}
+
 /**
  * 渲染分组菜单。每个 group 是一个 `SidebarGroup`，可选 label。
  *
@@ -92,17 +207,23 @@ function NavBadge({
  * 折叠（仅图标）状态 → 弹出右侧 flyout（`<Flyout>`）。
  */
 export function Menu({ groups }: { groups: MenuGroup[] }) {
+  const pathname = usePathname();
+  // 命中项跨分组统一解析（最长前缀匹配），再经 context 下发，保证全局只点亮一项。
+  const active = React.useMemo(
+    () => pick(groups, pathname),
+    [groups, pathname],
+  );
+
   return (
-    <>
+    <ActiveContext.Provider value={active}>
       {groups.map((group, i) => (
         <MenuSection key={group.label ?? `group-${i}`} group={group} />
       ))}
-    </>
+    </ActiveContext.Provider>
   );
 }
 
 function MenuSection({ group }: { group: MenuGroup }) {
-  const pathname = usePathname();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
 
@@ -111,14 +232,16 @@ function MenuSection({ group }: { group: MenuGroup }) {
       {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
       <SidebarMenu>
         {group.items.map((item) => {
-          const key = `${item.label}-${item.href ?? "group"}`;
+          const key = `${item.label}-${
+            typeof item.href === "string" ? item.href : "group"
+          }`;
           if (!isParent(item)) {
-            return <Item key={key} item={item} pathname={pathname} />;
+            return <NavItem key={key} item={item} />;
           }
           return collapsed ? (
-            <Flyout key={key} item={item} pathname={pathname} />
+            <Flyout key={key} item={item} />
           ) : (
-            <Submenu key={key} item={item} pathname={pathname} />
+            <Submenu key={key} item={item} />
           );
         })}
       </SidebarMenu>
@@ -126,34 +249,32 @@ function MenuSection({ group }: { group: MenuGroup }) {
   );
 }
 
-function Item({ item, pathname }: { item: MenuItem; pathname: string }) {
+/** 一级叶子项：导航链接或动作按钮（见 {@link renderTarget}）。 */
+function NavItem({ item }: { item: MenuItem }) {
   const { setOpenMobile } = useSidebar();
-  const active = isActive(pathname, item);
+  const active = useItemActive(item);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-        <Link href={item.href ?? "#"} onClick={() => setOpenMobile(false)}>
-          {item.icon && <Icon name={item.icon} />}
-          <span>{item.label}</span>
-          {item.badge && (
-            <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
-          )}
-        </Link>
+        {renderTarget(item, () => setOpenMobile(false))}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
 }
 
-function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
+/** 展开态父级项：内联可折叠子菜单，命中子项时自动展开并高亮。 */
+function Submenu({ item }: { item: Parent }) {
   const { setOpenMobile } = useSidebar();
-  const active = isActive(pathname, item);
+  const active = useActiveItem();
+  const selfActive =
+    active != null && (active === item || item.children.includes(active));
   // 受控的 `open`：路由切换时让命中分支重新展开（defaultOpen 只在 mount
   // 时生效一次）。
-  const [open, setOpen] = React.useState(active);
+  const [open, setOpen] = React.useState(selfActive);
   React.useEffect(() => {
-    if (active) setOpen(true);
-  }, [active]);
+    if (selfActive) setOpen(true);
+  }, [selfActive]);
 
   return (
     <Collapsible
@@ -164,38 +285,20 @@ function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton tooltip={item.label} isActive={active}>
-            {item.icon && <Icon name={item.icon} />}
-            <span>{item.label}</span>
-            {item.badge && (
-              <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
-            )}
+          <SidebarMenuButton tooltip={item.label} isActive={selfActive}>
+            <ItemContent item={item} />
             <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub>
-            {item.children.map((child) => {
-              const childActive = matchesHref(pathname, child.href);
-              return (
-                <SidebarMenuSubItem key={child.label}>
-                  <SidebarMenuSubButton asChild isActive={childActive}>
-                    <Link
-                      href={child.href ?? "#"}
-                      onClick={() => setOpenMobile(false)}
-                    >
-                      {child.icon && <Icon name={child.icon} />}
-                      <span>{child.label}</span>
-                      {child.badge && (
-                        <NavBadge color={child.badgeColor}>
-                          {child.badge}
-                        </NavBadge>
-                      )}
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              );
-            })}
+            {item.children.map((child) => (
+              <SidebarMenuSubItem key={child.label}>
+                <SidebarMenuSubButton asChild isActive={active === child}>
+                  {renderTarget(child, () => setOpenMobile(false))}
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -203,19 +306,19 @@ function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
   );
 }
 
-function Flyout({ item, pathname }: { item: Parent; pathname: string }) {
-  const active = isActive(pathname, item);
+/** 折叠（仅图标）态父级项：悬停 / 点击在右侧弹出 flyout 列出子项。 */
+function Flyout({ item }: { item: Parent }) {
+  const { setOpenMobile } = useSidebar();
+  const active = useActiveItem();
+  const selfActive =
+    active != null && (active === item || item.children.includes(active));
 
   return (
     <SidebarMenuItem>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton tooltip={item.label} isActive={active}>
-            {item.icon && <Icon name={item.icon} />}
-            <span>{item.label}</span>
-            {item.badge && (
-              <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
-            )}
+          <SidebarMenuButton tooltip={item.label} isActive={selfActive}>
+            <ItemContent item={item} />
             <ChevronRight className="ml-auto" />
           </SidebarMenuButton>
         </DropdownMenuTrigger>
@@ -227,31 +330,20 @@ function Flyout({ item, pathname }: { item: Parent; pathname: string }) {
         >
           <DropdownMenuLabel className="flex items-center gap-2">
             {item.label}
-            {item.badge && (
-              <NavBadge color={item.badgeColor}>{item.badge}</NavBadge>
-            )}
+            {item.badge && <NavBadge color={item.color}>{item.badge}</NavBadge>}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {item.children.map((child) => {
-            const childActive = pathname === child.href;
-            return (
-              <DropdownMenuItem key={`${child.label}-${child.href}`} asChild>
-                <Link
-                  href={child.href ?? "#"}
-                  className={cn(
-                    "flex items-center gap-2",
-                    childActive && "bg-accent text-accent-foreground",
-                  )}
-                >
-                  {child.icon && <Icon name={child.icon} />}
-                  <span>{child.label}</span>
-                  {child.badge && (
-                    <NavBadge color={child.badgeColor}>{child.badge}</NavBadge>
-                  )}
-                </Link>
-              </DropdownMenuItem>
-            );
-          })}
+          {item.children.map((child) => (
+            <DropdownMenuItem
+              key={child.label}
+              asChild
+              className={cn(
+                active === child && "bg-accent text-accent-foreground",
+              )}
+            >
+              {renderTarget(child, () => setOpenMobile(false))}
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>

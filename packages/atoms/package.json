@@ -1,6 +1,6 @@
 {
   "name": "@openconsole/atoms",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": false,
   "description": "Next.js 16 业务级组合组件 —— Header / Sidebar / Breadcrumbs / Preferences / Error 页 + 主题、字体、布局 Provider。",
   "keywords": [
