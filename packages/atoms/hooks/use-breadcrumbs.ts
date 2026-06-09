@@ -3,10 +3,12 @@
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 
-/** 单条面包屑：显示文本 + 跳转链接。 */
+/** 单条面包屑。 */
 export type Crumb = {
-  title: string;
-  link: string;
+  /** 显示文本。 */
+  label: string;
+  /** 跳转链接；省略则渲染为不可点击项（当前页 / 中间分组）。 */
+  href?: string;
 };
 
 /** {@link useBreadcrumbs} 的可选参数。 */
@@ -57,8 +59,8 @@ export function useBreadcrumbs(options?: UseBreadcrumbsOptions): Crumb[] {
       const link = `/${segments.slice(0, index + 1).join("/")}`;
       const override = labels?.[link];
       return {
-        title: override ?? transform(segment, index, segments),
-        link,
+        label: override ?? transform(segment, index, segments),
+        href: link,
       };
     });
   }, [pathname, labels, transform]);

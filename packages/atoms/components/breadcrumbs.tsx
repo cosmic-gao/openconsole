@@ -16,75 +16,50 @@ import { type Crumb, useBreadcrumbs } from "../hooks/use-breadcrumbs";
 
 /** {@link Breadcrumbs} 的 props。 */
 export interface BreadcrumbsProps {
-  /**
-   * 手写的 crumb 链。设置后 `labels` 被忽略，也不再调用 hook 推导。
-   * 适用于非 pathname 派生的场景（向导步骤、模态流程等）。
-   */
+  /** 显式 crumb 链;省略则按 `usePathname()` 自动派生。 */
   items?: Crumb[];
-  /**
-   * 按路径覆盖文本；只在未传 `items` 时生效，会转发给 `useBreadcrumbs`。
-   * 详见 {@link UseBreadcrumbsOptions.labels}。
-   */
-  labels?: Record<string, string>;
-  /**
-   * 自定义分隔符内容（渲染在 `BreadcrumbSeparator` 内部）。
-   * 默认是 shadcn 内置的 `ChevronRight` 图标。
-   */
+  /** 自定义分隔符内容;默认是 shadcn 内置的 `ChevronRight` 图标。 */
   separator?: ReactNode;
-  /**
-   * 默认情况下中间 crumb（除首/尾外）在 `< md` 屏幕下隐藏，保持顶栏紧凑。
-   * 设为 `true` 让它们在所有尺寸下都可见。
-   */
+  /** 默认中间项在 `< md` 屏幕隐藏以保持紧凑;设为 `true` 则始终可见。 */
   showAllOnMobile?: boolean;
+  /** 透传给根 `Breadcrumb` 的类名。 */
+  className?: string;
 }
 
 /**
- * 自动从 pathname 派生的面包屑导航。常作为 `<Header breadcrumbs={<Breadcrumbs />} />`
- * 的默认导航插槽。
+ * 面包屑导航。默认按 `usePathname()` 自动派生(常作为 `<Header />` 的导航插槽);
+ * 传 `items` 则渲染你给的链(向导步骤、模态流程等非 pathname 场景)。
  *
- * 读取 `usePathname()`，每个 segment 渲染一条 crumb：尾项是当前页，渲染
- * 为不可点击的 `BreadcrumbPage`；中间项是 `<Link>`。pathname 为空时返回
- * `null`（不留视觉残影）。
- *
- * 通过 `labels` 自定义文本（按路径覆盖）；非 pathname 场景直接传 `items`；
- * 要无头渲染自己的 UI，请改用 {@link useBreadcrumbs}。
+ * 每条 crumb:有 `href` 且非末项 → 可点击 `<Link>`;末项或无 `href` → 不可点击的
+ * `BreadcrumbPage`。无 crumb 时返回 `null`。需要自动派生 + 自定义文本,可组合
+ * `<Breadcrumbs items={useBreadcrumbs({ labels })} />`。
  */
-export function Breadcrumbs({
-  items: itemsProp,
-  labels,
-  separator,
-  showAllOnMobile = false,
-}: BreadcrumbsProps) {
-  const derived = useBreadcrumbs({ labels });
-  const items = itemsProp ?? derived;
+export function Breadcrumbs({ items, separator, showAllOnMobile = false, className }: BreadcrumbsProps) {
+  const derived = useBreadcrumbs();
+  const crumbs = items ?? derived;
 
-  if (items.length === 0) return null;
+  if (crumbs.length === 0) return null;
 
-  const intermediateClass = showAllOnMobile ? undefined : "hidden md:block";
+  // 中间项(非首非尾)在移动端折叠,保持顶栏紧凑。
+  const collapsed = showAllOnMobile ? undefined : "hidden md:block";
 
   return (
-    <Breadcrumb>
+    <Breadcrumb className={className}>
       <BreadcrumbList>
-        {items.map((item, index) => {
-          const isLast = index === items.length - 1;
+        {crumbs.map((crumb, index) => {
+          const isLast = index === crumbs.length - 1;
           return (
-            <Fragment key={`${item.link}-${index}`}>
-              <BreadcrumbItem
-                className={isLast ? undefined : intermediateClass}
-              >
-                {isLast ? (
-                  <BreadcrumbPage>{item.title}</BreadcrumbPage>
-                ) : (
+            <Fragment key={`${index}-${crumb.href ?? crumb.label}`}>
+              <BreadcrumbItem className={isLast ? undefined : collapsed}>
+                {!isLast && crumb.href !== undefined ? (
                   <BreadcrumbLink asChild>
-                    <Link href={item.link}>{item.title}</Link>
+                    <Link href={crumb.href}>{crumb.label}</Link>
                   </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                 )}
               </BreadcrumbItem>
-              {!isLast && (
-                <BreadcrumbSeparator className={intermediateClass}>
-                  {separator}
-                </BreadcrumbSeparator>
-              )}
+              {!isLast && <BreadcrumbSeparator className={collapsed}>{separator}</BreadcrumbSeparator>}
             </Fragment>
           );
         })}
