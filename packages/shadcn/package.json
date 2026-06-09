@@ -9,8 +9,6 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./ui": "./components/ui/index.ts",
-    "./ai/*": "./components/ai-elements/*.tsx",
     "./styles.css": "./styles.css"
   },
   "files": [
