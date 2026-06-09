@@ -3,5 +3,15 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "main": "index.ts"
+  "main": "index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "@openconsole/graph": "workspace:*"
+  }
 }
