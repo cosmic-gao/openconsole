@@ -40,14 +40,26 @@ function isParent(item: MenuItem): item is Parent {
 }
 
 /**
+ * 判断某个 href 是否匹配当前 pathname。
+ *
+ * 精确相等，或 pathname 落在该 href 的子路径下（嵌套子路由也算命中，
+ * 例如 `/agents` 在 `/agents/123/chat` 时仍高亮）。根路径 `/` 只精确匹配，
+ * 避免它在所有页面都命中。
+ */
+function matchesHref(pathname: string, href: MenuItem["href"]): boolean {
+  if (typeof href !== "string") return false;
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
+/**
  * 判断本项是否「激活」。
  *
- * - 叶子项：href 与当前 pathname 完全相等。
- * - 父级项：children 中任一项 href 匹配当前 pathname。
+ * - 叶子项：href 命中当前 pathname（含子路径）。
+ * - 父级项：children 中任一项 href 命中当前 pathname。
  */
 function isActive(pathname: string, item: MenuItem): boolean {
-  if (item.href && pathname === item.href) return true;
-  return item.children?.some((c) => c.href === pathname) ?? false;
+  if (matchesHref(pathname, item.href)) return true;
+  return item.children?.some((c) => matchesHref(pathname, c.href)) ?? false;
 }
 
 function NavBadge({
@@ -164,7 +176,7 @@ function Submenu({ item, pathname }: { item: Parent; pathname: string }) {
         <CollapsibleContent>
           <SidebarMenuSub>
             {item.children.map((child) => {
-              const childActive = pathname === child.href;
+              const childActive = matchesHref(pathname, child.href);
               return (
                 <SidebarMenuSubItem key={child.label}>
                   <SidebarMenuSubButton asChild isActive={childActive}>
