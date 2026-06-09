@@ -336,6 +336,103 @@ import { ThemeProvider } from "next-themes";
 
 或使用 `@openconsole/atoms` 的 `<ThemeProvider>`（带默认值的薄包装）。
 
+## 目录结构与维护
+
+本包采用 **shadcn 标准工程布局**，让官方 CLI（`add` / `diff`）与 AI Elements registry 原生可用：
+
+```
+packages/shadcn/
+├─ components/
+│  ├─ ui/<name>.tsx        # shadcn 原语（56 个）
+│  ├─ ui/index.ts          #   └ 自动生成 barrel
+│  ├─ ai-elements/<name>.tsx  # AI SDK Elements（48 个）
+│  ├─ ai-elements/index.ts    #   └ 自动生成 barrel
+│  └─ index.ts             # ui + ai-elements 合并 barrel
+├─ lib/utils.ts            # cn()
+├─ hooks/                  # useIsMobile() 等
+├─ components.json         # shadcn CLI 配置（add / diff / @ai-elements registry）
+├─ scripts/
+│  ├─ normalize-imports.mjs   # @/ 别名 → 相对路径
+│  ├─ gen-barrels.mjs         # 重新生成 ui / ai-elements barrel
+│  └─ sync-ai-elements.mjs    # 拉取 / 升级 AI Elements
+├─ index.ts                # 根 barrel：lib + hooks + components（含 ai-elements）
+├─ shadcn-env.d.ts         # 本包 tsc 用的 *.css 环境声明
+└─ styles.css
+```
+
+导出入口（`package.json` `exports`）按依赖足迹从重到轻：
+
+| 入口 | 内容 | AI 依赖 |
+| --- | --- | --- |
+| `@openconsole/shadcn` | UI 原语 + 工具 + **全部** AI Elements | 需要 |
+| `@openconsole/shadcn/ui` | 仅 UI 原语 + 工具 | **不需要**（精简入口） |
+| `@openconsole/shadcn/ai/<name>` | 单个 AI Element | 仅该组件那几个 |
+| `@openconsole/shadcn/styles.css` | 主题与 token | — |
+
+### 核心不变量：无构建 ⇒ 相对导入
+
+本包**不构建**、直接发布 `.tsx`，由消费方 `transpilePackages` 编译。`@/` 这类路径别名**跨包不可解析**（在消费方会被它自己的 `@/` 接管），所以：
+
+> **提交进仓库的源码一律使用相对导入**（`../../lib/utils`、`../ui/button`），不留 `@/`。
+
+`components.json` 的 `@/` 别名与 `tsconfig.json` 的 `paths` **仅供 CLI 解析**。CLI 生成的文件会带 `@/`，因此每次 `add` / `sync` 之后都要跑规范化脚本：
+
+```bash
+node scripts/normalize-imports.mjs           # @/ → 相对路径
+node scripts/normalize-imports.mjs --check    # CI 守卫：仍残留 @/ 则 exit 1
+```
+
+## 升级 shadcn 原组件
+
+组件与官方同名同位（`components/ui/<name>.tsx`），`shadcn diff` 原生可用：
+
+```bash
+cd packages/shadcn
+npx shadcn@latest diff <component>              # 看官方 registry 与本地实现的差异
+npx shadcn@latest add  <component> --overwrite  # 拉最新实现覆盖本地
+node scripts/normalize-imports.mjs              # 收敛导入为相对路径（必做）
+node scripts/gen-barrels.mjs                     # 新增组件时刷新 barrel
+pnpm typecheck                                  # 校验
+```
+
+> `diff` 的 import 行会恒显示差异（官方用 `@/`、本地用相对）—— 这是无构建分发的取舍，**看组件主体逻辑即可**。本包的品牌定制集中在 `styles.css` 的 CSS 变量、而非组件源码，故覆盖通常不冲突。
+
+## AI SDK Elements (`@openconsole/shadcn/ai`)
+
+[AI SDK Elements](https://elements.ai-sdk.dev) 的 48 个 AI-native 组件（Conversation / Message / PromptInput / Reasoning / Tool / CodeBlock / Sources …）已 vendor 进 `components/ai-elements/`，构建在本包的 shadcn 原语之上。
+
+### 用法
+
+两种入口（依赖足迹见上表）：
+
+```tsx
+// 根 barrel —— 与 UI 原语同处，一行导入
+import { Conversation, Message, PromptInput } from "@openconsole/shadcn";
+// 单组件 —— 依赖足迹最小
+import { Conversation, ConversationContent } from "@openconsole/shadcn/ai/conversation";
+```
+
+> 想**完全不引入 AI 依赖**（如纯后台仪表盘）：从 `@openconsole/shadcn/ui` 导入 UI 原语即可，该入口不牵涉任何 ai-elements。
+
+### 依赖
+
+AI 运行时依赖登记为**可选** peer（`peerDependenciesMeta.optional`）：`ai`、`streamdown`(+`@streamdown/*`)、`use-stick-to-bottom`、`@xyflow/react`、`shiki`、`media-chrome`、`motion`、`nanoid`、`tokenlens`、`react-jsx-parser`、`@rive-app/react-webgl2`、`ansi-to-react`、`@radix-ui/react-use-controllable-state`。
+
+```bash
+pnpm add ai streamdown use-stick-to-bottom   # 聊天三件套示例：按需只装用到的
+```
+
+> 从**根 barrel** 导入会让 TS 解析全部 48 个组件类型 ⇒ 需装齐上述依赖；只要最小足迹就用 `@openconsole/shadcn/ai/<name>` 单组件入口。`transpilePackages` 默认已覆盖本包；`canvas` 等带 `*.css` 副作用导入由打包器处理（Next 默认 OK）。源码已改写为 **ES2022 可移植**，消费方无需 `es2023` lib。
+
+### 升级
+
+```bash
+node scripts/sync-ai-elements.mjs   # 拉 registry → 写文件 → 规范化导入 → 严格性 fixup → 重生 barrel → 合并可选 peer
+pnpm install && pnpm typecheck      # 复核
+```
+
+> 本包**不手改** vendor 来的源码；个别 upstream 与本包严格 tsconfig 冲突处（`toReversed`、effect 返回路径）由 `sync` 脚本里**幂等的 fixup** 自动施加，保证再同步可重复，且 ai-elements 一并纳入 `tsc` 校验（与消费方同为 ES2022 lib，等价于「在你的 app 里 typecheck」）。
+
 ## 与 shadcn/ui CLI 的差异
 
 | 维度       | `@openconsole/shadcn`                | `npx shadcn add`              |
@@ -350,10 +447,10 @@ import { ThemeProvider } from "next-themes";
 ## 常见问题
 
 **Q：为什么导入路径里没有 `/button` / `/card`？**
-A：本包用 `index.ts` 平铺所有导出，强制让所有组件走 `@openconsole/shadcn`。这样升级只改一处 `import`。深路径不受支持，未来重构组件文件结构时不会破坏调用方。
+A：本包用嵌套 barrel 把 UI 原语与 AI Elements 都从 `@openconsole/shadcn` 一行导出，升级只改一处 `import`。若要更小依赖足迹，另有 `@openconsole/shadcn/ui`（纯 UI、零 AI 依赖）与 `@openconsole/shadcn/ai/<name>`（单组件）入口（见 [AI SDK Elements](#ai-sdk-elements-openconsoleshadcnai)）。
 
 **Q：我能像 shadcn CLI 那样直接改组件源码吗？**
-A：能。monorepo 内 `packages/shadcn/<component>.tsx` 是直接源码，按 `transpilePackages` 配置编译到应用。改完立刻看到效果。但请注意改动会影响所有依赖该组件的应用。
+A：能。monorepo 内 `packages/shadcn/components/ui/<component>.tsx` 是直接源码，按 `transpilePackages` 配置编译到应用。改完立刻看到效果。但请注意改动会影响所有依赖该组件的应用，且会让该组件后续的 `shadcn diff` 噪音变大。
 
 **Q：为什么需要传给 `<Icon>` 字符串而不是直接 React 组件？**
 A：菜单 / 导航这类数据结构会被 RSC ↔ Client 间传递。React 组件不可序列化，字符串可以。把图标查表延迟到 Client 端做。

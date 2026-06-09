@@ -9,8 +9,18 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./ui": "./components/ui/index.ts",
+    "./ai/*": "./components/ai-elements/*.tsx",
     "./styles.css": "./styles.css"
   },
+  "files": [
+    "components",
+    "lib",
+    "hooks",
+    "index.ts",
+    "styles.css",
+    "README.md"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit"
@@ -28,7 +38,16 @@
     "@radix-ui/react-slot": "*",
     "@radix-ui/react-tabs": "*",
     "@radix-ui/react-tooltip": "*",
+    "@radix-ui/react-use-controllable-state": "*",
+    "@rive-app/react-webgl2": "*",
+    "@streamdown/cjk": "*",
+    "@streamdown/code": "*",
+    "@streamdown/math": "*",
+    "@streamdown/mermaid": "*",
     "@tanstack/react-table": "*",
+    "@xyflow/react": "*",
+    "ai": "*",
+    "ansi-to-react": "*",
     "class-variance-authority": "*",
     "clsx": "*",
     "cmdk": "*",
@@ -36,23 +55,84 @@
     "embla-carousel-react": "*",
     "input-otp": "*",
     "lucide-react": "*",
+    "media-chrome": "*",
+    "motion": "*",
+    "nanoid": "*",
     "next-themes": "*",
     "radix-ui": "*",
     "react": "^19.0.0",
     "react-day-picker": "*",
     "react-dom": "^19.0.0",
     "react-hook-form": "*",
+    "react-jsx-parser": "*",
     "react-resizable-panels": "*",
     "recharts": "*",
+    "shiki": "*",
     "sonner": "*",
+    "streamdown": "*",
     "tailwind-merge": "*",
     "tailwindcss": "^4.0.0",
+    "tokenlens": "*",
     "tw-animate-css": "*",
+    "use-stick-to-bottom": "*",
     "vaul": "*",
     "zod": "*"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3"
+  },
+  "peerDependenciesMeta": {
+    "@radix-ui/react-use-controllable-state": {
+      "optional": true
+    },
+    "@rive-app/react-webgl2": {
+      "optional": true
+    },
+    "@streamdown/cjk": {
+      "optional": true
+    },
+    "@streamdown/code": {
+      "optional": true
+    },
+    "@streamdown/math": {
+      "optional": true
+    },
+    "@streamdown/mermaid": {
+      "optional": true
+    },
+    "@xyflow/react": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "ansi-to-react": {
+      "optional": true
+    },
+    "media-chrome": {
+      "optional": true
+    },
+    "motion": {
+      "optional": true
+    },
+    "nanoid": {
+      "optional": true
+    },
+    "react-jsx-parser": {
+      "optional": true
+    },
+    "shiki": {
+      "optional": true
+    },
+    "streamdown": {
+      "optional": true
+    },
+    "tokenlens": {
+      "optional": true
+    },
+    "use-stick-to-bottom": {
+      "optional": true
+    }
   }
 }
