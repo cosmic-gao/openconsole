@@ -1,4 +1,5 @@
 import type { LinkProps } from "next/link";
+import type { ReactNode } from "react";
 
 /**
  * 侧边栏顶部品牌区 —— logo + 名称。
@@ -78,66 +79,52 @@ export interface User {
   menu?: AccountMenuItem[];
 }
 
+/** 命中模式:`"prefix"`(默认,精确或子路径)/ `"exact"`(仅精确)。 */
+export type MatchMode = "exact" | "prefix";
+
 /**
- * 菜单项「命中（高亮）」策略，用于子页 / 详情页的菜单选中逻辑。默认 `"prefix"`。
- *
- * - `"prefix"`：精确相等，或当前路径落在 `href` 的子路径下 —— 子页 / 详情页
- *   仍点亮父链接（例如 `/agents` 在 `/agents/123/chat` 时高亮）。
- * - `"exact"`：仅精确相等，适合 `/` 这类不希望被子路径连带点亮的项。
- * - `string[]`：在 `href` 之外**追加**的命中前缀 —— 用于详情页 URL 不落在
- *   `href` 之下的场景（例如菜单项 `href="/agents"`，详情页却在 `/chat/:id`，
- *   传 `["/chat"]` 即可让它在详情页保持高亮）。
- * - `(pathname) => boolean`：完全自定义判断，返回 `true` 视为最高优先级命中。
- *
- * 多项同时命中时，只有「最具体」的一项会高亮（命中前缀最长 / 精确 / 自定义
- * 优先），避免父子或相邻前缀项同时点亮 —— 见 `Menu` 的最长前缀匹配。
+ * 高亮命中策略,缺省 `"prefix"`:{@link MatchMode} 关键字、`{ paths }` 在 `href`
+ * 之外追加命中前缀、或 `(pathname) => boolean` 完全自定义。多项命中只点亮最具体
+ * 一项;需受控 / 基于 hook 判定时改用 {@link MenuItem.active}。
  */
 export type MatchStrategy =
-  | "exact"
-  | "prefix"
-  | string[]
+  | MatchMode
+  | { paths: readonly string[] }
   | ((pathname: string) => boolean);
 
-/**
- * 递归菜单项,有三种形态:
- *
- * - **导航项**:有 `href` → 渲染为 `<Link>`,导航中显示 pending 态。
- * - **动作项**:有 `onSelect` 无 `href` → 渲染为 `<button>`,点击触发回调
- *   (新建、退出、打开命令面板等非路由操作)。`href` 与 `onSelect` 互斥;
- *   同时给时以 `href` 为准。注意 `onSelect` 是函数,**不可**从 Server
- *   Component 序列化下传,动作项需在 Client Component 内定义。
- * - **分组项**:有 `children` → 作为可折叠父级渲染(展开内联子菜单 / 折叠时
- *   弹出 flyout)。父级自身的 `onSelect` 被忽略(点击只切换展开)。
- */
+/** 菜单项:导航(`href`)、动作(`onSelect`)、分组(`children`)三选一形态。 */
 export interface MenuItem {
-  /** 显示文本。 */
-  label: string;
-  /** `lucide-react` 图标名,例如 `"LayoutDashboard"`。 */
+  /** React key;省略回退到下标。 */
+  id?: string;
+  /** 显示内容。 */
+  label: ReactNode;
+  /** 前导图标名(交给 `Icon`)。 */
   icon?: string;
-  /** 路由地址(导航项);父级与动作项可省略。 */
+  /** 路由地址(导航项),与 `onSelect` 互斥。 */
   href?: LinkProps["href"];
-  /**
-   * 点击回调(动作项),与 `href` 互斥。用于不改变路由的操作,例如
-   * 「新建会话」「退出登录」「打开命令面板」。
-   */
+  /** 点击回调(动作项),与 `href` 互斥。 */
   onSelect?: () => void;
-  /**
-   * 命中(高亮)策略,决定子页 / 详情页下本项是否选中。缺省 `"prefix"`。
-   * 详见 {@link MatchStrategy}。动作项默认不参与路由命中,需要时可传函数。
-   */
+  /** 高亮命中策略,缺省 `"prefix"`;见 {@link MatchStrategy}。 */
   match?: MatchStrategy;
-  /** 嵌套子项;只渲染一层,更深层级会被忽略。 */
+  /** 受控高亮,覆盖 `match`(`true` 最高优先 / `false` 强制不亮)。 */
+  active?: boolean;
+  /** 子项,仅渲染一层。 */
   children?: MenuItem[];
-  /** 渲染在 label 后的小徽章。 */
-  badge?: string;
-  /** 徽章配色,仅支持 `violet`(默认)与 `green`;搭配 `badge` 使用。 */
-  color?: "violet" | "green";
+  /** label 后徽章:字符串走内置样式,节点则自定义。 */
+  badge?: ReactNode;
+  /** 禁用:不可点击、降透明度。 */
+  disabled?: boolean;
+  /** 折叠态 tooltip;省略时 label 为字符串则回退。 */
+  tooltip?: string;
 }
 
-/**
- * 带标题的菜单分组。省略 `label` 即匿名分组。
- */
+/** 带可选标题的菜单分组。 */
 export interface MenuGroup {
-  label?: string;
+  /** React key;省略回退到下标。 */
+  id?: string;
+  label?: ReactNode;
   items: MenuItem[];
 }
+
+/** 菜单数据:分组列表,或扁平项列表(自动包成单个匿名分组)。 */
+export type MenuData = MenuGroup[] | MenuItem[];

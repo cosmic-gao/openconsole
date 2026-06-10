@@ -14,13 +14,15 @@ import { useLayout } from "../../providers/layout";
 import { Account } from "./account";
 import { Brand } from "./brand";
 import { Menu } from "./menu";
-import type { Brand as BrandData, MenuGroup, User } from "./types";
+import type { Brand as BrandData, MenuData, User } from "./types";
 
 export type {
   AccountMenuItem,
   Brand,
   BrandLogo,
+  MatchMode,
   MatchStrategy,
+  MenuData,
   MenuGroup,
   MenuItem,
   User,
@@ -38,8 +40,8 @@ export interface SidebarProps extends React.ComponentProps<
 > {
   /** 顶部品牌区；不传则不渲染 header。 */
   brand?: BrandData;
-  /** 分组菜单数据。 */
-  menu: MenuGroup[];
+  /** 菜单数据:分组列表,或扁平项列表(自动包成单个匿名分组);见 {@link MenuData}。 */
+  menu: MenuData;
   /** 底部账号卡片；不传则不渲染 footer。 */
   account?: User;
 }
@@ -72,7 +74,7 @@ export function Sidebar({ brand, menu, account, ...props }: SidebarProps) {
         </SidebarHeader>
       )}
       <SidebarContent className="overflow-x-hidden">
-        <Menu groups={menu} />
+        <Menu items={menu} />
       </SidebarContent>
       {account && (
         <SidebarFooter>
