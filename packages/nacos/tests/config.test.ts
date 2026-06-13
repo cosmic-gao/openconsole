@@ -52,8 +52,6 @@ describe("Config", () => {
     c.on((k, v) => seen.push([k, v]));
 
     reg.setConfig("app.json", JSON.stringify({ v: 2 }));
-    // 监听器是同步通知的；revalidate() 异步执行但不影响 snapshot。让出
-    // microtask 让异步收尾。
     await Promise.resolve();
     await Promise.resolve();
 
@@ -72,7 +70,6 @@ describe("Config", () => {
     await c.stop();
     expect(reg.unobserveCalls).toBe(1);
 
-    // stop() 之后的推送不应再传递给监听器。
     let fired = false;
     c.on(() => {
       fired = true;

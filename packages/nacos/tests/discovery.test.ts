@@ -38,7 +38,6 @@ describe("Discovery", () => {
     await d.list("svc");
     expect(reg.watchCalls).toBe(1);
 
-    // 等待超过 TTL，下一次 list() 触发重新拉取 + 重订阅。
     await new Promise((r) => setTimeout(r, 5));
     reg.watchShouldFail = false;
     await d.list("svc");
@@ -86,17 +85,15 @@ describe("Discovery", () => {
       instance("svc", "10.0.0.1", 80),
       instance("svc", "10.0.0.9", 80),
     ]);
-    // 已订阅的缓存原本就会收到推送；refresh 无视缓存状态强制直接读。
     await d.refresh("svc");
     const list = await d.list("svc");
     expect(list).toHaveLength(2);
   });
 
   it("coalesces concurrent list() calls into a single registry hit", async () => {
-    // 防冷启动 thundering herd:N 个并发请求只允许一次真正打到注册中心。
     const reg = new FakeRegistry();
     reg.setInstances("svc", [instance("svc", "10.0.0.1", 80)]);
-    reg.listDelayMs = 30; // 让请求真的重叠
+    reg.listDelayMs = 30;
     const d = new Discovery({ registry: reg });
 
     const results = await Promise.all([

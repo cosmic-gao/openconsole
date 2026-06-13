@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_SERVER, loadEnvOptions } from "../core/env";
+import { DEFAULT_SERVER, loadEnvOptions } from "../core/options";
 
-/**
- * 每个用例独占一份干净的 `process.env` 快照，避免在并发用例中互相污染。
- */
 const snapshot: Record<string, string | undefined> = {};
 const KEYS = [
   "NACOS_SERVER",
@@ -49,7 +46,6 @@ describe("loadEnvOptions — 默认值", () => {
     expect(opts.provider).toBeUndefined();
     expect(opts.consumer).toEqual({});
     expect(opts.config).toBeUndefined();
-    // 默认带上 forward()
     expect(opts.plugins?.map((p) => p.name)).toEqual(["forward"]);
   });
 });
@@ -104,7 +100,6 @@ describe("loadEnvOptions — provider", () => {
   it("ENABLED=true 但缺 service / port 时也跳过", () => {
     process.env.NACOS_PROVIDER_ENABLED = "1";
     process.env.NACOS_PROVIDER_SERVICE = "svc";
-    // 故意不设 PORT
     expect(loadEnvOptions().provider).toBeUndefined();
   });
 

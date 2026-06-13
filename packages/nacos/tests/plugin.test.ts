@@ -1,33 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { Plugins, context, forward, headers as headersPlugin } from "../core/plugin";
+import type { Runtime } from "../core/runtime";
 
-// 实时 mock：每个用例重置 `upstream` 来控制 next/headers 的返回值。
-let upstream: Headers | Error | null;
+let upstream: Headers | null;
 
-vi.mock("next/headers", () => ({
-  headers: () => {
-    if (upstream instanceof Error) throw upstream;
-    if (upstream === null) throw new Error("next/headers called outside scope");
-    return Promise.resolve(upstream);
+const runtime: Runtime = {
+  markDynamic() {},
+  upstreamHeaders() {
+    return upstream;
   },
-}));
+  revalidate() {},
+};
 
 function run(
   request: Request,
   service: string | undefined,
   pipeline: Plugins,
 ): Promise<Request> {
-  return pipeline.request({ request, context: context(service) });
+  return pipeline.request({ request, context: context(service, 0, runtime) });
 }
 
 describe("forward()", () => {
   beforeEach(() => {
     upstream = new Headers();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it("mirrors upstream headers onto nacos:// requests", async () => {
@@ -79,11 +75,7 @@ describe("forward()", () => {
     });
 
     const pipeline = new Plugins([forward({ exclude: ["X-Debug"] })]);
-    const next = await run(
-      new Request("nacos://svc/x"),
-      "svc",
-      pipeline,
-    );
+    const next = await run(new Request("nacos://svc/x"), "svc", pipeline);
 
     expect(next.headers.get("cookie")).toBe("k=v");
     expect(next.headers.get("x-debug")).toBeNull();
@@ -106,11 +98,7 @@ describe("forward()", () => {
     upstream = new Headers({ cookie: "k=v" });
 
     const pipeline = new Plugins([forward()]);
-    const next = await run(
-      new Request("https://api.openai.com/v1"),
-      undefined, // no service → external call
-      pipeline,
-    );
+    const next = await run(new Request("https://api.openai.com/v1"), undefined, pipeline);
 
     expect(next.headers.get("cookie")).toBeNull();
   });
@@ -119,23 +107,18 @@ describe("forward()", () => {
     upstream = new Headers({ "x-trace-id": "trace-1" });
 
     const pipeline = new Plugins([forward({ internalOnly: false })]);
-    const next = await run(
-      new Request("https://api.openai.com/v1"),
-      undefined,
-      pipeline,
-    );
+    const next = await run(new Request("https://api.openai.com/v1"), undefined, pipeline);
 
     expect(next.headers.get("x-trace-id")).toBe("trace-1");
   });
 
   it("degrades to a no-op outside a request scope", async () => {
-    upstream = null; // headers() will throw
+    upstream = null;
 
     const pipeline = new Plugins([forward()]);
     const original = new Request("nacos://svc/x");
     const next = await run(original, "svc", pipeline);
 
-    // 无上游 → 不修改请求；原 Request 原样穿过。
     expect(next).toBe(original);
   });
 });
@@ -161,7 +144,6 @@ describe("headers()", () => {
     };
     const pipeline = new Plugins([headersPlugin(opts)]);
 
-    // 构造之后修改调用方对象不应影响已注册的插件。
     opts.headers["x-snap"] = "v2";
 
     const next = await pipeline.request({
