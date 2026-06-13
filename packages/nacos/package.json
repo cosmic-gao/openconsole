@@ -1,6 +1,6 @@
 {
   "name": "@openconsole/nacos",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "Framework-agnostic Nacos client — service discovery, dynamic config, and a fetch-compatible HTTP layer with plugins. Adapters for Next.js, Hono, and NestJS.",
   "keywords": [
@@ -55,6 +55,7 @@
     }
   },
   "dependencies": {
+    "destr": "^2",
     "server-only": "^0.0.1"
   },
   "devDependencies": {

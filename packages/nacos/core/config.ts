@@ -1,3 +1,5 @@
+import { destr } from "destr";
+
 import { NO_OP_RUNTIME, type Runtime } from "./runtime";
 import type { ConfigOptions, Registry } from "./types";
 
@@ -93,13 +95,12 @@ export class Config {
   }
 }
 
-// 非 JSON(YAML / properties / 纯文本)原样保留为字符串并 warn,调用方可在 on() 回调里自解析。
+// destr 容错解析:JSON → 对象/数组;非 JSON(YAML / properties / 纯文本)原样返回字符串,不抛错。
 function parse(raw: string | null | undefined, dataId: string): unknown {
   if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
+  const value = destr(raw);
+  if (typeof value === "string") {
     console.warn(`[nacos] config '${dataId}' is not JSON; exposing raw string`);
-    return raw;
   }
+  return value;
 }
