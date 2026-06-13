@@ -187,6 +187,8 @@ const off = client.config.on((key, value) => { /* 进程内订阅 */ });
 
 启用 `provider.enabled` 后自动探测对外 IP（优先级：`NACOS_HOST_IP` → `POD_IP` → `HOST_IP` → `NACOS_PREFER_INTERFACE` → 第一个非内网 IPv4 → IPv6 → `127.0.0.1`），`registerInstance` 注册并由 SDK 维持心跳，监听 `SIGTERM`/`SIGINT` 在退出前反注册（跳过 K8s/Docker 15–30 秒健康检查窗口）。
 
+> 自动探测阶段对齐 Spring Cloud Commons InetUtils：`NACOS_IGNORE_INTERFACES` 按正则排除网卡（容器部署建议 `docker.*,veth.*,br-.*`，避免选到 docker0 桥接 IP），`NACOS_PREFER_NETWORKS` 按正则只保留匹配网段的 IP（如 `^10\.,^192\.168\.`）。显式 `NACOS_HOST_IP` / `NACOS_PREFER_INTERFACE` 不受这两个筛选影响。
+
 ```ts
 provider: {
   enabled: true,
@@ -355,7 +357,8 @@ body 序列化：`FormData` / `URLSearchParams` / `Blob` / `ArrayBuffer` / `Read
 | `NACOS_PROVIDER_ENABLED` | 是否注册当前进程（需同时有 service+port） | `false` |
 | `NACOS_PROVIDER_SERVICE` / `NACOS_PROVIDER_PORT` | 注册服务名 / 端口（缺省回退 `PORT`） | - / `$PORT` |
 | `NACOS_PROVIDER_GROUP` / `NACOS_PROVIDER_WEIGHT` / `NACOS_PROVIDER_CLUSTER` / `NACOS_PROVIDER_EPHEMERAL` | 分组 / 权重 / 集群 / 临时实例 | `DEFAULT_GROUP` / `1` / - / `true` |
-| `NACOS_HOST_IP` / `POD_IP` / `HOST_IP` / `NACOS_PREFER_INTERFACE` | IP 探测来源 | - |
+| `NACOS_HOST_IP` / `POD_IP` / `HOST_IP` / `NACOS_PREFER_INTERFACE` | IP 探测来源（IP 值 / K8s 注入 / 网卡名） | - |
+| `NACOS_IGNORE_INTERFACES` / `NACOS_PREFER_NETWORKS` | 自动探测按正则排除网卡 / 筛选网段（对齐 InetUtils） | - |
 | `NACOS_BALANCER` | `weighted` / `round-robin` / `random` / `sticky` | `weighted` |
 | `NACOS_REQUEST_TIMEOUT` | 默认请求超时（ms） | 无 |
 | `NACOS_RETRY_ATTEMPTS` | 默认重试次数（含首次） | `1` |
@@ -381,18 +384,6 @@ try {
 ```
 
 `HttpError` 由 `service` 的 get/post/put/del 抛出（直接 `fetch` 不自动抛，与原生一致）。
-
-## 从 0.2.x 迁移
-
-0.3.0 把核心改为框架无关，Next.js 专属 API 迁到子路径：
-
-| 0.2.x | 0.3.0 |
-| --- | --- |
-| `import { init, client, tryClient, dispose } from "@openconsole/nacos"` | `… from "@openconsole/nacos/nextjs"` |
-| `import { create, logger, forward, … } from "@openconsole/nacos"` | 不变（核心 API 一律从 `@openconsole/nacos` 导入；适配器子路径不再 re-export 核心） |
-| `markDynamic`（曾导出） | 移除；改用 `Runtime.markDynamic`（适配器内部） |
-
-实操：Next.js 用户把 `init`/`client` 一族的 import 路径从 `@openconsole/nacos` 换成 `@openconsole/nacos/nextjs` 即可，其它无变化。
 
 ## 测试 / 多实例
 

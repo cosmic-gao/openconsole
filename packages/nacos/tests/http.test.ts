@@ -25,16 +25,10 @@ describe("Http.resolve", () => {
     expect(url).toBe("http://10.0.0.1:8080/users/me");
   });
 
-  it("respects scheme=https query param", async () => {
+  it("uses init.scheme to force https (query untouched)", async () => {
     const http = makeHttp(reg);
-    const url = await http.resolve("nacos://svc/path?scheme=https&x=1");
+    const url = await http.resolve("nacos://svc/path?x=1", { scheme: "https" });
     expect(url).toBe("https://10.0.0.1:8080/path?x=1");
-  });
-
-  it("accepts uppercase scheme value (HTTPS)", async () => {
-    const http = makeHttp(reg);
-    const url = await http.resolve("nacos://svc/?scheme=HTTPS");
-    expect(url).toBe("https://10.0.0.1:8080/");
   });
 
   it("throws NoInstanceError when no healthy instance", async () => {

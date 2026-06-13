@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_SERVER, loadEnvOptions } from "../core/options";
 
-const snapshot: Record<string, string | undefined> = {};
 const KEYS = [
   "NACOS_SERVER",
   "NACOS_NAMESPACE",
@@ -25,18 +24,13 @@ const KEYS = [
   "NACOS_CONFIG_TAG",
 ];
 
+// 清空宿主可能存在的 NACOS_*,隔离每个用例;afterEach 一键恢复原值。
 beforeEach(() => {
-  for (const k of KEYS) {
-    snapshot[k] = process.env[k];
-    delete process.env[k];
-  }
+  for (const k of KEYS) vi.stubEnv(k, undefined);
 });
 
 afterEach(() => {
-  for (const k of KEYS) {
-    if (snapshot[k] === undefined) delete process.env[k];
-    else process.env[k] = snapshot[k];
-  }
+  vi.unstubAllEnvs();
 });
 
 describe("loadEnvOptions — 默认值", () => {
@@ -52,15 +46,15 @@ describe("loadEnvOptions — 默认值", () => {
 
 describe("loadEnvOptions — registry", () => {
   it("NACOS_SERVER 覆盖默认地址", () => {
-    process.env.NACOS_SERVER = "nacos.example.com:8848";
+    vi.stubEnv("NACOS_SERVER", "nacos.example.com:8848");
     expect(loadEnvOptions().registry.server).toBe("nacos.example.com:8848");
   });
 
   it("镜像 namespace / username / password / config-timeout", () => {
-    process.env.NACOS_NAMESPACE = "dev";
-    process.env.NACOS_USERNAME = "u";
-    process.env.NACOS_PASSWORD = "p";
-    process.env.NACOS_CONFIG_TIMEOUT = "12000";
+    vi.stubEnv("NACOS_NAMESPACE", "dev");
+    vi.stubEnv("NACOS_USERNAME", "u");
+    vi.stubEnv("NACOS_PASSWORD", "p");
+    vi.stubEnv("NACOS_CONFIG_TIMEOUT", "12000");
     const r = loadEnvOptions().registry;
     expect(r.namespace).toBe("dev");
     expect(r.username).toBe("u");
@@ -69,16 +63,16 @@ describe("loadEnvOptions — registry", () => {
   });
 
   it("非法 NACOS_CONFIG_TIMEOUT 被忽略（保留 undefined）", () => {
-    process.env.NACOS_CONFIG_TIMEOUT = "not-a-number";
+    vi.stubEnv("NACOS_CONFIG_TIMEOUT", "not-a-number");
     expect(loadEnvOptions().registry.timeout).toBeUndefined();
   });
 });
 
 describe("loadEnvOptions — provider", () => {
   it("ENABLED=true + service + port 三者齐备才返回", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "true";
-    process.env.NACOS_PROVIDER_SERVICE = "nextjs-admin";
-    process.env.NACOS_PROVIDER_PORT = "3000";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "true");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "nextjs-admin");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
     const p = loadEnvOptions().provider;
     expect(p).toEqual({
       enabled: true,
@@ -92,39 +86,39 @@ describe("loadEnvOptions — provider", () => {
   });
 
   it("ENABLED 缺省时整体 undefined（不会泄露半成品）", () => {
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.NACOS_PROVIDER_PORT = "3000";
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
     expect(loadEnvOptions().provider).toBeUndefined();
   });
 
   it("ENABLED=true 但缺 service / port 时也跳过", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "1";
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "1");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
     expect(loadEnvOptions().provider).toBeUndefined();
   });
 
   it("PORT 退化到 Next.js 标准的 PORT 变量", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "true";
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.PORT = "4000";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "true");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("PORT", "4000");
     expect(loadEnvOptions().provider?.port).toBe(4000);
   });
 
   it("ENABLED=false 等同于未启用", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "false";
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.NACOS_PROVIDER_PORT = "3000";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "false");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
     expect(loadEnvOptions().provider).toBeUndefined();
   });
 
   it("镜像 group / weight / cluster / ephemeral", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "yes";
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.NACOS_PROVIDER_PORT = "3000";
-    process.env.NACOS_PROVIDER_GROUP = "g1";
-    process.env.NACOS_PROVIDER_WEIGHT = "5";
-    process.env.NACOS_PROVIDER_CLUSTER = "cl";
-    process.env.NACOS_PROVIDER_EPHEMERAL = "off";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "yes");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
+    vi.stubEnv("NACOS_PROVIDER_GROUP", "g1");
+    vi.stubEnv("NACOS_PROVIDER_WEIGHT", "5");
+    vi.stubEnv("NACOS_PROVIDER_CLUSTER", "cl");
+    vi.stubEnv("NACOS_PROVIDER_EPHEMERAL", "off");
     const p = loadEnvOptions().provider!;
     expect(p.group).toBe("g1");
     expect(p.weight).toBe(5);
@@ -135,10 +129,10 @@ describe("loadEnvOptions — provider", () => {
 
 describe("loadEnvOptions — consumer", () => {
   it("镜像 balancer / timeout / retry / ttl", () => {
-    process.env.NACOS_BALANCER = "round-robin";
-    process.env.NACOS_REQUEST_TIMEOUT = "8000";
-    process.env.NACOS_RETRY_ATTEMPTS = "3";
-    process.env.NACOS_DISCOVERY_TTL = "2000";
+    vi.stubEnv("NACOS_BALANCER", "round-robin");
+    vi.stubEnv("NACOS_REQUEST_TIMEOUT", "8000");
+    vi.stubEnv("NACOS_RETRY_ATTEMPTS", "3");
+    vi.stubEnv("NACOS_DISCOVERY_TTL", "2000");
     const c = loadEnvOptions().consumer!;
     expect(c.balancer).toBe("round-robin");
     expect(c.timeout).toBe(8000);
@@ -147,40 +141,40 @@ describe("loadEnvOptions — consumer", () => {
   });
 
   it("不在白名单的 NACOS_BALANCER 被忽略", () => {
-    process.env.NACOS_BALANCER = "nonsense";
+    vi.stubEnv("NACOS_BALANCER", "nonsense");
     expect(loadEnvOptions().consumer?.balancer).toBeUndefined();
   });
 
   it("大小写不敏感", () => {
-    process.env.NACOS_BALANCER = "STICKY";
+    vi.stubEnv("NACOS_BALANCER", "STICKY");
     expect(loadEnvOptions().consumer?.balancer).toBe("sticky");
   });
 });
 
 describe("loadEnvOptions — config sources", () => {
   it("单个 dataId", () => {
-    process.env.NACOS_CONFIG_SOURCES = "app.json";
+    vi.stubEnv("NACOS_CONFIG_SOURCES", "app.json");
     expect(loadEnvOptions().config?.sources).toEqual([
       { dataId: "app.json", group: undefined, key: undefined },
     ]);
   });
 
   it("dataId:key", () => {
-    process.env.NACOS_CONFIG_SOURCES = "flags.json:flags";
+    vi.stubEnv("NACOS_CONFIG_SOURCES", "flags.json:flags");
     expect(loadEnvOptions().config?.sources).toEqual([
       { dataId: "flags.json", group: undefined, key: "flags" },
     ]);
   });
 
   it("dataId@group:key 三段语法", () => {
-    process.env.NACOS_CONFIG_SOURCES = "throttle.yaml@throttles:throttle";
+    vi.stubEnv("NACOS_CONFIG_SOURCES", "throttle.yaml@throttles:throttle");
     expect(loadEnvOptions().config?.sources).toEqual([
       { dataId: "throttle.yaml", group: "throttles", key: "throttle" },
     ]);
   });
 
   it("多条逗号分隔，忽略空段", () => {
-    process.env.NACOS_CONFIG_SOURCES = "a.json, ,b.json@g,c.json:ck";
+    vi.stubEnv("NACOS_CONFIG_SOURCES", "a.json, ,b.json@g,c.json:ck");
     expect(loadEnvOptions().config?.sources).toEqual([
       { dataId: "a.json", group: undefined, key: undefined },
       { dataId: "b.json", group: "g", key: undefined },
@@ -189,7 +183,7 @@ describe("loadEnvOptions — config sources", () => {
   });
 
   it("仅有 NACOS_CONFIG_TAG 也返回 config 段", () => {
-    process.env.NACOS_CONFIG_TAG = "app-config";
+    vi.stubEnv("NACOS_CONFIG_TAG", "app-config");
     expect(loadEnvOptions().config).toEqual({ tag: "app-config" });
   });
 });
@@ -206,9 +200,9 @@ describe("loadEnvOptions — boolean 解析", () => {
     ["NO", false],
     ["off", false],
   ])("'%s' → %s", (input, expected) => {
-    process.env.NACOS_PROVIDER_ENABLED = input;
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.NACOS_PROVIDER_PORT = "3000";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", input);
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
     const provider = loadEnvOptions().provider;
     if (expected) {
       expect(provider).toBeDefined();
@@ -219,9 +213,9 @@ describe("loadEnvOptions — boolean 解析", () => {
   });
 
   it("无法识别的布尔字面量按未设置处理", () => {
-    process.env.NACOS_PROVIDER_ENABLED = "maybe";
-    process.env.NACOS_PROVIDER_SERVICE = "svc";
-    process.env.NACOS_PROVIDER_PORT = "3000";
+    vi.stubEnv("NACOS_PROVIDER_ENABLED", "maybe");
+    vi.stubEnv("NACOS_PROVIDER_SERVICE", "svc");
+    vi.stubEnv("NACOS_PROVIDER_PORT", "3000");
     expect(loadEnvOptions().provider).toBeUndefined();
   });
 });

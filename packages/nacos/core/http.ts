@@ -124,10 +124,7 @@ export class Http {
       group: opts.group,
     });
     if (!picked) throw new NoInstanceError(service);
-    const queryScheme = parsed.searchParams.get("scheme")?.toLowerCase();
-    const resolved = opts.scheme ?? queryScheme;
-    const scheme = resolved === "https" ? "https:" : "http:";
-    parsed.searchParams.delete("scheme");
+    const scheme = opts.scheme === "https" ? "https:" : "http:";
     const search = parsed.searchParams.toString();
     const pathSearch = `${parsed.pathname}${search ? `?${search}` : ""}`;
     return `${scheme}//${picked.ip}:${picked.port}${pathSearch}`;

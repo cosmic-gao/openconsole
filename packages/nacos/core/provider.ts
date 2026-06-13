@@ -9,15 +9,31 @@ interface DetectedIp {
   source: string;
 }
 
-// 探测优先级:NACOS_HOST_IP → POD_IP → HOST_IP → NACOS_PREFER_INTERFACE 网卡 → 非内网 IPv4 → 可路由 IPv6 → 127.0.0.1。
-function detectIp(): DetectedIp {
+/** 把逗号分隔的正则串解析为 RegExp[](大小写不敏感);未设置时为空。 */
+function patterns(raw: string | undefined): RegExp[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((p) => new RegExp(p, "i"));
+}
+
+/**
+ * 探测对外 IP。优先级:NACOS_HOST_IP → POD_IP → HOST_IP → NACOS_PREFER_INTERFACE 网卡
+ * → 自动(跳过 NACOS_IGNORE_INTERFACES 网卡、按 NACOS_PREFER_NETWORKS 网段筛)→ 127.0.0.1。
+ * 后两个对齐 Spring Cloud Commons InetUtils 的 ignored-interfaces / preferred-networks,
+ * 均默认空(显式配置才生效)。`ifaces` 参数仅供测试注入。
+ */
+export function detectIp(
+  ifaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
+): DetectedIp {
   if (process.env.NACOS_HOST_IP)
     return { ip: process.env.NACOS_HOST_IP, source: "env:NACOS_HOST_IP" };
   if (process.env.POD_IP) return { ip: process.env.POD_IP, source: "env:POD_IP" };
   if (process.env.HOST_IP) return { ip: process.env.HOST_IP, source: "env:HOST_IP" };
 
-  const ifaces = os.networkInterfaces();
-
+  // 显式指定网卡:先 IPv4,后可路由 IPv6(显式优先,不走 ignore/prefer 筛选)。
   const preferred = process.env.NACOS_PREFER_INTERFACE;
   if (preferred && ifaces[preferred]) {
     for (const addr of ifaces[preferred] ?? []) {
@@ -29,15 +45,23 @@ function detectIp(): DetectedIp {
     }
   }
 
+  // 自动:跳过被忽略的网卡(如 docker0/veth*),仅保留匹配偏好网段的 IP。
+  const ignore = patterns(process.env.NACOS_IGNORE_INTERFACES);
+  const networks = patterns(process.env.NACOS_PREFER_NETWORKS);
+  const ok = (name: string, ip: string) =>
+    !ignore.some((re) => re.test(name)) &&
+    (networks.length === 0 || networks.some((re) => re.test(ip)));
+
   for (const [name, list] of Object.entries(ifaces)) {
     for (const addr of list ?? []) {
-      if (addr.family === "IPv4" && !addr.internal)
+      if (addr.family === "IPv4" && !addr.internal && ok(name, addr.address))
         return { ip: addr.address, source: `iface:${name}` };
     }
   }
   for (const [name, list] of Object.entries(ifaces)) {
     for (const addr of list ?? []) {
-      if (isUsableIPv6(addr)) return { ip: addr.address, source: `iface:${name}:ipv6` };
+      if (isUsableIPv6(addr) && ok(name, addr.address))
+        return { ip: addr.address, source: `iface:${name}:ipv6` };
     }
   }
 
