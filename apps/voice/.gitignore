@@ -1,0 +1,7 @@
+.env
+*.log
+*.wav
+*.raw
+audio-out/
+node_modules/
+dist/

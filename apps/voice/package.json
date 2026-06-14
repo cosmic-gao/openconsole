@@ -1,0 +1,33 @@
+{
+  "name": "@openconsole/voice",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Deepgram Voice Agent + opencode + AI SDK 低延迟语音引擎（路线 B）",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "gateway": "tsx src/gateway.ts",
+    "probe": "tsx scripts/probe.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^4",
+    "@hono/node-server": "^1",
+    "@opencode-ai/sdk": "^0",
+    "@t3-oss/env-core": "^0.12",
+    "ai": "^5",
+    "ai-sdk-provider-opencode-sdk": "^0",
+    "dotenv": "^17",
+    "hono": "^4",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@openconsole/tsconfig": "workspace:*",
+    "@types/node": "^22.10.2",
+    "msw": "^2",
+    "openai": "^4",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3"
+  }
+}
