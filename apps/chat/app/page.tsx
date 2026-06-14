@@ -1,7 +1,8 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { MicIcon, SquareIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import { MicIcon, PhoneIcon, SquareIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -88,6 +89,17 @@ export default function Page() {
 
   return (
     <main className="mx-auto flex h-screen max-w-3xl flex-col gap-4 p-4">
+      <header className="flex items-center justify-between border-b pb-3">
+        <h1 className="text-base font-semibold">opencode chat</h1>
+        <Link
+          href="/voice"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm"
+        >
+          <PhoneIcon size={16} />
+          实时语音
+        </Link>
+      </header>
+
       <Conversation className="flex-1">
         <ConversationContent>
           {messages.map((message) => (

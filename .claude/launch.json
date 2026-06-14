@@ -4,8 +4,8 @@
     {
       "name": "chat",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@openconsole/chat", "dev:web"],
-      "port": 5173
+      "runtimeArgs": ["--filter", "@openconsole/chat", "dev"],
+      "port": 3000
     }
   ]
 }
