@@ -1,0 +1,2 @@
+# Shell 脚本强制 LF 换行，避免 Windows 检出为 CRLF 导致 Linux/Git Bash 执行报 $'\r'
+*.sh text eol=lf

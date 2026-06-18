@@ -14,30 +14,33 @@
 #                                         ▼
 #   LLM 调用 ──▶ 远程 LiteLLM 网关 mspbots aigateway（统一入口，OpenAI 兼容，无需本地部署）
 #   数据与存储层：PostgreSQL + pgvector + LangGraph checkpoint（自带）；Redis（队列）
+#   Agent Chat UI（可选，随部署一起启动）：Next.js 聊天前端，passthrough 经容器网络连 aegra
 #
 # 目录约定（可用环境变量覆盖）：
-#   /data/git/aegra   源码（git clone 拉取）          覆盖：AEGRA_SRC_DIR
-#   /data/aegra       部署产物（.env/compose/数据卷）  覆盖：AEGRA_DEPLOY_DIR
+#   /data/git/aegra            Aegra 源码        覆盖：AEGRA_SRC_DIR
+#   /data/git/agent-chat-ui    Chat UI 源码      覆盖：CHATUI_SRC_DIR
+#   /data/aegra                部署产物（.env/compose/数据卷）  覆盖：AEGRA_DEPLOY_DIR
 #
 # 用法：
 #   bash aegra.sh              一键部署（= up：装依赖→拉源码→生成配置→build→起栈→等就绪）
 #   bash aegra.sh deps         仅安装前置依赖（docker / compose / git / curl / openssl / python3.12+uv）
-#   bash aegra.sh clone        仅拉取/更新源码到 /data/git/aegra
+#   bash aegra.sh clone        仅拉取/更新源码（Aegra + Chat UI）
 #   bash aegra.sh gen          仅生成 .env / docker-compose.yml（不启动）
 #   bash aegra.sh build        仅构建镜像（不启动）
 #   bash aegra.sh up           部署或更新（幂等）
-#   bash aegra.sh restart [服务]  重启（默认全部）
+#   bash aegra.sh restart [服务]  重启（默认全部，可指定 aegra/chatui/postgres/redis）
 #   bash aegra.sh status       查看各服务状态
 #   bash aegra.sh logs [服务]  跟踪日志（默认 aegra）
 #   bash aegra.sh down         停止（保留数据）
-#   bash aegra.sh nuke         停止并删除全部数据卷（不可恢复，需确认）
+#   bash aegra.sh nuke         彻底销毁：停容器+删卷+删网络+删本地镜像（并可选删源码与配置）
 #   bash aegra.sh help         显示本帮助
 #
 # 关键环境变量（首次 up 前可 export 覆盖）：
 #   LITELLM_API_KEY            LiteLLM 网关（mspbots aigateway）的 key（不填则写占位，调用 LLM 会失败）
 #   LITELLM_BASE_URL           网关地址（默认 https://aigateway-sandbox.mspbots.ai/v1）
-#   AEGRA_REPO / AEGRA_BRANCH  源码仓库地址 / 分支（默认 ibbybuilds/aegra @ main）
-#   AEGRA_PORT                 对外端口（默认 2026）
+#   AEGRA_WITH_CHATUI          1=随部署启动 Agent Chat UI（默认）；0=不部署
+#   AEGRA_REPO / AEGRA_BRANCH  Aegra 源码仓库地址 / 分支（默认 ibbybuilds/aegra @ main）
+#   AEGRA_PORT / CHATUI_PORT   Aegra / Chat UI 对外端口（默认 2026 / 3000）
 #
 # 目标系统：Linux（自适应 apt/dnf/yum/apk）。macOS 仅支持已装好 Docker Desktop 的场景。
 # 本脚本须以 LF 换行在 Linux 上运行；Windows 编辑后请确保未被转成 CRLF。
@@ -47,7 +50,7 @@ if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -euo pipefail
 
 # ---- 目录与基本配置（均可用环境变量覆盖）----
-SRC_DIR="${AEGRA_SRC_DIR:-/data/git/aegra}"        # 源码目录
+SRC_DIR="${AEGRA_SRC_DIR:-/data/git/aegra}"        # Aegra 源码目录
 DEPLOY_DIR="${AEGRA_DEPLOY_DIR:-/data/aegra}"      # 部署目录（生成配置 + 数据卷）
 AEGRA_REPO="${AEGRA_REPO:-https://github.com/ibbybuilds/aegra.git}"
 AEGRA_BRANCH="${AEGRA_BRANCH:-main}"
@@ -56,14 +59,24 @@ PORT_VAL="${AEGRA_PORT:-2026}"
 # 远程 LiteLLM 网关（来自 packages/opencode/opencode.json）——无需本地部署，Aegra 直连
 GATEWAY_BASE_URL="${LITELLM_BASE_URL:-https://aigateway-sandbox.mspbots.ai/v1}"
 GATEWAY_API_KEY="${LITELLM_API_KEY:-please-fill-your-mspbots-litellm-key}"
-# 默认模型（opencode.json 的首选快模型；examples 图如需可改用此名）
 DEFAULT_MODEL_VAL="${AEGRA_DEFAULT_MODEL:-gemini-3-flash-preview}"
+
+# Agent Chat UI（随部署一起启动的 Web 聊天前端；用 compose profile 控制开关）
+CHATUI_ENABLED="${AEGRA_WITH_CHATUI:-1}"           # 1=部署 Chat UI（默认）；0=不部署
+CHATUI_REPO="${CHATUI_REPO:-https://github.com/langchain-ai/agent-chat-ui.git}"
+CHATUI_BRANCH="${CHATUI_BRANCH:-main}"
+CHATUI_SRC_DIR="${CHATUI_SRC_DIR:-/data/git/agent-chat-ui}"
+CHATUI_PORT_VAL="${CHATUI_PORT:-3000}"
+CHATUI_GRAPH_ID_VAL="${CHATUI_GRAPH_ID:-agent}"
 
 ENV_FILE=".env"
 COMPOSE_FILE="docker-compose.yml"
 HEALTH_URL="http://localhost:${PORT_VAL}/health"
 DOCS_URL="http://localhost:${PORT_VAL}/docs"
 REDOC_URL="http://localhost:${PORT_VAL}/redoc"
+
+# 启用 Chat UI 时，让所有 docker compose 调用都带上 chatui profile
+if [ "$CHATUI_ENABLED" = "1" ]; then export COMPOSE_PROFILES=chatui; fi
 
 # ---- 小工具 ----
 log()  { echo "▶ $*"; }
@@ -126,7 +139,6 @@ ensure_docker() {
   esac
   curl -fsSL https://get.docker.com | $SUDO sh
   $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
-  # 把当前登录用户加入 docker 组（下次登录生效）
   if [ -n "$SUDO" ] && [ -n "${SUDO_USER:-${USER:-}}" ]; then
     $SUDO usermod -aG docker "${SUDO_USER:-$USER}" >/dev/null 2>&1 || true
     warn "已将用户加入 docker 组，可能需要重新登录后免 sudo 使用 docker"
@@ -153,7 +165,6 @@ ensure_python_uv() {
     curl -LsSf https://astral.sh/uv/install.sh | sh || warn "uv 安装失败（不影响 Docker 部署）"
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
   fi
-  # 确保有 Python 3.12（容器内已含；此处供宿主机本地开发/迁移备用）
   if have python3 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,12) else 1)' 2>/dev/null; then
     ok "已检测到 Python 3.12+"
   elif have uv; then
@@ -179,32 +190,43 @@ ensure_dir() {
   fi
 }
 
-# ---- 拉取/更新源码 ----
-clone_or_pull() {
+# ---- 通用：把某仓库同步到某目录（支持已存在的非 git 目录，原地接管）----
+git_sync() {
+  local dir="$1" repo="$2" branch="$3"
   ensure_base_tools
-  ensure_dir "$(dirname "$SRC_DIR")"
-  if [ -d "$SRC_DIR/.git" ]; then
-    log "更新源码：$SRC_DIR（git pull）"
-    git -C "$SRC_DIR" remote set-url origin "$AEGRA_REPO" 2>/dev/null || true
-    git -C "$SRC_DIR" pull --ff-only || warn "git pull 失败（可能本地有改动），沿用现有源码"
-  elif [ -d "$SRC_DIR" ] && [ -n "$(ls -A "$SRC_DIR" 2>/dev/null)" ]; then
-    # 目录已存在且非空、但不是 git 仓库：原地纳入 git 并拉取代码（无需手动清理）。
-    # 与远程同名的文件会被远程版本覆盖；远程没有的额外文件保留。
-    log "$SRC_DIR 已存在但非 git 仓库 → 原地初始化并拉取代码（同名文件将被远程覆盖）…"
-    git -C "$SRC_DIR" init -q
-    git -C "$SRC_DIR" remote remove origin 2>/dev/null || true
-    git -C "$SRC_DIR" remote add origin "$AEGRA_REPO"
-    git -C "$SRC_DIR" fetch origin "$AEGRA_BRANCH"
-    git -C "$SRC_DIR" reset --hard FETCH_HEAD
-    git -C "$SRC_DIR" checkout -B "$AEGRA_BRANCH" >/dev/null 2>&1 || true
-    git -C "$SRC_DIR" branch --set-upstream-to="origin/$AEGRA_BRANCH" >/dev/null 2>&1 || true
+  ensure_dir "$(dirname "$dir")"
+  if [ -d "$dir/.git" ]; then
+    log "更新源码：$dir（git pull）"
+    git -C "$dir" remote set-url origin "$repo" 2>/dev/null || true
+    git -C "$dir" pull --ff-only || warn "git pull 失败（可能本地有改动），沿用现有源码"
+  elif [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    # 目录已存在且非空、但不是 git 仓库：原地纳入 git 并拉取（同名文件被远程覆盖，额外文件保留）
+    log "$dir 已存在但非 git 仓库 → 原地初始化并拉取代码（同名文件将被远程覆盖）…"
+    git -C "$dir" init -q
+    git -C "$dir" remote remove origin 2>/dev/null || true
+    git -C "$dir" remote add origin "$repo"
+    git -C "$dir" fetch origin "$branch"
+    git -C "$dir" reset --hard FETCH_HEAD
+    git -C "$dir" checkout -B "$branch" >/dev/null 2>&1 || true
+    git -C "$dir" branch --set-upstream-to="origin/$branch" >/dev/null 2>&1 || true
   else
-    log "克隆源码：$AEGRA_REPO ($AEGRA_BRANCH) → $SRC_DIR"
-    git clone --branch "$AEGRA_BRANCH" "$AEGRA_REPO" "$SRC_DIR"
+    log "克隆源码：$repo ($branch) → $dir"
+    git clone --branch "$branch" "$repo" "$dir"
   fi
-  [ -f "$SRC_DIR/deployments/docker/Dockerfile" ] || die "源码结构异常：缺少 deployments/docker/Dockerfile"
-  [ -f "$SRC_DIR/aegra.json" ] || die "源码结构异常：缺少 aegra.json"
-  ok "源码就绪：$SRC_DIR"
+}
+
+clone_aegra() {
+  git_sync "$SRC_DIR" "$AEGRA_REPO" "$AEGRA_BRANCH"
+  [ -f "$SRC_DIR/deployments/docker/Dockerfile" ] || die "Aegra 源码异常：缺少 deployments/docker/Dockerfile（请确认仓库地址/分支正确）"
+  [ -f "$SRC_DIR/aegra.json" ] || die "Aegra 源码异常：缺少 aegra.json"
+  ok "Aegra 源码就绪：$SRC_DIR"
+}
+
+clone_chatui() {
+  [ "$CHATUI_ENABLED" = "1" ] || return 0
+  git_sync "$CHATUI_SRC_DIR" "$CHATUI_REPO" "$CHATUI_BRANCH"
+  [ -f "$CHATUI_SRC_DIR/package.json" ] || die "Agent Chat UI 源码异常：缺少 package.json"
+  ok "Agent Chat UI 源码就绪：$CHATUI_SRC_DIR"
 }
 
 # ---- 生成 .env（仅首次；密钥随机且此后稳定）----
@@ -215,8 +237,9 @@ ensure_env() {
   fi
   have openssl || die "生成密钥需要 openssl，请先运行：bash aegra.sh deps"
   log "生成 $ENV_FILE 与随机密钥…"
-  local pg_pw
+  local pg_pw ip
   pg_pw="$(rnd_pw)"
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || true; [ -n "${ip:-}" ] || ip="localhost"
   cat > "$ENV_FILE" <<EOF
 # ============================================================================
 # 本文件由 aegra.sh 自动生成，含明文密钥——已被 .gitignore 忽略，请勿提交 git。
@@ -240,7 +263,6 @@ HOST=0.0.0.0
 LOG_LEVEL=INFO
 ENV_MODE=PRODUCTION
 LOG_VERBOSITY=standard
-# 认证类型：noop（无认证，适合内网/起步）| custom（自定义，详见 Aegra 文档）
 AUTH_TYPE=noop
 
 # ---- 数据库（容器网络内，主机名即服务名 postgres）----
@@ -264,14 +286,20 @@ REDIS_URL=redis://redis:6379/0
 CRON_ENABLED=true
 
 # ---- LLM：直连远程 LiteLLM 网关（架构图统一入口；mspbots aigateway，无需本地部署）----
-# 网关地址与模型来自 packages/opencode/opencode.json
 OPENAI_BASE_URL=$GATEWAY_BASE_URL
 OPENAI_API_BASE=$GATEWAY_BASE_URL
-# 网关 API Key（对应 opencode.json 的 LITELLM_API_KEY），请填真实 key
 OPENAI_API_KEY=$GATEWAY_API_KEY
-# 可选模型（opencode.json 提供）：gemini-3-flash-preview / gemini-3-pro-preview /
-#   gemini-3.1-pro-preview / gemini-3-deep-think-preview / gemini-2.5-flash
+# 可选模型：gemini-3-flash-preview / gemini-3-pro-preview / gemini-3.1-pro-preview /
+#   gemini-3-deep-think-preview / gemini-2.5-flash
 DEFAULT_MODEL=$DEFAULT_MODEL_VAL
+
+# ---- Agent Chat UI（随部署启动；passthrough 经容器网络连 aegra，绕 CORS）----
+CHATUI_GRAPH_ID=$CHATUI_GRAPH_ID_VAL
+CHATUI_PORT=$CHATUI_PORT_VAL
+CHATUI_SRC_DIR=$CHATUI_SRC_DIR
+NODE_IMAGE=node:20-bookworm-slim
+# 浏览器访问 Chat UI 的地址 + /api（默认本机 IP；跨机访问如有需要改成对应可达地址）
+CHATUI_PUBLIC_API_URL=http://${ip}:${CHATUI_PORT_VAL}/api
 
 # ---- 可观测性（占位，默认关闭；如需接入 Langfuse：填 key 并设 OTEL_TARGETS=LANGFUSE）----
 OTEL_SERVICE_NAME=aegra-backend
@@ -295,10 +323,9 @@ EOF
 write_compose() {
   cat > "$COMPOSE_FILE" <<'AEGRA_COMPOSE'
 # 本文件由 aegra.sh 自动生成，请勿手改（改 aegra.sh 内模板）。
-# 三件套：postgres(+pgvector) / redis / aegra 控制平面+WorkerExecutor。
+# 服务：postgres(+pgvector) / redis / aegra（控制平面+WorkerExecutor）/ chatui（Agent Chat UI，profile 控制）。
 # LLM 走远程 LiteLLM 网关（见 .env：OPENAI_BASE_URL），不在本地部署。
-# 对外仅暴露 aegra(${PORT})；postgres/redis 绑 127.0.0.1。
-# 源码以只读方式挂载自 ${AEGRA_SRC_DIR}（= /data/git/aegra），编译上下文亦指向该目录。
+# 对外暴露 aegra(${PORT}) 与 chatui(${CHATUI_PORT})；postgres/redis 绑 127.0.0.1。
 name: aegra
 
 services:
@@ -372,6 +399,27 @@ services:
       - ${AEGRA_SRC_DIR:-/data/git/aegra}/libs/aegra-api/alembic:/app/alembic:ro
     command: ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "${PORT:-2026}", "--reload"]
 
+  # Agent Chat UI（Next.js）：Web 聊天前端。profile=chatui 控制是否启动。
+  # passthrough：浏览器 → chatui:/api → 服务端转发到 http://aegra:2026（容器网络，绕 CORS）。
+  chatui:
+    image: ${NODE_IMAGE:-node:20-bookworm-slim}
+    container_name: aegra-chatui
+    restart: unless-stopped
+    profiles: ["chatui"]
+    working_dir: /app
+    environment:
+      NEXT_PUBLIC_ASSISTANT_ID: ${CHATUI_GRAPH_ID:-agent}
+      LANGGRAPH_API_URL: http://aegra:${PORT:-2026}
+      NEXT_PUBLIC_API_URL: ${CHATUI_PUBLIC_API_URL:-http://localhost:3000/api}
+      LANGSMITH_API_KEY: ""
+    depends_on:
+      aegra: { condition: service_healthy }
+    ports:
+      - "${CHATUI_PORT:-3000}:3000"
+    volumes:
+      - ${CHATUI_SRC_DIR:-/data/git/agent-chat-ui}:/app
+    command: ["sh", "-c", "corepack enable && pnpm install && exec pnpm dev -- -H 0.0.0.0 -p 3000"]
+
 volumes:
   aegra_postgres_data:
   aegra_redis_data:
@@ -387,13 +435,12 @@ wait_ready() {
     if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then ok=1; break; fi
     sleep 3
   done
-  if [ -n "$ok" ]; then return 0; fi
-  return 1
+  [ -n "$ok" ] && return 0 || return 1
 }
 
 print_info() {
   local ip
-  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$ip" ] || ip="<服务器IP>"
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || true; [ -n "${ip:-}" ] || ip="<服务器IP>"
   echo
   echo "============================================================"
   echo "✅ Aegra 部署完成"
@@ -401,24 +448,27 @@ print_info() {
   echo "  自动生成的配置（含密钥，已被 .gitignore 忽略，勿提交 git）："
   echo "   • 环境变量 ： $DEPLOY_DIR/.env"
   echo "   • 编排文件 ： $DEPLOY_DIR/docker-compose.yml"
-  echo "   • 源码目录 ： $SRC_DIR"
+  echo "   • Aegra 源码 ： $SRC_DIR"
+  [ "$CHATUI_ENABLED" = "1" ] && echo "   • ChatUI 源码： $CHATUI_SRC_DIR"
   echo
-  echo "  Aegra Web 访问地址（部署后即可打开）："
-  echo "   • API 文档(Swagger UI) ： http://$ip:${PORT_VAL}/docs"
-  echo "   • API 文档(ReDoc)      ： http://$ip:${PORT_VAL}/redoc"
-  echo "   • 健康检查             ： http://$ip:${PORT_VAL}/health"
-  echo "   • 本机访问             ： $DOCS_URL"
-  echo
-  echo "  图形化 Agent UI（Aegra 为后端无自带界面，用以下前端连接，地址填 http://$ip:${PORT_VAL}）："
-  echo "   • Agent Chat UI ： https://agentchat.vercel.app  （Deployment URL 填上面地址，Graph 填 agent；noop 模式 API Key 留空）"
-  echo "   • LangGraph Studio / CopilotKit 同样指向该地址"
+  if [ "$CHATUI_ENABLED" = "1" ]; then
+    echo "  💬 Agent Chat UI（已随部署启动，打开即用，无需任何前端配置）："
+    echo "   • 聊天界面 ： http://$ip:${CHATUI_PORT_VAL}"
+    echo "     （图=${CHATUI_GRAPH_ID_VAL}；首次启动需容器内 pnpm install + 编译，约 1-3 分钟）"
+    echo "     （日志：bash aegra.sh logs chatui）"
+    echo
+  fi
+  echo "  Aegra Web 访问地址："
+  echo "   • API 文档(Swagger) ： http://$ip:${PORT_VAL}/docs"
+  echo "   • API 文档(ReDoc)   ： http://$ip:${PORT_VAL}/redoc"
+  echo "   • 健康检查          ： http://$ip:${PORT_VAL}/health"
   echo
   echo "  LLM 网关（远程，Aegra 直连，无需本地部署）：$GATEWAY_BASE_URL"
   echo
   echo "  下一步："
   echo "   • LLM key：编辑 $DEPLOY_DIR/.env 的 OPENAI_API_KEY 后 bash aegra.sh restart aegra"
   echo "   • 接入自定义 deepagents 图：把图放进 $SRC_DIR/examples 并改 $SRC_DIR/aegra.json，再 bash aegra.sh restart aegra"
-  echo "   • 查看日志：bash aegra.sh logs"
+  echo "   • 查看日志：bash aegra.sh logs [aegra|chatui]"
   echo "============================================================"
 }
 
@@ -432,7 +482,7 @@ cmd_deps() {
   ok "前置依赖检查完成"
 }
 
-cmd_clone() { clone_or_pull; }
+cmd_clone() { clone_aegra; clone_chatui; }
 
 cmd_gen() {
   ensure_env
@@ -442,7 +492,7 @@ cmd_gen() {
 
 cmd_build() {
   require_runtime
-  clone_or_pull
+  clone_aegra; clone_chatui
   ensure_env
   write_compose
   log "构建镜像…"
@@ -451,9 +501,10 @@ cmd_build() {
 }
 
 cmd_up() {
-  log "部署目录：$DEPLOY_DIR ｜ 源码目录：$SRC_DIR"
+  log "部署目录：$DEPLOY_DIR ｜ Aegra 源码：$SRC_DIR ｜ Chat UI：$([ "$CHATUI_ENABLED" = 1 ] && echo 启用 || echo 关闭)"
   cmd_deps
-  clone_or_pull
+  clone_aegra
+  clone_chatui
   ensure_env
   write_compose
   require_runtime
@@ -482,33 +533,46 @@ cmd_status() { require_runtime; write_compose; dc ps; }
 
 cmd_nuke() {
   require_runtime; write_compose
-  warn "这将停止服务并删除全部数据卷（postgres/redis，不可恢复）。"
+  warn "彻底销毁：将停止并删除本部署的容器、数据卷、网络与本地构建镜像（不可恢复）。"
   read -r -p "确认请输入 yes： " ans
   [ "$ans" = "yes" ] || { echo "已取消"; return 0; }
-  dc down -v
-  ok "已清空数据卷。源码（$SRC_DIR）与配置（$DEPLOY_DIR/.env）保留；下次 up 为全新实例。"
+  log "停止容器并删除卷/网络/本地镜像…"
+  dc down -v --remove-orphans --rmi local || true
+  ok "已删除容器 / 数据卷 / 网络 / 本地构建镜像。"
+  echo
+  read -r -p "是否同时删除源码与部署配置（$SRC_DIR、$CHATUI_SRC_DIR、$DEPLOY_DIR/.env、$DEPLOY_DIR/$COMPOSE_FILE）？输入 yes 删除： " ans2
+  if [ "$ans2" = "yes" ]; then
+    [ -n "$SRC_DIR" ]        && $SUDO rm -rf "$SRC_DIR"
+    [ -n "$CHATUI_SRC_DIR" ] && $SUDO rm -rf "$CHATUI_SRC_DIR"
+    rm -f "$DEPLOY_DIR/$ENV_FILE" "$DEPLOY_DIR/$COMPOSE_FILE"
+    ok "已删除源码与部署配置。下次 up 为全新部署。"
+  else
+    ok "已保留源码与 .env（下次 up 复用）。"
+  fi
 }
 
 usage() {
   cat <<EOF
-Aegra 一键部署    源码目录：$SRC_DIR ｜ 部署目录：$DEPLOY_DIR
-（可用环境变量覆盖：AEGRA_SRC_DIR / AEGRA_DEPLOY_DIR / AEGRA_REPO / AEGRA_BRANCH / AEGRA_PORT）
+Aegra 一键部署    部署目录：$DEPLOY_DIR
+  Aegra 源码：$SRC_DIR ｜ Chat UI 源码：$CHATUI_SRC_DIR ｜ Chat UI：$([ "$CHATUI_ENABLED" = 1 ] && echo 启用 || echo 关闭)
+（可用环境变量覆盖：AEGRA_SRC_DIR / AEGRA_DEPLOY_DIR / AEGRA_REPO / AEGRA_BRANCH / AEGRA_PORT / CHATUI_PORT / AEGRA_WITH_CHATUI）
 
 用法：
   bash aegra.sh [up]              一键部署（装依赖→拉源码→生成配置→build→起栈→等就绪）
-  bash aegra.sh deps             仅安装前置依赖（docker/compose/git/curl/openssl/python3.12+uv）
-  bash aegra.sh clone            仅拉取/更新源码到 $SRC_DIR
+  bash aegra.sh deps             仅安装前置依赖
+  bash aegra.sh clone            仅拉取/更新源码（Aegra + Chat UI）
   bash aegra.sh gen              仅生成 .env / docker-compose.yml
   bash aegra.sh build            仅构建镜像（不启动）
-  bash aegra.sh restart [服务]   重启（默认全部，可指定 aegra/postgres/redis）
+  bash aegra.sh restart [服务]   重启（默认全部，可指定 aegra/chatui/postgres/redis）
   bash aegra.sh status           各服务状态
-  bash aegra.sh logs [服务]      跟踪日志（默认 aegra）
+  bash aegra.sh logs [服务]      跟踪日志（默认 aegra；Chat UI 用 logs chatui）
   bash aegra.sh down             停止（保留数据）
-  bash aegra.sh nuke             停止并删除数据卷（需确认）
+  bash aegra.sh nuke             彻底销毁：停容器+删卷+删网络+删本地镜像（并可选删源码与配置）
   bash aegra.sh help             显示本帮助
 
-首次部署前可指定 LiteLLM 网关 key：
-  LITELLM_API_KEY=sk-xxxx bash aegra.sh up
+首次部署：
+  LITELLM_API_KEY=sk-xxxx bash aegra.sh up                       # 含 Agent Chat UI（默认）
+  AEGRA_WITH_CHATUI=0 LITELLM_API_KEY=sk-xxxx bash aegra.sh up   # 不部署 Chat UI
 EOF
 }
 
@@ -519,7 +583,6 @@ main() {
     help|-h|--help) usage; exit 0 ;;
   esac
   shift || true
-  # 除 help 外的命令均需要部署目录
   ensure_dir "$DEPLOY_DIR"
   cd "$DEPLOY_DIR"
   DEPLOY_DIR="$(pwd)"   # 规范化为绝对路径
