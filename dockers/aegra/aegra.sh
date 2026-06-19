@@ -56,6 +56,13 @@ AEGRA_REPO="${AEGRA_REPO:-https://github.com/ibbybuilds/aegra.git}"
 AEGRA_BRANCH="${AEGRA_BRANCH:-main}"
 PORT_VAL="${AEGRA_PORT:-2026}"
 
+# ---- deepagent（本仓库 packages/deepagent：挂进 aegra 容器并用其 aegra.json）----
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# 默认指向同仓库的 packages/deepagent；部署机上仓库不在此处时用 DEEPAGENT_DIR 覆盖为实际路径
+DEEPAGENT_DIR="${DEEPAGENT_DIR:-$SELF_DIR/../../packages/deepagent}"
+[ -d "$DEEPAGENT_DIR" ] && DEEPAGENT_DIR="$(cd "$DEEPAGENT_DIR" && pwd)"
+export DEEPAGENT_DIR   # 供 docker compose 变量插值
+
 # 远程 LiteLLM 网关（来自 packages/opencode/opencode.json）——无需本地部署，Aegra 直连
 GATEWAY_BASE_URL="${LITELLM_BASE_URL:-https://aigateway-sandbox.mspbots.ai/v1}"
 GATEWAY_API_KEY="${LITELLM_API_KEY:-please-fill-your-mspbots-litellm-key}"
@@ -179,6 +186,16 @@ ensure_python_uv() {
 require_runtime() {
   have docker || die "未检测到 docker，请先运行：bash aegra.sh deps"
   docker compose version >/dev/null 2>&1 || die "需要 docker compose v2，请先运行：bash aegra.sh deps"
+}
+
+# 校验 deepagent 目录就绪（挂进容器 /app/deepagent，提供 main/analysis 两个图）
+check_deepagent() {
+  if [ ! -f "$DEEPAGENT_DIR/aegra.json" ]; then
+    die "未找到 deepagent：$DEEPAGENT_DIR/aegra.json
+       请用 DEEPAGENT_DIR 指向仓库的 packages/deepagent，例如：
+       DEEPAGENT_DIR=/abs/path/to/openconsole/packages/deepagent bash aegra.sh up"
+  fi
+  ok "deepagent 就绪：$DEEPAGENT_DIR → 容器 /app/deepagent（graphs：main / analysis）"
 }
 
 # ---- 目录准备 ----
@@ -376,7 +393,8 @@ services:
     env_file: [.env]
     environment:
       POSTGRES_HOST: postgres
-      PYTHONPATH: /app/src
+      PYTHONPATH: /app/src:/app/deepagent/src
+      AEGRA_CONFIG: /app/deepagent/aegra.json
       REDIS_BROKER_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
       WORKER_COUNT: ${WORKER_COUNT:-3}
@@ -397,7 +415,10 @@ services:
       - ${AEGRA_SRC_DIR:-/data/git/aegra}/examples:/app/examples:ro
       - ${AEGRA_SRC_DIR:-/data/git/aegra}/libs/aegra-api/src:/app/src:ro
       - ${AEGRA_SRC_DIR:-/data/git/aegra}/libs/aegra-api/alembic:/app/alembic:ro
-    command: ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "${PORT:-2026}", "--reload"]
+      # 本仓库 packages/deepagent：提供 main/analysis 两个图(见容器内 /app/deepagent/aegra.json)
+      - ${DEEPAGENT_DIR}:/app/deepagent:ro
+    # 启动前安装 deepagent 依赖(deepagents 等)；生产建议改为 fork Aegra 在 Dockerfile 里预装，免每次启动等待。
+    command: ["sh", "-c", "pip install -q -r /app/deepagent/requirements.txt && exec uvicorn aegra_api.main:app --host 0.0.0.0 --port ${PORT:-2026} --reload"]
 
   # Agent Chat UI（Next.js）：Web 聊天前端。profile=chatui 控制是否启动。
   # passthrough：浏览器 → chatui:/api → 服务端转发到 http://aegra:2026（容器网络，绕 CORS）。
@@ -450,6 +471,7 @@ print_info() {
   echo "   • 编排文件 ： $DEPLOY_DIR/docker-compose.yml"
   echo "   • Aegra 源码 ： $SRC_DIR"
   [ "$CHATUI_ENABLED" = "1" ] && echo "   • ChatUI 源码： $CHATUI_SRC_DIR"
+  echo "   • deepagent  ： $DEEPAGENT_DIR → 容器 /app/deepagent（graphs：main / analysis）"
   echo
   if [ "$CHATUI_ENABLED" = "1" ]; then
     echo "  💬 Agent Chat UI（已随部署启动，打开即用，无需任何前端配置）："
@@ -492,6 +514,7 @@ cmd_gen() {
 
 cmd_build() {
   require_runtime
+  check_deepagent
   clone_aegra; clone_chatui
   ensure_env
   write_compose
@@ -502,6 +525,7 @@ cmd_build() {
 
 cmd_up() {
   log "部署目录：$DEPLOY_DIR ｜ Aegra 源码：$SRC_DIR ｜ Chat UI：$([ "$CHATUI_ENABLED" = 1 ] && echo 启用 || echo 关闭)"
+  check_deepagent
   cmd_deps
   clone_aegra
   clone_chatui
