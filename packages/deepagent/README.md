@@ -22,17 +22,17 @@ Aegra 上的 deepagents 图实现:`main`(实时语音对话的"大脑")+ `analys
 ```
 packages/deepagent/
 ├── aegra.json                          # 注册 graphs: main / analysis(供 Aegra 加载)
-├── pyproject.toml / requirements.txt
+├── pyproject.toml / requirements.txt / .env.example
 ├── skills/customer-service/SKILL.md    # 示例 skill(种子 / 快速验证用)
 └── src/deepagent/
-    ├── settings.py                     # 读环境变量(网关 / 模型 / skill 来源)
-    ├── model.py                        # 走 LiteLLM 网关的 ChatOpenAI
-    ├── tenancy.py                      # 从 runtime 取 (tenant, user) → namespace
-    ├── backends.py                     # CompositeBackend:skill / 记忆按租户隔离 + 热更新
-    ├── tools.py                        # 示例业务工具
-    └── graphs/
-        ├── main_graph.py:make_graph
-        └── analysis_graph.py:make_graph
+    ├── settings.py                     # 共享:环境变量(网关 / 模型 / skill 来源)
+    ├── model.py                        # 共享:走 LiteLLM 网关(init_chat_model, LangChain 1.x)
+    ├── tenancy.py                      # 共享:从 runtime 取 (tenant, user) → namespace
+    ├── backends.py                     # 共享:CompositeBackend(skill / 记忆按租户隔离 + 热更新)
+    ├── tools.py                        # 共享:示例业务工具(agent 私有工具可放各自子包)
+    └── agents/                         # 每个 agent 一个子包(对齐 deepagents/deep_research)
+        ├── main/      graph.py + prompts.py    # graph "main":实时语音大脑
+        └── analysis/  graph.py + prompts.py    # graph "analysis":异步长任务 + sub-agent
 ```
 
 ## 接入 Aegra(已在 aegra.sh 打通)
@@ -80,6 +80,6 @@ async for chunk in client.runs.stream(
 代码基于 deepagents / aegra 的公开 API,以下随版本可能微调,接入时核对一次:
 
 - `create_deep_agent` 参数名(本代码用 `system_prompt` / `skills` / `backend`)与 backend 导入路径(`from deepagents.backends import ...`)。
-- `analysis_graph.py` 里 sub-agent 的字段名(本代码用 `name` / `description` / `prompt` / `tools`;部分版本用 `system_prompt`)。
+- `agents/analysis/prompts.py` 里 sub-agent 字段用 `name` / `description` / `system_prompt` / `tools`(+ 可选 `model`),已对齐当前 deepagents;旧版本曾用 `prompt`。
 - 多租户身份字段:`tenancy.py` 假设 `runtime.server_info.user.identity`,租户取 `user.tenant_id` / `org_id` / identity 前缀 —— 按你 Aegra auth handler 实际注入的字段调整。
 - 若要"构造时按租户裁剪工具/拓扑",把 `make_graph()` 改成 `make_graph(runtime)` 并参考 Aegra `examples/factory/graph.py` 的 `ServerRuntime` 用法。

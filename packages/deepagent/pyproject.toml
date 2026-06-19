@@ -3,12 +3,12 @@ name = "deepagent"
 version = "0.1.0"
 description = "Aegra 上的 deepagents 图:main(实时语音大脑) + analysis(异步长任务),多租户隔离 + skill 热更新"
 requires-python = ">=3.12"
-# 版本按你 Aegra 镜像里实际可用的为准;这里用宽松下限,容器启动时按 requirements.txt 安装。
+# 对齐 LangChain 1.x;容器启动时按 requirements.txt 安装(不锁死,跟随 Aegra 镜像里的版本)。
 dependencies = [
-    "deepagents>=0.2",
-    "langgraph>=0.6",
-    "langchain>=0.3",
-    "langchain-openai>=0.2",
+    "deepagents",
+    "langchain>=1.0",
+    "langchain-openai",
+    "langgraph",
 ]
 
 [build-system]

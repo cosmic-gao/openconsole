@@ -1,7 +1,7 @@
 {
   "graphs": {
-    "main": "./src/deepagent/graphs/main_graph.py:make_graph",
-    "analysis": "./src/deepagent/graphs/analysis_graph.py:make_graph"
+    "main": "./src/deepagent/agents/main/graph.py:make_graph",
+    "analysis": "./src/deepagent/agents/analysis/graph.py:make_graph"
   },
   "dependencies": ["./src"]
 }
