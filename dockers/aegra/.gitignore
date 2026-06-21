@@ -1,7 +1,0 @@
-# 部署产物默认生成在 /data/aegra（仓库外）。
-# 若有人在本目录就地测试生成配置，以下规则防止误提交密钥/数据。
-.env
-.env.*
-docker-compose.yml
-data/
-*.local

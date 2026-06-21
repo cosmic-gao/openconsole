@@ -1,6 +1,0 @@
-# Aegra 容器启动时 pip 安装(见 dockers/aegra/aegra.sh 的 aegra 服务 command)。
-# 版本不锁死:跟随 Aegra 镜像里已装的 langgraph/langchain,避免冲突。如需可复现可自行钉版本。
-deepagents
-langgraph
-langchain
-langchain-openai

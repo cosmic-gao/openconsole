@@ -1,3 +1,2 @@
-// Combined component barrel: shadcn UI primitives + AI SDK Elements.
+// Component barrel: shadcn UI primitives.
 export * from "./ui";
-export * from "./ai-elements";
