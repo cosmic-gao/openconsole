@@ -15,6 +15,8 @@ interface IconProps extends LucideProps {
   name?: string;
   /** `name` 为图片时的 `alt`；其余形态忽略。默认空串（按装饰性处理）。 */
   alt?: string;
+  /** 样式类，三种形态共享（尺寸 / 颜色）。 */
+  className?: string;
 }
 
 /** 起始前缀或图片后缀任一命中即视为图片地址。 */

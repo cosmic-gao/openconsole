@@ -1,4 +1,5 @@
 @import "tw-animate-css";
+@import "tw-shimmer";
 
 /* Register this package's source files as Tailwind content sources. */
 @source "./**/*.{ts,tsx}";
