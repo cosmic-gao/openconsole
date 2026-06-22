@@ -123,3 +123,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* assistant-ui Thread composed with a radix ScrollArea: keep the viewport
+   content centered and stretched (see assistant-ui /docs/ui/scrollbar). */
+.thread-viewport > [data-radix-scroll-area-content] {
+  @apply flex flex-col items-center self-stretch bg-inherit;
+}
