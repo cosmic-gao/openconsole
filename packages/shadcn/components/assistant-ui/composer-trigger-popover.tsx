@@ -9,7 +9,7 @@ import {
   type Unstable_TriggerItem,
 } from "@assistant-ui/react";
 import { ChevronLeftIcon, ChevronRightIcon, SparklesIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 type IconComponent = FC<{ className?: string }>;
 

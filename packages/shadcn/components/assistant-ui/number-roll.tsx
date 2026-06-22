@@ -8,7 +8,7 @@ import {
   type ComponentProps,
   type CSSProperties,
 } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 const DEFAULT_DURATION = 500;
 const DIGIT_CELLS = Array.from({ length: 10 }, (_, i) => i);

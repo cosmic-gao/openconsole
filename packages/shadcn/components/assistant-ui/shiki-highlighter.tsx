@@ -4,7 +4,7 @@ import type { FC } from "react";
 import { useShikiHighlighter, type ShikiHighlighterProps } from "react-shiki";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import type { SyntaxHighlighterProps as AUIProps } from "@assistant-ui/react-markdown";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 /**
  * Props for the SyntaxHighlighter component

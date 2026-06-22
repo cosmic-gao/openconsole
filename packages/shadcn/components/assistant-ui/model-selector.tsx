@@ -16,12 +16,12 @@ import {
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useAui } from "@assistant-ui/react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
+} from "../ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -30,7 +30,7 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@/components/ui/command";
+} from "../ui/command";
 
 export type ModelSelectorEffortOption = {
   id: string;

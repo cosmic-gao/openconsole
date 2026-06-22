@@ -5,8 +5,8 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+} from "../ui/tooltip";
+import { cn } from "../../lib/utils";
 import type { FC } from "react";
 
 const formatTimingMs = (ms: number | undefined): string => {
@@ -23,7 +23,7 @@ const formatTimingMs = (ms: number | undefined): string => {
  * inherits the action bar's autohide behaviour:
  *
  * ```tsx
- * import { MessageTiming } from "@/components/assistant-ui/message-timing";
+ * import { MessageTiming } from "./message-timing";
  *
  * <ActionBarPrimitive.Root >
  *   <ActionBarPrimitive.Copy />

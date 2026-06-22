@@ -1,8 +1,8 @@
 "use client";
 
-import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { TooltipIconButton } from "./tooltip-icon-button";
+import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
 import {
   AuiIf,
   useVoiceControls,

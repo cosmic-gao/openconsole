@@ -6,7 +6,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { diffLines } from "diff";
 import parseDiff from "parse-diff";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 type DiffLineType = "add" | "del" | "normal";
 

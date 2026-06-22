@@ -18,13 +18,13 @@ import {
   type ReasoningMessagePartComponent,
   type ReasoningGroupComponent,
 } from "@assistant-ui/react";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import { MarkdownText } from "./markdown-text";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { cn } from "@/lib/utils";
+} from "../ui/collapsible";
+import { cn } from "../../lib/utils";
 
 const ANIMATION_DURATION = 200;
 

@@ -1,6 +1,6 @@
 {
   "name": "@openconsole/shadcn",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "private": false,
   "type": "module",
   "sideEffects": [
@@ -9,7 +9,9 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./styles.css": "./styles.css"
+    "./styles.css": "./styles.css",
+    "./assistant-ui": "./components/assistant-ui/index.ts",
+    "./assistant-ui/*": "./components/assistant-ui/*.tsx"
   },
   "files": [
     "components",
