@@ -1,3 +1,5 @@
+"use client";
+
 import type * as React from "react";
 import { MessagesSquare } from "lucide-react";
 import { GitHubIcon } from "../icons/github";

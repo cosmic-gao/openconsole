@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import {
