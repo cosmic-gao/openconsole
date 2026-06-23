@@ -200,7 +200,7 @@ function NumberRollPart({ part, dir }: { part: RenderedPart; dir: number }) {
         part.entered &&
           "starting:translate-y-(--aui-number-roll-shift) starting:grid-cols-[0fr] starting:opacity-0",
         part.exiting &&
-          "pointer-events-none translate-y-[calc(var(--aui-number-roll-shift)*-1)] grid-cols-[0fr] opacity-0",
+          "pointer-events-none -translate-y-(--aui-number-roll-shift) grid-cols-[0fr] opacity-0",
       )}
       style={
         {

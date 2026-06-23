@@ -18,3 +18,10 @@ pnpm-lock.yaml
 # Skill markdown is hand-formatted — keep prose untouched
 packages/*/skill
 packages/*/skill/**
+
+# Vendored shadcn/ui + assistant-ui components mirror their upstream registries
+# verbatim (kept unformatted so `shadcn diff` stays meaningful); maintained via
+# `shadcn add`, not prettier.
+packages/shadcn/components
+packages/shadcn/components/**
+packages/shadcn/components.json

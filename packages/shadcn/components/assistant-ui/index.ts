@@ -1,4 +1,3 @@
-// Component barrel: assistant-ui chat components.
 export * from "./assistant-modal";
 export * from "./assistant-sidebar";
 export * from "./attachment";

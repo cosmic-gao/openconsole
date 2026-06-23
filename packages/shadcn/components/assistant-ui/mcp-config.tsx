@@ -225,7 +225,7 @@ const ServerError: FC = () => {
   return (
     <div className="border-destructive/40 bg-destructive/5 text-destructive flex items-start gap-2 rounded-md border px-2 py-1.5 text-xs">
       <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-      <span className="break-words">{message}</span>
+      <span className="wrap-break-word">{message}</span>
     </div>
   );
 };
