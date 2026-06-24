@@ -124,38 +124,14 @@
   }
 }
 
-/* assistant-ui Thread composed with a radix ScrollArea: keep the viewport
-   content centered and stretched (see assistant-ui /docs/ui/scrollbar). */
 .thread-viewport > [data-radix-scroll-area-content] {
   @apply flex flex-col items-center self-stretch bg-inherit;
 }
 
-/* Scrollbars: light + narrow, shared across all consumers. Unlayered so the
-   Radix ScrollArea overrides beat the component's @layer utilities. Covers both
-   native bars (chat viewport, CodeMirror, tables, menus…) and the Radix bar. */
 html {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  @apply scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent;
 }
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background-color: var(--border);
-  background-clip: content-box;
-  border: 2px solid transparent; /* inset → a thin ~4px visible thumb */
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--muted-foreground);
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
+
 [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
   width: 8px;
 }
