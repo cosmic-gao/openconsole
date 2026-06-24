@@ -71,7 +71,6 @@ export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 export type ThreadComponents = {
   AssistantMessage?: ComponentType | undefined;
   Welcome?: ComponentType | undefined;
-  ComposerFooter?: ComponentType | undefined;
   ToolFallback?: ToolCallMessagePartComponent | undefined;
   ToolGroup?:
     | ComponentType<PropsWithChildren<{ group: ThreadGroupPart }>>
@@ -225,8 +224,6 @@ const ThreadSuggestionItem: FC = () => {
 };
 
 const Composer: FC = () => {
-  const { ComposerFooter } = useContext(ThreadComponentsContext);
-
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <ComposerPrimitive.AttachmentDropzone asChild>
@@ -240,10 +237,12 @@ const Composer: FC = () => {
             className="aui-composer-input placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
             rows={1}
             autoFocus
+            // Don't re-focus + reset the caret on every auto-scroll-to-bottom;
+            // during streaming that fires constantly and causes jank / caret jumps.
+            unstable_focusOnScrollToBottom={false}
             aria-label="Message input"
           />
           <ComposerAction />
-          {ComposerFooter ? <ComposerFooter /> : null}
         </div>
       </ComposerPrimitive.AttachmentDropzone>
     </ComposerPrimitive.Root>
