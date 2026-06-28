@@ -1,26 +1,7 @@
-/**
- * Vertex / Edge ↔ JsonNode / JsonEdge 编解码（diff/apply 内部用）。
- *
- * @internal
- */
-
-import {
-  Edge,
-  Endpoint,
-  Graph,
-  Vertex,
-  Socket,
-  type Input,
-  type Output,
-} from '../../classic';
+import { Edge, Endpoint, Graph, Socket, Vertex, type Input, type Output } from '../../classic';
 import { lookupPort, portsJson } from '../../internal';
 import type { JsonEdge, JsonNode, Node } from '../../types';
 
-/**
- * 单个节点 → {@link JsonNode} 快照。
- *
- * @internal
- */
 export function dumpNode<N>(node: Node<N>): JsonNode<N> {
   return {
     id: node.id,
@@ -30,11 +11,6 @@ export function dumpNode<N>(node: Node<N>): JsonNode<N> {
   };
 }
 
-/**
- * 单条边 → {@link JsonEdge} 快照。
- *
- * @internal
- */
 export function dumpEdge<E>(edge: Edge<E>): JsonEdge<E> {
   return {
     id: edge.id,
@@ -44,15 +20,7 @@ export function dumpEdge<E>(edge: Edge<E>): JsonEdge<E> {
   };
 }
 
-/**
- * {@link JsonNode} → 重建的 Vertex 实例（带端口）。
- *
- * @internal
- */
-export function loadNode<N>(
-  data: JsonNode<N>,
-  sockets: ReadonlyMap<string, Socket>,
-): Node<N> {
+export function loadNode<N>(data: JsonNode<N>, sockets: ReadonlyMap<string, Socket>): Node<N> {
   const node = new Vertex(data.id, data.weight) as Node<N>;
   for (const name in data.inputs) {
     const port = data.inputs[name];
@@ -67,19 +35,14 @@ export function loadNode<N>(
   return node;
 }
 
-/**
- * {@link JsonEdge} → 重建的 Edge 实例（依赖图中已有节点 + 端口）。
- *
- * @internal
- */
 export function loadEdge<N, E>(graph: Graph<N, E>, data: JsonEdge<E>): Edge<E> {
-  const sourceNode = graph.getNode(data.source.nodeId);
+  const sourceNode = graph.node(data.source.nodeId);
   if (!sourceNode) {
     throw new Error(
       `[diff/apply] edge "${String(data.id)}": source node "${String(data.source.nodeId)}" not found in target graph.`,
     );
   }
-  const targetNode = graph.getNode(data.target.nodeId);
+  const targetNode = graph.node(data.target.nodeId);
   if (!targetNode) {
     throw new Error(
       `[diff/apply] edge "${String(data.id)}": target node "${String(data.target.nodeId)}" not found in target graph.`,
@@ -98,12 +61,6 @@ export function loadEdge<N, E>(graph: Graph<N, E>, data: JsonEdge<E>): Edge<E> {
   );
 }
 
-/**
- * 权重等价比较：先严格相等，再尝试 JSON 深比较（不适合循环引用或函数）。
- *
- * @remarks 详细行为见 {@link diff} 的 `@remarks` 段。
- * @internal
- */
 export function sameWeight<T>(a: T | undefined, b: T | undefined): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;

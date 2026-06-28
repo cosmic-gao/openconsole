@@ -99,7 +99,7 @@ export class PluginGraph {
 
   /** 摘除节点(级联移除关联边 → `IncrementalTopo` 增量更新)。 */
   public remove(name: string): void {
-    this.graph.removeNode(name as NodeId);
+    this.graph.dropNode(name as NodeId);
   }
 
   /** 给 hook 用的 live 权重:直接读增量 rank。 */
@@ -126,7 +126,7 @@ export class PluginGraph {
     const layer = this.layers(real);
     const out = new Map<string, OrderCode>();
     real.forEach((id, sequence) => {
-      const node = this.graph.getNode(id)?.weight;
+      const node = this.graph.node(id)?.weight;
       const bucket = node?.enforce === "pre" ? 0 : node?.enforce === "post" ? 2 : 1;
       out.set(String(id), { bucket, layer: layer.get(id) ?? 0, sequence, code: `${bucket}.${pad(sequence)}` });
     });
@@ -159,7 +159,7 @@ export class PluginGraph {
     const layer = new Map<NodeId, number>();
     for (const id of ordered) {
       let max = -1;
-      for (const predecessor of this.graph.predecessors(id)) {
+      for (const predecessor of this.graph.inNeighbors(id)) {
         if (this.isBarrier(predecessor)) continue;
         max = Math.max(max, layer.get(predecessor) ?? 0);
       }

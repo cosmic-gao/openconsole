@@ -1,22 +1,7 @@
-/**
- * 拓扑排序家族：toposort / topology / cycles / isCyclic / ranks。
- *
- * @remarks 排序主体委托给 {@link Topo} 状态化遍历器；本模块只负责 `onCycle` 等便捷封装。
- *   遇环时默认抛 {@link Cycle}（错误类型化层，定义见 `classic/errors`）。
- */
-
 import { Cycle } from '../classic';
 import type { Cycles, IntoDegree, NodeId, Topology, Walkable } from '../types';
 import { Topo } from '../visitors';
 
-/**
- * Kahn 算法拓扑排序。
- *
- * @template G 满足 {@link Walkable} 约束的图类型
- * @param graph 图实例
- * @param onCycle 检测到环时的回调，默认抛出 {@link Cycle}
- * @returns 拓扑顺序的节点 ID 序列
- */
 export function toposort<G extends Walkable>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => {
@@ -26,18 +11,6 @@ export function toposort<G extends Walkable>(
   return topology(graph, onCycle).order;
 }
 
-/**
- * 带环路信息的拓扑排序。
- *
- * @remarks
- * 实现：构造一个 {@link Topo} 实例，drain 出所有可达节点，再把环上节点交给 `onCycle`
- * 决定是否抛错 / 拼回。入度初始化的快/慢路径细节请见 {@link inDegrees}。
- *
- * @template G 满足 {@link Walkable}，可选实现 {@link IntoDegree}
- * @param graph 图实例
- * @param onCycle 检测到环时的回调，默认按原始顺序追加环上节点
- * @returns 排序结果与环路信息
- */
 export function topology<G extends Walkable & Partial<IntoDegree>>(
   graph: G,
   onCycle: (cycle: NodeId[]) => NodeId[] = (cycle) => cycle,
@@ -52,37 +25,14 @@ export function topology<G extends Walkable & Partial<IntoDegree>>(
   };
 }
 
-/**
- * 检测图中是否存在环路。
- *
- * @template G 满足 {@link Walkable} 约束的图类型
- * @param graph 图实例
- * @returns 环路信息
- */
 export function cycles<G extends Walkable>(graph: G): Cycles {
   return topology(graph).cycles;
 }
 
-/**
- * 检测图是否含环（{@link cycles} 的布尔快捷形式）。
- *
- * @template G 满足 {@link Walkable} 约束的图类型
- * @param graph 图实例
- */
 export function isCyclic<G extends Walkable>(graph: G): boolean {
   return cycles(graph).hasCycle;
 }
 
-/**
- * 给每个节点分配一个拓扑序中的位置（0 起，含环时环上节点尾部追加）。
- *
- * @remarks
- * 调用方可凭它把任意节点列表按拓扑顺序排序，无需把"拓扑后的后继 / 前驱"
- * 这样的派生函数挂在公开面上。
- *
- * @template G 满足 {@link Walkable} 约束的图类型
- * @param graph 图实例
- */
 export function ranks<G extends Walkable>(graph: G): Map<NodeId, number> {
   const order = toposort(graph, (cycle) => cycle);
   const map = new Map<NodeId, number>();

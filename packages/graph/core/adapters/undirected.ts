@@ -1,6 +1,5 @@
 import type {
   Catalog,
-  Direction,
   EdgeId,
   EdgeOf,
   EdgeView,
@@ -17,16 +16,11 @@ const EMPTY: Iterable<never> = {
 
 interface Capabilities {
   readonly edges: boolean;
-  readonly degree: boolean;
   readonly indexable: boolean;
 }
 
-export class Reversed<
-    G extends Catalog &
-      Neighbors &
-      Partial<IntoEdges<unknown>> &
-      Partial<IntoDegree> &
-      Partial<NodeIndexable>,
+export class Undirected<
+    G extends Catalog & Neighbors & Partial<IntoEdges<unknown>> & Partial<NodeIndexable>,
     E = EdgeOf<G>,
   >
   implements Catalog, Neighbors, IntoEdges<E>, IntoDegree, NodeIndexable
@@ -36,7 +30,6 @@ export class Reversed<
   public constructor(public readonly inner: G) {
     this._capabilities = {
       edges: typeof inner.edgeViews === 'function',
-      degree: typeof inner.inDegree === 'function' && typeof inner.outDegree === 'function',
       indexable:
         typeof inner.bound === 'function' &&
         typeof inner.at === 'function' &&
@@ -60,47 +53,46 @@ export class Reversed<
     return this._capabilities.edges ? this.inner.edges() : EMPTY;
   }
 
-  public neighbors(node: NodeId, direction?: Direction): Iterable<NodeId> {
-    if (direction === 'input') return this.inNeighbors(node);
-    if (direction === 'output') return this.outNeighbors(node);
-    return this.inner.neighbors(node);
+  public *neighbors(node: NodeId): Iterable<NodeId> {
+    yield* this.inner.outNeighbors(node);
+    yield* this.inner.inNeighbors(node);
   }
 
   public inNeighbors(node: NodeId): Iterable<NodeId> {
-    return this.inner.outNeighbors(node);
+    return this.neighbors(node);
   }
 
   public outNeighbors(node: NodeId): Iterable<NodeId> {
-    return this.inner.inNeighbors(node);
+    return this.neighbors(node);
+  }
+
+  public inDegree(node: NodeId): number {
+    return this._degree(node);
+  }
+
+  public outDegree(node: NodeId): number {
+    return this._degree(node);
+  }
+
+  private _degree(node: NodeId): number {
+    let count = 0;
+    for (const _ of this.neighbors(node)) count++;
+    return count;
   }
 
   public *edgeViews(): Iterable<EdgeView<E>> {
     if (!this._capabilities.edges) return;
-    for (const view of this.inner.edgeViews!()) yield flip(view as EdgeView<E>);
+    for (const view of this.inner.edgeViews!()) yield view as EdgeView<E>;
   }
 
-  public *inEdges(node: NodeId): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
-    for (const view of this.inner.outEdges!(node)) yield flip(view as EdgeView<E>);
+  public inEdges(node: NodeId): Iterable<EdgeView<E>> {
+    return this.outEdges(node);
   }
 
   public *outEdges(node: NodeId): Iterable<EdgeView<E>> {
     if (!this._capabilities.edges) return;
+    for (const view of this.inner.outEdges!(node)) yield view as EdgeView<E>;
     for (const view of this.inner.inEdges!(node)) yield flip(view as EdgeView<E>);
-  }
-
-  public inDegree(node: NodeId): number {
-    if (this._capabilities.degree) return this.inner.outDegree!(node);
-    let count = 0;
-    for (const _ of this.inner.outNeighbors(node)) count++;
-    return count;
-  }
-
-  public outDegree(node: NodeId): number {
-    if (this._capabilities.degree) return this.inner.inDegree!(node);
-    let count = 0;
-    for (const _ of this.inner.inNeighbors(node)) count++;
-    return count;
   }
 
   public bound(): number {
@@ -128,14 +120,10 @@ export class Reversed<
   }
 }
 
-export function reversed<
-  G extends Catalog &
-    Neighbors &
-    Partial<IntoEdges<unknown>> &
-    Partial<IntoDegree> &
-    Partial<NodeIndexable>,
->(graph: G): Reversed<G, EdgeOf<G>> {
-  return new Reversed(graph);
+export function undirected<
+  G extends Catalog & Neighbors & Partial<IntoEdges<unknown>> & Partial<NodeIndexable>,
+>(graph: G): Undirected<G, EdgeOf<G>> {
+  return new Undirected(graph);
 }
 
 function flip<E>(view: EdgeView<E>): EdgeView<E> {

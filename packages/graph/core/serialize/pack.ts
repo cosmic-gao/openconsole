@@ -1,46 +1,20 @@
-/**
- * pack：把图序列化为紧凑格式。
- */
-
-import { Edge, Graph } from '../classic';
+import type { Edge, Graph } from '../classic';
 import { compactPorts } from '../internal';
 import type { Node } from '../types';
 import { VERSION, type Compact, type CompactEdge, type CompactNode } from './compact';
 
-/**
- * 将图序列化为压缩格式（可用于 `JSON.stringify`）。
- *
- * @remarks
- * 相比 {@link Graph.toJson}，压缩格式可以减少约 60-70% 的字节数，
- * 适用于大规模图的持久化和网络传输。
- *
- * @template N 节点权重类型
- * @template E 边权重类型
- * @param graph 待序列化的图
- * @returns 紧凑表示
- */
 export function pack<N, E>(graph: Graph<N, E>): Compact {
   const nodes: CompactNode[] = [];
-  for (const node of graph.nodes.values()) nodes.push(packNode(node));
+  for (const id of graph.nodes()) nodes.push(packNode(graph.node(id)!));
   const edges: CompactEdge[] = [];
-  for (const edge of graph.edges.values()) edges.push(packEdge(edge));
+  for (const id of graph.edges()) edges.push(packEdge(graph.edge(id)!));
   return { v: VERSION, g: graph.id, n: nodes, e: edges };
 }
 
-/**
- * 把单个节点压缩成 {@link CompactNode} 元组。
- *
- * @internal
- */
 function packNode(node: Node<unknown>): CompactNode {
   return [node.id, node.weight, compactPorts(node.inputs), compactPorts(node.outputs)];
 }
 
-/**
- * 把单条边压缩成 {@link CompactEdge} 元组。
- *
- * @internal
- */
 function packEdge(edge: Edge<unknown>): CompactEdge {
   return [
     edge.id,
