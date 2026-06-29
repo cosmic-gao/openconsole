@@ -1,8 +1,9 @@
 import { topology } from '../algorithms';
-import { Edge, Endpoint, Graph, Schema, Socket, Vertex, type Input, type Output } from '../classic';
-import { compactPorts, lookupPort } from '../internal';
+import { Graph, Schema } from '../classic';
+import { compactPorts } from '../internal';
 import type { EdgeId, Node, NodeId, PortId } from '../types';
 import { VERSION, type Compact, type CompactEdge, type CompactNode } from './compact';
+import { buildNode, linkEdge } from './internal';
 import { mergeLookup, type SocketLookup } from './sockets';
 
 export interface IdRemap {
@@ -93,61 +94,33 @@ export function unpackRemap<N, E>(
 
   const sockets = mergeLookup(options?.sockets);
   const keep = options?.keepCompactIds ?? false;
-  const restoreNode = (compactId: string): NodeId =>
-    keep ? (compactId as NodeId) : (data.remap.nodes[Number(compactId)] as NodeId);
-  const restorePort = (compactId: string): PortId =>
-    keep ? (compactId as PortId) : (data.remap.ports[Number(compactId)] as PortId);
-  const restoreEdge = (compactId: string): EdgeId =>
-    keep ? (compactId as EdgeId) : (data.remap.edges[Number(compactId)] as EdgeId);
+  const restoreNode = (id: string): NodeId =>
+    keep ? (id as NodeId) : (data.remap.nodes[Number(id)] as NodeId);
+  const restorePort = (id: string): PortId =>
+    keep ? (id as PortId) : (data.remap.ports[Number(id)] as PortId);
+  const restoreEdge = (id: string): EdgeId =>
+    keep ? (id as EdgeId) : (data.remap.edges[Number(id)] as EdgeId);
 
   return graph.batch(() => {
     const nodeMap = new Map<NodeId, Node<unknown>>();
-    for (const [compactId, weight, inputs, outputs] of data.compact.n) {
-      const id = restoreNode(String(compactId));
-      const node = new Vertex(id, weight as N) as Node<N>;
-      if (inputs) {
-        for (const [name, portCompactId, socketName] of inputs) {
-          node.addInput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portCompactId)));
-        }
-      }
-      if (outputs) {
-        for (const [name, portCompactId, socketName] of outputs) {
-          node.addOutput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portCompactId)));
-        }
-      }
-      nodeMap.set(id, node as Node<unknown>);
-      graph.addNode(node);
+    for (const compact of data.compact.n) {
+      const node = buildNode(compact, sockets, restoreNode, restorePort);
+      nodeMap.set(node.id, node);
+      graph.addNode(node as Node<N>);
     }
-
     for (const [eId, sNode, sPort, tNode, tPort, weight] of data.compact.e) {
-      const edgeId = restoreEdge(String(eId));
-      const sourceId = restoreNode(String(sNode));
-      const targetId = restoreNode(String(tNode));
-      const sourcePortId = restorePort(String(sPort));
-      const targetPortId = restorePort(String(tPort));
-
-      const sourceNode = nodeMap.get(sourceId);
-      const targetNode = nodeMap.get(targetId);
-      if (!sourceNode || !targetNode) {
-        throw new Error(
-          `[unpackRemap] edge "${String(edgeId)}" references missing nodes: ${String(sourceId)} -> ${String(targetId)}`,
-        );
-      }
-      const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
-      const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
-      if (!sourcePort || !targetPort) {
-        throw new Error(`[unpackRemap] edge "${String(edgeId)}" references missing ports.`);
-      }
       graph.addEdge(
-        new Edge<E>(
-          edgeId,
-          new Endpoint(sourceNode, sourcePort),
-          new Endpoint(targetNode, targetPort),
+        linkEdge(
+          (n) => nodeMap.get(n),
+          restoreEdge(String(eId)),
+          restoreNode(String(sNode)),
+          restorePort(String(sPort)),
+          restoreNode(String(tNode)),
+          restorePort(String(tPort)),
           weight as E,
         ),
       );
     }
-
     return graph;
   });
 }

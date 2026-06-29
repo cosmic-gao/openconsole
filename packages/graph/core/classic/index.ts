@@ -1,7 +1,5 @@
 export { Socket } from './socket';
-export { Port } from './port';
-export { Input } from './input';
-export { Output } from './output';
+export { Port, Input, Output } from './port';
 export { Vertex } from './vertex';
 export { Endpoint } from './endpoint';
 export { Edge } from './edge';

@@ -10,16 +10,7 @@ import type {
   NodeId,
   NodeIndexable,
 } from '../types';
-
-const EMPTY: Iterable<never> = {
-  *[Symbol.iterator]() {},
-};
-
-interface Capabilities {
-  readonly edges: boolean;
-  readonly degree: boolean;
-  readonly indexable: boolean;
-}
+import { EMPTY, flip, hasDegree, hasEdges, hasIndex, nodeAt, nodeIndex } from './shared';
 
 export class Reversed<
     G extends Catalog &
@@ -31,17 +22,14 @@ export class Reversed<
   >
   implements Catalog, Neighbors, IntoEdges<E>, IntoDegree, NodeIndexable
 {
-  private readonly _capabilities: Capabilities;
+  private readonly _edges: boolean;
+  private readonly _degree: boolean;
+  private readonly _index: boolean;
 
   public constructor(public readonly inner: G) {
-    this._capabilities = {
-      edges: typeof inner.edgeViews === 'function',
-      degree: typeof inner.inDegree === 'function' && typeof inner.outDegree === 'function',
-      indexable:
-        typeof inner.bound === 'function' &&
-        typeof inner.at === 'function' &&
-        typeof inner.indexOf === 'function',
-    };
+    this._edges = hasEdges(inner);
+    this._degree = hasDegree(inner);
+    this._index = hasIndex(inner);
   }
 
   public get order(): number {
@@ -49,7 +37,7 @@ export class Reversed<
   }
 
   public get size(): number {
-    return this._capabilities.edges ? this.inner.size : 0;
+    return this._edges ? this.inner.size : 0;
   }
 
   public nodes(): Iterable<NodeId> {
@@ -57,7 +45,7 @@ export class Reversed<
   }
 
   public edges(): Iterable<EdgeId> {
-    return this._capabilities.edges ? this.inner.edges() : EMPTY;
+    return this._edges ? this.inner.edges() : EMPTY;
   }
 
   public neighbors(node: NodeId, direction?: Direction): Iterable<NodeId> {
@@ -75,56 +63,44 @@ export class Reversed<
   }
 
   public *edgeViews(): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
+    if (!this._edges) return;
     for (const view of this.inner.edgeViews!()) yield flip(view as EdgeView<E>);
   }
 
   public *inEdges(node: NodeId): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
+    if (!this._edges) return;
     for (const view of this.inner.outEdges!(node)) yield flip(view as EdgeView<E>);
   }
 
   public *outEdges(node: NodeId): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
+    if (!this._edges) return;
     for (const view of this.inner.inEdges!(node)) yield flip(view as EdgeView<E>);
   }
 
   public inDegree(node: NodeId): number {
-    if (this._capabilities.degree) return this.inner.outDegree!(node);
+    if (this._degree) return this.inner.outDegree!(node);
     let count = 0;
     for (const _ of this.inner.outNeighbors(node)) count++;
     return count;
   }
 
   public outDegree(node: NodeId): number {
-    if (this._capabilities.degree) return this.inner.inDegree!(node);
+    if (this._degree) return this.inner.inDegree!(node);
     let count = 0;
     for (const _ of this.inner.inNeighbors(node)) count++;
     return count;
   }
 
   public bound(): number {
-    return this._capabilities.indexable ? this.inner.bound!() : this.inner.order;
+    return this._index ? this.inner.bound!() : this.inner.order;
   }
 
   public at(index: number): NodeId | undefined {
-    if (this._capabilities.indexable) return this.inner.at!(index);
-    let i = 0;
-    for (const id of this.inner.nodes()) {
-      if (i === index) return id;
-      i++;
-    }
-    return undefined;
+    return this._index ? this.inner.at!(index) : nodeAt(this.inner, index);
   }
 
   public indexOf(node: NodeId): number {
-    if (this._capabilities.indexable) return this.inner.indexOf!(node);
-    let i = 0;
-    for (const id of this.inner.nodes()) {
-      if (id === node) return i;
-      i++;
-    }
-    return -1;
+    return this._index ? this.inner.indexOf!(node) : nodeIndex(this.inner, node);
   }
 }
 
@@ -136,8 +112,4 @@ export function reversed<
     Partial<NodeIndexable>,
 >(graph: G): Reversed<G, EdgeOf<G>> {
   return new Reversed(graph);
-}
-
-function flip<E>(view: EdgeView<E>): EdgeView<E> {
-  return { id: view.id, source: view.target, target: view.source, weight: view.weight };
 }

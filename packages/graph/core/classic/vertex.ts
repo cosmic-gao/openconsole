@@ -1,6 +1,5 @@
 import type { Inputs, NodeId, Outputs, PortId, Sockets } from '../types';
-import { Input } from './input';
-import { Output } from './output';
+import { Input, Output } from './port';
 
 export class Vertex<I extends Sockets = Sockets, O extends Sockets = Sockets, W = unknown> {
   public readonly inputs: Inputs<I> = {} as Inputs<I>;

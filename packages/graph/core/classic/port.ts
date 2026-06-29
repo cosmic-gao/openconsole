@@ -43,3 +43,19 @@ export abstract class Port<S extends Socket = Socket> {
     this._index.clear();
   }
 }
+
+export class Input<S extends Socket = Socket> extends Port<S> {
+  public readonly direction = 'input' as const;
+
+  public constructor(socket: S, id: PortId) {
+    super(socket, id);
+  }
+}
+
+export class Output<S extends Socket = Socket> extends Port<S> {
+  public readonly direction = 'output' as const;
+
+  public constructor(socket: S, id: PortId) {
+    super(socket, id);
+  }
+}

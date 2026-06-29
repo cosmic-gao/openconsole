@@ -1,6 +1,7 @@
 import { Edge, Endpoint, Graph, Socket, Vertex, type Input, type Output } from '../../classic';
 import { lookupPort, portsJson } from '../../internal';
-import type { JsonEdge, JsonNode, Node } from '../../types';
+import type { EdgeId, JsonEdge, JsonNode, Node, NodeId, PortId } from '../../types';
+import type { CompactNode } from '../compact';
 
 export function dumpNode<N>(node: Node<N>): JsonNode<N> {
   return {
@@ -20,6 +21,27 @@ export function dumpEdge<E>(edge: Edge<E>): JsonEdge<E> {
   };
 }
 
+export function buildNode(
+  compact: CompactNode,
+  sockets: ReadonlyMap<string, Socket>,
+  restoreNode: (id: string) => NodeId,
+  restorePort: (id: string) => PortId,
+): Node<unknown> {
+  const [id, weight, inputs, outputs] = compact;
+  const node = new Vertex(restoreNode(String(id)), weight) as Node<unknown>;
+  if (inputs) {
+    for (const [name, portId, socketName] of inputs) {
+      node.addInput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portId)));
+    }
+  }
+  if (outputs) {
+    for (const [name, portId, socketName] of outputs) {
+      node.addOutput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portId)));
+    }
+  }
+  return node;
+}
+
 export function loadNode<N>(data: JsonNode<N>, sockets: ReadonlyMap<string, Socket>): Node<N> {
   const node = new Vertex(data.id, data.weight) as Node<N>;
   for (const name in data.inputs) {
@@ -35,28 +57,43 @@ export function loadNode<N>(data: JsonNode<N>, sockets: ReadonlyMap<string, Sock
   return node;
 }
 
-export function loadEdge<N, E>(graph: Graph<N, E>, data: JsonEdge<E>): Edge<E> {
-  const sourceNode = graph.node(data.source.nodeId);
-  if (!sourceNode) {
+export function linkEdge<E>(
+  lookup: (id: NodeId) => Node<unknown> | undefined,
+  edgeId: EdgeId,
+  sourceNodeId: NodeId,
+  sourcePortId: PortId,
+  targetNodeId: NodeId,
+  targetPortId: PortId,
+  weight: E | undefined,
+): Edge<E> {
+  const sourceNode = lookup(sourceNodeId);
+  const targetNode = lookup(targetNodeId);
+  if (!sourceNode || !targetNode) {
     throw new Error(
-      `[diff/apply] edge "${String(data.id)}": source node "${String(data.source.nodeId)}" not found in target graph.`,
+      `edge "${String(edgeId)}" references missing nodes: ${String(sourceNodeId)} -> ${String(targetNodeId)}`,
     );
   }
-  const targetNode = graph.node(data.target.nodeId);
-  if (!targetNode) {
-    throw new Error(
-      `[diff/apply] edge "${String(data.id)}": target node "${String(data.target.nodeId)}" not found in target graph.`,
-    );
-  }
-  const sourcePort = lookupPort<Output>(sourceNode.outputs, data.source.portId);
-  const targetPort = lookupPort<Input>(targetNode.inputs, data.target.portId);
+  const sourcePort = lookupPort<Output>(sourceNode.outputs, sourcePortId);
+  const targetPort = lookupPort<Input>(targetNode.inputs, targetPortId);
   if (!sourcePort || !targetPort) {
-    throw new Error(`[diff/apply] edge "${String(data.id)}" references missing ports.`);
+    throw new Error(`edge "${String(edgeId)}" references missing ports`);
   }
   return new Edge<E>(
-    data.id,
+    edgeId,
     new Endpoint(sourceNode, sourcePort),
     new Endpoint(targetNode, targetPort),
+    weight,
+  );
+}
+
+export function loadEdge<N, E>(graph: Graph<N, E>, data: JsonEdge<E>): Edge<E> {
+  return linkEdge(
+    (id) => graph.node(id),
+    data.id,
+    data.source.nodeId,
+    data.source.portId,
+    data.target.nodeId,
+    data.target.portId,
     data.weight,
   );
 }

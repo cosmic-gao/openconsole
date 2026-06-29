@@ -9,15 +9,7 @@ import type {
   NodeId,
   NodeIndexable,
 } from '../types';
-
-const EMPTY: Iterable<never> = {
-  *[Symbol.iterator]() {},
-};
-
-interface Capabilities {
-  readonly edges: boolean;
-  readonly indexable: boolean;
-}
+import { EMPTY, flip, hasEdges, hasIndex, nodeAt, nodeIndex } from './shared';
 
 export class Undirected<
     G extends Catalog & Neighbors & Partial<IntoEdges<unknown>> & Partial<NodeIndexable>,
@@ -25,16 +17,12 @@ export class Undirected<
   >
   implements Catalog, Neighbors, IntoEdges<E>, IntoDegree, NodeIndexable
 {
-  private readonly _capabilities: Capabilities;
+  private readonly _edges: boolean;
+  private readonly _index: boolean;
 
   public constructor(public readonly inner: G) {
-    this._capabilities = {
-      edges: typeof inner.edgeViews === 'function',
-      indexable:
-        typeof inner.bound === 'function' &&
-        typeof inner.at === 'function' &&
-        typeof inner.indexOf === 'function',
-    };
+    this._edges = hasEdges(inner);
+    this._index = hasIndex(inner);
   }
 
   public get order(): number {
@@ -42,7 +30,7 @@ export class Undirected<
   }
 
   public get size(): number {
-    return this._capabilities.edges ? this.inner.size : 0;
+    return this._edges ? this.inner.size : 0;
   }
 
   public nodes(): Iterable<NodeId> {
@@ -50,7 +38,7 @@ export class Undirected<
   }
 
   public edges(): Iterable<EdgeId> {
-    return this._capabilities.edges ? this.inner.edges() : EMPTY;
+    return this._edges ? this.inner.edges() : EMPTY;
   }
 
   public *neighbors(node: NodeId): Iterable<NodeId> {
@@ -81,7 +69,7 @@ export class Undirected<
   }
 
   public *edgeViews(): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
+    if (!this._edges) return;
     for (const view of this.inner.edgeViews!()) yield view as EdgeView<E>;
   }
 
@@ -90,33 +78,21 @@ export class Undirected<
   }
 
   public *outEdges(node: NodeId): Iterable<EdgeView<E>> {
-    if (!this._capabilities.edges) return;
+    if (!this._edges) return;
     for (const view of this.inner.outEdges!(node)) yield view as EdgeView<E>;
     for (const view of this.inner.inEdges!(node)) yield flip(view as EdgeView<E>);
   }
 
   public bound(): number {
-    return this._capabilities.indexable ? this.inner.bound!() : this.inner.order;
+    return this._index ? this.inner.bound!() : this.inner.order;
   }
 
   public at(index: number): NodeId | undefined {
-    if (this._capabilities.indexable) return this.inner.at!(index);
-    let i = 0;
-    for (const id of this.inner.nodes()) {
-      if (i === index) return id;
-      i++;
-    }
-    return undefined;
+    return this._index ? this.inner.at!(index) : nodeAt(this.inner, index);
   }
 
   public indexOf(node: NodeId): number {
-    if (this._capabilities.indexable) return this.inner.indexOf!(node);
-    let i = 0;
-    for (const id of this.inner.nodes()) {
-      if (id === node) return i;
-      i++;
-    }
-    return -1;
+    return this._index ? this.inner.indexOf!(node) : nodeIndex(this.inner, node);
   }
 }
 
@@ -124,8 +100,4 @@ export function undirected<
   G extends Catalog & Neighbors & Partial<IntoEdges<unknown>> & Partial<NodeIndexable>,
 >(graph: G): Undirected<G, EdgeOf<G>> {
   return new Undirected(graph);
-}
-
-function flip<E>(view: EdgeView<E>): EdgeView<E> {
-  return { id: view.id, source: view.target, target: view.source, weight: view.weight };
 }

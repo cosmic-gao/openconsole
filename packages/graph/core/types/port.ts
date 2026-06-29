@@ -1,5 +1,7 @@
 import type { Input, Output, Port, Socket, Vertex } from '../classic';
 
+export type Direction = 'input' | 'output';
+
 export type Sockets = { readonly [key: string]: Socket };
 
 export type Inputs<I extends Sockets> = { [K in keyof I]?: Input<I[K]> };
