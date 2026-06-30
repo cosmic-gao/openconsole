@@ -1,5 +1,9 @@
-import type { NodeId, Walkable } from '../types';
+import type { NodeId, Walkable } from "../types";
 
+/**
+ * 计算有向图的强连通分量（Pearce 2016 迭代算法）。
+ * 返回的分量按逆拓扑序排列，每个分量内为成员节点。
+ */
 export function scc<G extends Walkable>(graph: G): NodeId[][] {
   const nodes: NodeId[] = [];
   const index = new Map<NodeId, number>();

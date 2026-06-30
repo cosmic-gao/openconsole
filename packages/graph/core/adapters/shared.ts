@@ -1,26 +1,41 @@
-import type { Catalog, EdgeView, IntoDegree, IntoEdges, NodeId, NodeIndexable } from '../types';
+import type {
+  Catalog,
+  EdgeView,
+  IntoDegree,
+  IntoEdges,
+  NodeId,
+  NodeIndexable,
+} from "../types";
 
 export const EMPTY: Iterable<never> = {
   *[Symbol.iterator]() {},
 };
 
 export function flip<E>(view: EdgeView<E>): EdgeView<E> {
-  return { id: view.id, source: view.target, target: view.source, weight: view.weight };
+  return {
+    id: view.id,
+    source: view.target,
+    target: view.source,
+    weight: view.weight,
+  };
 }
 
 export function hasEdges(inner: Partial<IntoEdges>): boolean {
-  return typeof inner.edgeViews === 'function';
+  return typeof inner.edgeViews === "function";
 }
 
 export function hasDegree(inner: Partial<IntoDegree>): boolean {
-  return typeof inner.inDegree === 'function' && typeof inner.outDegree === 'function';
+  return (
+    typeof inner.inDegree === "function" &&
+    typeof inner.outDegree === "function"
+  );
 }
 
 export function hasIndex(inner: Partial<NodeIndexable>): boolean {
   return (
-    typeof inner.bound === 'function' &&
-    typeof inner.at === 'function' &&
-    typeof inner.indexOf === 'function'
+    typeof inner.bound === "function" &&
+    typeof inner.at === "function" &&
+    typeof inner.indexOf === "function"
   );
 }
 

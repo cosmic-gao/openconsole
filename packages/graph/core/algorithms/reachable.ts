@@ -1,7 +1,10 @@
-import type { Neighbors, NodeId, Walkable } from '../types';
-import { reversed } from '../adapters';
-import { dfs } from './dfs';
+import { reversed } from "../adapters";
+import type { Neighbors, NodeId, Walkable } from "../types";
+import { dfs } from "./dfs";
 
+/**
+ * 判断从 source 是否可达 target，采用双向 BFS 加速搜索。
+ */
 export function reachable<G extends Neighbors>(
   graph: G,
   source: NodeId,
@@ -43,13 +46,25 @@ export function reachable<G extends Neighbors>(
   return false;
 }
 
-export function ancestors<G extends Walkable>(graph: G, node: NodeId): NodeId[] {
+/**
+ * 返回 node 的所有祖先节点（在反图上 DFS，不含自身）。
+ */
+export function ancestors<G extends Walkable>(
+  graph: G,
+  node: NodeId,
+): NodeId[] {
   const iterator = dfs(reversed(graph), node);
   iterator.next();
   return [...iterator];
 }
 
-export function descendants<G extends Neighbors>(graph: G, node: NodeId): NodeId[] {
+/**
+ * 返回 node 的所有后代节点（沿出边 DFS，不含自身）。
+ */
+export function descendants<G extends Neighbors>(
+  graph: G,
+  node: NodeId,
+): NodeId[] {
   const iterator = dfs(graph, node);
   iterator.next();
   return [...iterator];

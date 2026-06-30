@@ -1,5 +1,11 @@
-import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
+import { Cycle } from "../classic";
+import type { Catalog, EdgeView, IntoEdges, NodeId } from "../types";
 
+/**
+ * Floyd-Warshall 全源最短路，容许负权边，返回任意两点间最短距离矩阵（不可达对省略）。
+ * 复杂度 O(V³)。
+ * @throws Cycle 当存在负权环时抛出。
+ */
 export function floydWarshall<E, G extends Catalog & IntoEdges<E>>(
   graph: G,
   edgeCost: (edge: EdgeView<E>) => number,
@@ -32,6 +38,10 @@ export function floydWarshall<E, G extends Catalog & IntoEdges<E>>(
         if (candidate < dist[i]![j]!) dist[i]![j] = candidate;
       }
     }
+  }
+
+  for (let i = 0; i < n; i++) {
+    if (dist[i]![i]! < 0) throw new Cycle([labels[i]!]);
   }
 
   const result = new Map<NodeId, Map<NodeId, number>>();

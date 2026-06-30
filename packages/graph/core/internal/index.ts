@@ -1,2 +1,8 @@
-export { inDegrees } from './degree';
-export { lookupPort, compactPorts, portsJson } from './port';
+export { inDegrees } from "./degree";
+export {
+  lookupPort,
+  compactPorts,
+  portsJson,
+  type PortConstraints,
+  type PortTuple,
+} from "./port";

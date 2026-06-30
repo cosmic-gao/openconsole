@@ -1,7 +1,23 @@
-import { Edge, Endpoint, Graph, Socket, Vertex, type Input, type Output } from '../../classic';
-import { lookupPort, portsJson } from '../../internal';
-import type { EdgeId, JsonEdge, JsonNode, Node, NodeId, PortId } from '../../types';
-import type { CompactNode } from '../compact';
+import {
+  Edge,
+  Endpoint,
+  Graph,
+  Socket,
+  Vertex,
+  type Input,
+  type Output,
+} from "../../classic";
+import { lookupPort, portsJson } from "../../internal";
+import type {
+  EdgeId,
+  JsonEdge,
+  JsonNode,
+  Node,
+  NodeId,
+  PortId,
+  Ports,
+} from "../../types";
+import type { CompactNode } from "../compact";
 
 export function dumpNode<N>(node: Node<N>): JsonNode<N> {
   return {
@@ -30,29 +46,52 @@ export function buildNode(
   const [id, weight, inputs, outputs] = compact;
   const node = new Vertex(restoreNode(String(id)), weight) as Node<unknown>;
   if (inputs) {
-    for (const [name, portId, socketName] of inputs) {
-      node.addInput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portId)));
+    for (const [name, portId, socketName, c] of inputs) {
+      node.addInput(name, sockets.get(socketName) ?? Socket.any, {
+        id: restorePort(String(portId)),
+        multiple: c?.m,
+        required: c?.r,
+        fallback: c?.f,
+      });
     }
   }
   if (outputs) {
-    for (const [name, portId, socketName] of outputs) {
-      node.addOutput(name, sockets.get(socketName) ?? Socket.any, restorePort(String(portId)));
+    for (const [name, portId, socketName, c] of outputs) {
+      node.addOutput(name, sockets.get(socketName) ?? Socket.any, {
+        id: restorePort(String(portId)),
+        multiple: c?.m,
+        required: c?.r,
+        fallback: c?.f,
+      });
     }
   }
   return node;
 }
 
-export function loadNode<N>(data: JsonNode<N>, sockets: ReadonlyMap<string, Socket>): Node<N> {
+export function loadNode<N>(
+  data: JsonNode<N>,
+  sockets: ReadonlyMap<string, Socket>,
+): Node<N> {
   const node = new Vertex(data.id, data.weight) as Node<N>;
   for (const name in data.inputs) {
     const port = data.inputs[name];
     if (!port) continue;
-    node.addInput(name, sockets.get(port.socket) ?? Socket.any, port.id);
+    node.addInput(name, sockets.get(port.socket) ?? Socket.any, {
+      id: port.id,
+      multiple: port.multiple,
+      required: port.required,
+      fallback: port.fallback,
+    });
   }
   for (const name in data.outputs) {
     const port = data.outputs[name];
     if (!port) continue;
-    node.addOutput(name, sockets.get(port.socket) ?? Socket.any, port.id);
+    node.addOutput(name, sockets.get(port.socket) ?? Socket.any, {
+      id: port.id,
+      multiple: port.multiple,
+      required: port.required,
+      fallback: port.fallback,
+    });
   }
   return node;
 }
@@ -101,10 +140,30 @@ export function loadEdge<N, E>(graph: Graph<N, E>, data: JsonEdge<E>): Edge<E> {
 export function sameWeight<T>(a: T | undefined, b: T | undefined): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
-  if (typeof a !== 'object' && typeof b !== 'object') return false;
+  if (typeof a !== "object" && typeof b !== "object") return false;
   try {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch {
     return false;
   }
+}
+
+export function samePorts(a: Node<unknown>, b: Node<unknown>): boolean {
+  return (
+    signature(a.inputs) === signature(b.inputs) &&
+    signature(a.outputs) === signature(b.outputs)
+  );
+}
+
+function signature(ports: Ports): string {
+  const parts: string[] = [];
+  for (const name in ports) {
+    const port = ports[name];
+    if (port) {
+      parts.push(
+        `${name} ${String(port.id)} ${port.socket.name} ${port.multiple} ${port.required}`,
+      );
+    }
+  }
+  return parts.sort().join("");
 }

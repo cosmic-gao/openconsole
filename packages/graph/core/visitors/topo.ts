@@ -1,8 +1,19 @@
-import { inDegrees } from '../internal';
-import type { IntoDegree, Neighbors, NodeId, Topology, Walkable } from '../types';
-import { toIterator } from './iterator';
+import { inDegrees } from "../internal";
+import type {
+  IntoDegree,
+  Neighbors,
+  NodeId,
+  Topology,
+  Walkable,
+} from "../types";
+import { toIterator } from "./iterator";
 
+/**
+ * 状态化的拓扑排序遍历器（Kahn 算法），可暂停与恢复。
+ * 通过 {@link Topo.start} 构造，按入度为零的顺序逐个产出节点。
+ */
 export class Topo {
+  /** 入度已降为零、等待产出的节点队列。 */
   public readonly queue: NodeId[];
   private _pending: Map<NodeId, number>;
   private _head: number;
@@ -20,11 +31,15 @@ export class Topo {
     }
   }
 
-  public static start<G extends Walkable & Partial<IntoDegree>>(graph: G): Topo {
+  /** 工厂方法：计算各节点入度并创建拓扑遍历器。 */
+  public static start<G extends Walkable & Partial<IntoDegree>>(
+    graph: G,
+  ): Topo {
     const pending = inDegrees(graph);
     return new Topo(pending, pending.size);
   }
 
+  /** 推进一步，返回下一个拓扑序节点；全部产出或遇环时返回 `undefined`。 */
   public next<G extends Neighbors>(graph: G): NodeId | undefined {
     if (this._head >= this.queue.length) return undefined;
     const node = this.queue[this._head++]!;
@@ -39,10 +54,12 @@ export class Topo {
     return node;
   }
 
+  /** 将遍历器转换为可迭代对象，便于 `for...of` 消费。 */
   public iterator<G extends Neighbors>(graph: G): IterableIterator<NodeId> {
     return toIterator(() => this.next(graph));
   }
 
+  /** 返回仍残留入度的节点，即参与环的节点；无环时为空数组。 */
   public cycleNodes(): NodeId[] {
     if (this._emitted >= this._total) return [];
     const remaining: NodeId[] = [];
@@ -52,6 +69,7 @@ export class Topo {
     return remaining;
   }
 
+  /** 一次性消费全部节点，返回拓扑序及环检测结果。 */
   public collect<G extends Neighbors>(graph: G): Topology {
     const order: NodeId[] = [];
     while (true) {

@@ -1,7 +1,7 @@
-import { PairingHeap, type PairingNode } from '@openconsole/heap';
+import { PairingHeap, type PairingNode } from "@openconsole/heap";
 
-import { Negative } from '../classic';
-import type { Catalog, EdgeView, IntoEdges, NodeId } from '../types';
+import { Negative } from "../classic";
+import type { Catalog, EdgeView, IntoEdges, NodeId } from "../types";
 
 interface Entry {
   readonly node: NodeId;
@@ -9,6 +9,13 @@ interface Entry {
   readonly f: number;
 }
 
+/**
+ * A* 启发式最短路：以 g+h 为优先级搜索 start 到 end。
+ * heuristic 需可采纳（不高估真实剩余代价）才能保证最优；默认零启发退化为 Dijkstra。
+ * 仅支持非负权。
+ * @returns 最短距离与路径节点序列；不可达时返回 undefined。
+ * @throws Negative 当遇到负权边时抛出。
+ */
 export function astar<E, G extends Catalog & IntoEdges<E>>(
   graph: G,
   start: NodeId,
@@ -32,7 +39,8 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
     const node = entry.node;
     handles.delete(node);
 
-    if (node === end) return { distance: entry.g, path: trace(parent, start, end) };
+    if (node === end)
+      return { distance: entry.g, path: trace(parent, start, end) };
 
     if (settled.has(node)) continue;
     settled.add(node);
@@ -54,7 +62,10 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
       if (handle !== undefined) {
         open.update(handle, { node: edge.target, g: tentative, f });
       } else {
-        handles.set(edge.target, open.push({ node: edge.target, g: tentative, f }));
+        handles.set(
+          edge.target,
+          open.push({ node: edge.target, g: tentative, f }),
+        );
       }
     }
   }
@@ -64,7 +75,11 @@ export function astar<E, G extends Catalog & IntoEdges<E>>(
 
 const zero = (): number => 0;
 
-function trace(parent: ReadonlyMap<NodeId, NodeId>, start: NodeId, end: NodeId): NodeId[] {
+function trace(
+  parent: ReadonlyMap<NodeId, NodeId>,
+  start: NodeId,
+  end: NodeId,
+): NodeId[] {
   const path: NodeId[] = [end];
   let current: NodeId | undefined = end;
   while (current !== start) {

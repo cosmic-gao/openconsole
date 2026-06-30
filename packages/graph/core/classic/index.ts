@@ -1,10 +1,10 @@
-export { Socket } from './socket';
-export { Port, Input, Output } from './port';
-export { Vertex } from './vertex';
-export { Endpoint } from './endpoint';
-export { Edge } from './edge';
-export { Model } from './model';
-export { Graph } from './graph';
+export { Socket } from "./socket";
+export { Port, Input, Output } from "./port";
+export { Vertex } from "./vertex";
+export { Endpoint } from "./endpoint";
+export { Edge } from "./edge";
+export { Model } from "./model";
+export { Graph } from "./graph";
 export {
   GraphError,
   Duplicate,
@@ -12,7 +12,8 @@ export {
   Cycle,
   SocketMismatch,
   Misdirected,
+  Capacity,
   Negative,
   Schema,
   type Code,
-} from './errors';
+} from "./errors";

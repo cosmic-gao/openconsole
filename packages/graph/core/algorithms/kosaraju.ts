@@ -1,7 +1,10 @@
-import type { Catalog, Neighbors, NodeId } from '../types';
-import { reversed } from '../adapters';
-import { postorder } from './postorder';
+import { reversed } from "../adapters";
+import type { Catalog, Neighbors, NodeId } from "../types";
+import { postorder } from "./postorder";
 
+/**
+ * 用 Kosaraju 两遍 DFS 算法计算强连通分量（先后序遍历，再在反图上扩展）。
+ */
 export function kosaraju<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
   const order = postorder(graph);
   const reversedGraph = reversed(graph);

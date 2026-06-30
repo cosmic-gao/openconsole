@@ -1,11 +1,25 @@
-import type { Catalog, EdgeId, EdgeView, IntoEdges, Neighbors, NodeId } from '../types';
+import type {
+  Catalog,
+  EdgeId,
+  EdgeView,
+  IntoEdges,
+  Neighbors,
+  NodeId,
+} from "../types";
 
+/** 一条桥边：删去后会增加连通分量数的无向边（端点 from、to）。 */
 export interface Bridge {
   readonly from: NodeId;
   readonly to: NodeId;
 }
 
-export function bridges<E, G extends Catalog & Neighbors & IntoEdges<E>>(graph: G): {
+/**
+ * 按无向视角用 Tarjan 算法（迭代式 DFS）求图的桥与割点。
+ * @returns bridges 为所有桥边，articulations 为所有割点。
+ */
+export function bridges<E, G extends Catalog & Neighbors & IntoEdges<E>>(
+  graph: G,
+): {
   bridges: Bridge[];
   articulations: NodeId[];
 } {

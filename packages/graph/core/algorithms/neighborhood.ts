@@ -1,9 +1,15 @@
-import type { Catalog, Neighbors, NodeId } from '../types';
+import type { Catalog, Neighbors, NodeId } from "../types";
 
+/**
+ * 一次性快照全图每个节点的邻域，返回节点到其前驱与后继列表的映射。
+ */
 export function neighborhood<G extends Catalog & Neighbors>(
   graph: G,
 ): Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }> {
-  const result = new Map<NodeId, { predecessors: NodeId[]; successors: NodeId[] }>();
+  const result = new Map<
+    NodeId,
+    { predecessors: NodeId[]; successors: NodeId[] }
+  >();
 
   for (const nodeId of graph.nodes()) {
     result.set(nodeId, { predecessors: [], successors: [] });

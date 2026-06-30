@@ -1,22 +1,30 @@
-import { topology } from '../algorithms';
-import { Graph, Schema } from '../classic';
-import { compactPorts } from '../internal';
-import type { EdgeId, Node, NodeId, PortId } from '../types';
-import { VERSION, type Compact, type CompactEdge, type CompactNode } from './compact';
-import { buildNode, linkEdge } from './internal';
-import { mergeLookup, type SocketLookup } from './sockets';
+import { topology } from "../algorithms";
+import { Graph, Schema } from "../classic";
+import { compactPorts } from "../internal";
+import type { EdgeId, Node, NodeId, PortId } from "../types";
+import {
+  VERSION,
+  type Compact,
+  type CompactEdge,
+  type CompactNode,
+} from "./compact";
+import { buildNode, linkEdge } from "./internal";
+import { mergeLookup, type SocketLookup } from "./sockets";
 
+/** ID 重映射表，按短整数下标记录节点、边、端口的原始 ID 以便还原。 */
 export interface IdRemap {
   readonly nodes: ReadonlyArray<string>;
   readonly edges: ReadonlyArray<string>;
   readonly ports: ReadonlyArray<string>;
 }
 
+/** packRemap 的结果：紧凑数据与对应的 ID 重映射表。 */
 export interface RemappedCompact {
   readonly compact: Compact;
   readonly remap: IdRemap;
 }
 
+/** 拓扑稳定地打包图，将长 UUID 重映射为短整数 ID，返回紧凑数据与重映射表。 */
 export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
   const { order: nodeOrder } = topology(graph);
   const nodeForward = new Map<string, string>();
@@ -72,12 +80,27 @@ export function packRemap<N, E>(graph: Graph<N, E>): RemappedCompact {
     ]);
   }
 
+  const h: Array<[NodeId, NodeId]> = [];
+  for (const id of graph.nodes()) {
+    const parent = graph.parent(id);
+    if (parent !== undefined) {
+      h.push([
+        nodeForward.get(String(id))! as NodeId,
+        nodeForward.get(String(parent))! as NodeId,
+      ]);
+    }
+  }
+
   return {
-    compact: { v: VERSION, g: graph.id, n, e },
+    compact:
+      h.length > 0
+        ? { v: VERSION, g: graph.id, n, e, h }
+        : { v: VERSION, g: graph.id, n, e },
     remap: { nodes, edges, ports },
   };
 }
 
+/** 还原重映射后的紧凑数据为图，默认按重映射表恢复原始 ID；keepCompactIds 为 true 时保留短整数 ID。 */
 export function unpackRemap<N, E>(
   data: RemappedCompact,
   options?: {
@@ -86,8 +109,7 @@ export function unpackRemap<N, E>(
     keepCompactIds?: boolean;
   },
 ): Graph<N, E> {
-  const version = data.compact.v ?? 1;
-  if (version !== VERSION) throw new Schema(version, VERSION);
+  if (data.compact.v !== VERSION) throw new Schema(data.compact.v, VERSION);
 
   const graph = options?.target ?? new Graph<N, E>(data.compact.g);
   if (options?.target) graph.clear();
@@ -120,6 +142,14 @@ export function unpackRemap<N, E>(
           weight as E,
         ),
       );
+    }
+    if (data.compact.h) {
+      for (const [child, parent] of data.compact.h) {
+        graph.setParent(
+          restoreNode(String(child)),
+          restoreNode(String(parent)),
+        );
+      }
     }
     return graph;
   });

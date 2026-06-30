@@ -1,6 +1,10 @@
-import type { NodeId, Walkable } from '../types';
-import { scc } from './scc';
+import type { NodeId, Walkable } from "../types";
+import { scc } from "./scc";
 
+/**
+ * 对图做缩点：把每个强连通分量收缩为一个超级节点，得到无环的凝聚图。
+ * 返回各分量、节点到分量下标的映射，以及分量间的边。
+ */
 export function condensation<G extends Walkable>(
   graph: G,
 ): {
@@ -16,7 +20,9 @@ export function condensation<G extends Walkable>(
 
   const stride = components.length;
   if (stride > 0x3ffffff) {
-    throw new Error(`condensation: too many SCC components (${stride}) for safe stride encoding`);
+    throw new Error(
+      `condensation: too many SCC components (${stride}) for safe stride encoding`,
+    );
   }
   const seen = new Set<number>();
   const edges: Array<{ from: number; to: number }> = [];

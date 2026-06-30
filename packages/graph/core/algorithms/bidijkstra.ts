@@ -1,7 +1,7 @@
-import { PairingHeap, type PairingNode } from '@openconsole/heap';
+import { PairingHeap, type PairingNode } from "@openconsole/heap";
 
-import { Negative } from '../classic';
-import type { Catalog, EdgeId, EdgeView, IntoEdges, NodeId } from '../types';
+import { Negative } from "../classic";
+import type { Catalog, EdgeId, EdgeView, IntoEdges, NodeId } from "../types";
 
 interface Entry {
   readonly node: NodeId;
@@ -33,6 +33,12 @@ const guard = (cost: number, edgeId: EdgeId): void => {
   if (cost < 0) throw new Negative(cost, edgeId);
 };
 
+/**
+ * 双向 Dijkstra：从 start 正向、end 反向同时搜索，相遇时停止，求单条最短路。
+ * 仅支持非负权；通常比单向 Dijkstra 探索更少节点。
+ * @returns 最短距离与路径节点序列；不可达时返回 undefined。
+ * @throws Negative 当遇到负权边时抛出。
+ */
 export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   graph: G,
   start: NodeId,
@@ -47,7 +53,13 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
   let mu = Infinity;
   let meet: NodeId | undefined;
 
-  const relax = (origin: NodeId, target: NodeId, cost: number, near: Side, far: Side): void => {
+  const relax = (
+    origin: NodeId,
+    target: NodeId,
+    cost: number,
+    near: Side,
+    far: Side,
+  ): void => {
     if (near.settled.has(target)) return;
     const candidate = near.dist.get(origin)! + cost;
     const current = near.dist.get(target);
@@ -58,7 +70,10 @@ export function bidijkstra<E, G extends Catalog & IntoEdges<E>>(
     if (handle !== undefined) {
       near.heap.update(handle, { node: target, dist: candidate });
     } else {
-      near.handles.set(target, near.heap.push({ node: target, dist: candidate }));
+      near.handles.set(
+        target,
+        near.heap.push({ node: target, dist: candidate }),
+      );
     }
     const farDist = far.dist.get(target);
     if (farDist !== undefined) {

@@ -1,16 +1,20 @@
-import type { Graph } from '../classic';
-import { pack } from './pack';
+import type { Graph } from "../classic";
+import { pack } from "./pack";
 
 interface TextEncoderLike {
   encode(input: string): { length: number };
 }
 
 const TEXT_ENCODER: TextEncoderLike | null = (() => {
-  const ctor = (globalThis as { TextEncoder?: new () => TextEncoderLike }).TextEncoder;
+  const ctor = (globalThis as { TextEncoder?: new () => TextEncoderLike })
+    .TextEncoder;
   return ctor ? new ctor() : null;
 })();
 
-export function compressionRatio<N, E>(graph: Graph<N, E>): {
+/** 估算图的压缩率，对比原始 JSON 与紧凑格式的 UTF-8 字节数。 */
+export function compressionRatio<N, E>(
+  graph: Graph<N, E>,
+): {
   originalBytes: number;
   compressedBytes: number;
   ratio: number;

@@ -1,6 +1,10 @@
-import type { NodeId, Subscribable, Walkable } from '../types';
-import { topology } from './toposort';
+import type { NodeId, Subscribable, Walkable } from "../types";
+import { topology } from "./toposort";
 
+/**
+ * 增量拓扑排序（Pearce-Kelly 算法）。订阅图的增删事件并就地维护拓扑序，
+ * 避免每次变更后整图重排；新增成环的边会触发延迟重算。
+ */
 export class IncrementalTopo<N = unknown, E = unknown> {
   private readonly _ranks = new Map<NodeId, number>();
 
@@ -18,23 +22,32 @@ export class IncrementalTopo<N = unknown, E = unknown> {
 
   private readonly _unsubscribers: Array<() => void> = [];
 
-  public constructor(
-    private readonly _graph: Walkable & Subscribable<N, E>,
-  ) {
+  /**
+   * 基于给定图构建并立即计算初始拓扑序，同时订阅其变更信号。
+   */
+  public constructor(private readonly _graph: Walkable & Subscribable<N, E>) {
     this._recompute();
     this._unsubscribers.push(
-      _graph.signal.on('nodeAdded', ({ node }) => this._addNode(node.id)),
-      _graph.signal.on('nodeDropped', ({ node }) => this._removeNode(node.id)),
-      _graph.signal.on('edgeAdded', ({ edge }) => this._addEdge(edge.sourceId, edge.targetId)),
-      _graph.signal.on('edgeDropped', () => this._removeEdge()),
+      _graph.signal.on("nodeAdded", ({ node }) => this._addNode(node.id)),
+      _graph.signal.on("nodeDropped", ({ node }) => this._removeNode(node.id)),
+      _graph.signal.on("edgeAdded", ({ edge }) =>
+        this._addEdge(edge.sourceId, edge.targetId),
+      ),
+      _graph.signal.on("edgeDropped", () => this._removeEdge()),
     );
   }
 
+  /**
+   * 返回节点的拓扑位次，节点不存在时返回 undefined。
+   */
   public rank(id: NodeId): number | undefined {
     if (this._dirty) this._recompute();
     return this._ranks.get(id);
   }
 
+  /**
+   * 按拓扑位次比较两节点，可用作排序比较器；任一节点缺失时返回 0。
+   */
   public compare(a: NodeId, b: NodeId): number {
     if (this._dirty) this._recompute();
     const ra = this._ranks.get(a);
@@ -43,6 +56,9 @@ export class IncrementalTopo<N = unknown, E = unknown> {
     return ra - rb;
   }
 
+  /**
+   * 返回当前全部节点的拓扑序列表。
+   */
   public sorted(): NodeId[] {
     if (this._dirty) this._recompute();
     if (this._dense) {
@@ -55,20 +71,32 @@ export class IncrementalTopo<N = unknown, E = unknown> {
     return entries.map(([id]) => id);
   }
 
+  /**
+   * 当前图是否存在环。
+   */
   public get hasCycle(): boolean {
     if (this._dirty) this._recompute();
     return this._hasCycle;
   }
 
+  /**
+   * 当前参与环的节点集合。
+   */
   public get cycleNodes(): readonly NodeId[] {
     if (this._dirty) this._recompute();
     return this._cycleNodes;
   }
 
+  /**
+   * 强制立即整图重算拓扑序。
+   */
   public sync(): void {
     this._recompute();
   }
 
+  /**
+   * 取消所有事件订阅，释放该实例。
+   */
   public dispose(): void {
     for (const off of this._unsubscribers) off();
     this._unsubscribers.length = 0;
@@ -124,14 +152,24 @@ export class IncrementalTopo<N = unknown, E = unknown> {
     const graph = this._graph;
     const ranks = this._ranks;
 
-    const forward = this._collect(targetId, (node) => graph.outNeighbors(node), (rank) => rank <= upperBound, sourceId);
+    const forward = this._collect(
+      targetId,
+      (node) => graph.outNeighbors(node),
+      (rank) => rank <= upperBound,
+      sourceId,
+    );
     if (forward === null) {
       this._dirty = true;
       return;
     }
-    const backward = this._collect(sourceId, (node) => graph.inNeighbors(node), (rank) => rank >= lowerBound);
+    const backward = this._collect(
+      sourceId,
+      (node) => graph.inNeighbors(node),
+      (rank) => rank >= lowerBound,
+    );
 
-    const byRank = (a: NodeId, b: NodeId): number => ranks.get(a)! - ranks.get(b)!;
+    const byRank = (a: NodeId, b: NodeId): number =>
+      ranks.get(a)! - ranks.get(b)!;
     backward.sort(byRank);
     forward.sort(byRank);
 

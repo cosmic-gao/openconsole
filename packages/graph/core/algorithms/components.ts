@@ -1,6 +1,11 @@
-import type { Catalog, Neighbors, NodeId } from '../types';
+import type { Catalog, Neighbors, NodeId } from "../types";
 
-export function components<G extends Catalog & Neighbors>(graph: G): NodeId[][] {
+/**
+ * 计算图的弱连通分量（忽略边方向），返回每个分量的节点列表。
+ */
+export function components<G extends Catalog & Neighbors>(
+  graph: G,
+): NodeId[][] {
   const seen = new Set<NodeId>();
   const result: NodeId[][] = [];
 

@@ -1,5 +1,10 @@
-import type { Catalog, Neighbors, NodeId } from '../types';
+import type { Catalog, Neighbors, NodeId } from "../types";
 
+/**
+ * 用 Lengauer-Tarjan 算法构建从 entry 出发的支配树。
+ * 仅覆盖 entry 可达的节点；entry 的直接支配点记为自身。
+ * @returns 每个节点到其直接支配点（idom）的映射。
+ */
 export function dominator<G extends Catalog & Neighbors>(
   graph: G,
   entry: NodeId,
@@ -10,7 +15,9 @@ export function dominator<G extends Catalog & Neighbors>(
   const predecessors: number[][] = [];
 
   type Frame = { v: NodeId; iterator: Iterator<NodeId> };
-  const stack: Frame[] = [{ v: entry, iterator: graph.outNeighbors(entry)[Symbol.iterator]() }];
+  const stack: Frame[] = [
+    { v: entry, iterator: graph.outNeighbors(entry)[Symbol.iterator]() },
+  ];
   num.set(entry, 0);
   dfn.push(entry);
   parent.push(-1);
@@ -31,7 +38,10 @@ export function dominator<G extends Catalog & Neighbors>(
       dfn.push(child);
       parent.push(parentIndex);
       predecessors.push([]);
-      stack.push({ v: child, iterator: graph.outNeighbors(child)[Symbol.iterator]() });
+      stack.push({
+        v: child,
+        iterator: graph.outNeighbors(child)[Symbol.iterator](),
+      });
     }
   }
 
@@ -40,7 +50,8 @@ export function dominator<G extends Catalog & Neighbors>(
   for (let i = 0; i < n; i++) {
     for (const predecessor of graph.inNeighbors(dfn[i]!)) {
       const predecessorIndex = num.get(predecessor);
-      if (predecessorIndex !== undefined) predecessors[i]!.push(predecessorIndex);
+      if (predecessorIndex !== undefined)
+        predecessors[i]!.push(predecessorIndex);
     }
   }
 
