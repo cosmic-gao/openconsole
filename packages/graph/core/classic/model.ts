@@ -13,7 +13,7 @@ import type {
 import { Edge } from "./edge";
 import { Endpoint } from "./endpoint";
 import { Cycle, Duplicate, Missing } from "./errors";
-import { Registry } from "./registry";
+import { type Indexer, Registry } from "./registry";
 import { validate } from "./validate";
 import type { Vertex } from "./vertex";
 
@@ -28,7 +28,7 @@ export class Model<N = unknown, E = unknown>
 {
   protected readonly _nodes = new Map<NodeId, Node<N>>();
   protected readonly _edges = new Map<EdgeId, Edge<E>>();
-  private readonly _registry = new Registry();
+  private readonly _registry: Indexer;
   private readonly _parent = new Map<NodeId, NodeId>();
   private readonly _children = new Map<NodeId, Set<NodeId>>();
 
@@ -42,7 +42,17 @@ export class Model<N = unknown, E = unknown>
   public constructor(
     /** 图唯一 id。 */
     public readonly id: GraphId,
-  ) {}
+  ) {
+    this._registry = this.createRegistry();
+  }
+
+  /**
+   * 创建节点索引器。子类可覆盖以改变删除后的下标语义——默认 {@link Registry}（swap-and-pop，
+   * 下标会移动），{@link StableGraph} 覆盖为 {@link StableRegistry}（下标稳定）。
+   */
+  protected createRegistry(): Indexer {
+    return new Registry();
+  }
 
   /**
    * 添加一个节点。

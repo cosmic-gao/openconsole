@@ -5,6 +5,7 @@ export { Endpoint } from "./endpoint";
 export { Edge } from "./edge";
 export { Model } from "./model";
 export { Graph } from "./graph";
+export { StableGraph } from "./stable";
 export {
   GraphError,
   Duplicate,
