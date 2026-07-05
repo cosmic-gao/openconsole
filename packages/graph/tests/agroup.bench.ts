@@ -85,3 +85,16 @@ describe(`BFS 层级 (V=${N}, E≈${seen.size})`, () => {
     bfsLevels(compiled, [start]);
   });
 });
+
+describe(`端到端：含一次 CSR 编译成本 (V=${N}, E≈${seen.size})`, () => {
+  bench("仅 csr 编译", () => {
+    csr(graph, weight);
+  });
+  bench("Graph dijkstra ×1", () => {
+    dijkstra(graph, start, undefined, cost);
+  });
+  bench("csr 编译 + sssp ×1", () => {
+    const c = csr(graph, weight);
+    sssp(c, start);
+  });
+});
