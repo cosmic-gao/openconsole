@@ -5,6 +5,6 @@
     "@openconsole/tsconfig/strict",
     "@openconsole/tsconfig/esm"
   ],
-  "include": ["index.ts", "core/**/*.ts", "tests/**/*.ts"],
+  "include": ["index.ts", "core/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

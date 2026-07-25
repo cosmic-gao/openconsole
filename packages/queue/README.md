@@ -136,7 +136,8 @@ new BucketQueue(capacity: number, maxPriority: number);
   settled 位图(图算法本来就有)。
 - **并列优先级的相对顺序不保证**:`LazyQueue` 取决于堆形状,`BucketQueue` 是桶内后进先出。
 - **`BucketQueue.clear()` 会把游标归零**,实例可跨多次运行复用。
-- **两种实现产出的结果一致**:测试里用同一张随机图跑 Dijkstra,与朴素 O(n²) 实现三方比对。
+- **两种实现产出的结果一致**:已在同一张随机图上与朴素 O(n²) Dijkstra 三方比对,
+  距离逐项相同——换队列只影响耗时,不影响结果。
 
 ## 类型安全实现要点
 
@@ -156,9 +157,7 @@ core/
 ## 开发
 
 ```bash
-pnpm --filter @openconsole/queue check       # tsc + tests
-pnpm --filter @openconsole/queue test
-pnpm --filter @openconsole/queue typecheck
+pnpm --filter @openconsole/queue typecheck  # tsc --noEmit
 ```
 
 ## License

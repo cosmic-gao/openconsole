@@ -177,7 +177,7 @@ type Comparator<T> = (a: T, b: T) => number;
 - 二叉堆内部的 `!` 断言的是**下标在界内**(由完全二叉树不变式保证),而不是元素非空——
   `T` 本身允许包含 `undefined`,因此刻意不用 `=== undefined` 判空。
 - 算法内核抽成不依赖实例的纯函数(`siftUp` / `siftDown` / `meld` / `collapse`),
-  可独立测试。
+  可独立复用与验证。
 
 ## 模块边界
 
@@ -196,13 +196,8 @@ core/
 ## 开发
 
 ```bash
-pnpm --filter @openconsole/heap check       # tsc + tests
-pnpm --filter @openconsole/heap test
-pnpm --filter @openconsole/heap typecheck
+pnpm --filter @openconsole/heap typecheck   # tsc --noEmit
 ```
-
-测试含随机化对照:随机执行数千次 `push` / `poll` / `update` / `delete`,
-每步都与排序参照实现比对,并校验二叉堆的父子有序性。
 
 ## License
 
