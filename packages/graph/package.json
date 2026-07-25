@@ -2,20 +2,49 @@
   "name": "@openconsole/graph",
   "version": "0.0.1",
   "private": true,
+  "description": "类型化端口、Trait 解耦、零成本视图与紧凑序列化的有向图核心模型",
+  "license": "MIT",
+  "keywords": [
+    "graph",
+    "digraph",
+    "directed-graph",
+    "dag",
+    "toposort",
+    "dijkstra",
+    "scc",
+    "csr",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosmic-gao/openconsole.git",
+    "directory": "packages/graph"
+  },
   "type": "module",
   "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && vitest run",
     "doc": "typedoc"
-  },
-  "devDependencies": {
-    "typedoc": "^0.28.0"
   },
   "dependencies": {
     "@openconsole/heap": "workspace:*",
     "@openconsole/queue": "workspace:*",
     "@openconsole/signal": "workspace:*"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.0"
   }
 }

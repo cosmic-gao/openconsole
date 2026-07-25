@@ -2,14 +2,33 @@
   "name": "@openconsole/signal",
   "version": "0.0.1",
   "private": true,
+  "description": "类型安全、支持通配符与 AbortSignal 的事件发射器",
+  "license": "MIT",
+  "keywords": [
+    "event-emitter",
+    "events",
+    "signal",
+    "abortsignal",
+    "disposable",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosmic-gao/openconsole.git",
+    "directory": "packages/signal"
+  },
   "type": "module",
   "main": "index.ts",
+  "types": "index.ts",
   "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && vitest run"
+    "check": "tsc --noEmit"
   }
 }

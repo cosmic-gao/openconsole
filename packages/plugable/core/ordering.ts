@@ -1,22 +1,22 @@
 /**
  * 基于图的插件顺序:把"先后关系"建模成 {@link https://www.npmjs.com/package/@openconsole/graph | @openconsole/graph}
- * 的有向图,用 `IncrementalTopo` 增量维护拓扑序,产出顺序码。
+ * 的有向图,用 `Ordering` 增量维护拓扑序,产出顺序码。
  *
  * 建模:
  *  - 节点 = 每个插件 + 两个相 barrier(`::phase:pre::` / `::phase:post::`);权重载荷 = {@link OrderNode};
  *  - 边(`Socket.exec` 纯执行流,只表先后):`pre` / `post` 依赖 + enforce 相序
  *    (pre 相 → preBarrier → 默认相 → postBarrier → post 相);
- *  - 一次拓扑同时满足"相序 + 依赖序";enforce 与依赖矛盾时自然成环,由 `scc` 抓出报错。
+ *  - 一次拓扑同时满足"相序 + 依赖序";enforce 与依赖矛盾时自然成环,由 `Ordering` 抓出报错。
  */
 
 import {
   Graph,
-  IncrementalTopo,
-  scc,
+  Ordering,
   Socket,
   Vertex,
   type GraphId,
   type NodeId,
+  type Sockets,
 } from "@openconsole/graph";
 
 export type Enforce = "pre" | "post";
@@ -46,7 +46,9 @@ export class CycleError extends Error {
   public constructor(public readonly components: string[][]) {
     super(
       "插件 pre/post 依赖成环(强连通分量):\n" +
-        components.map((component) => "  { " + component.join(", ") + " }").join("\n"),
+        components
+          .map((component) => "  { " + component.join(", ") + " }")
+          .join("\n"),
     );
     this.name = "CycleError";
   }
@@ -56,22 +58,19 @@ const PRE_BARRIER = "::phase:pre::";
 const POST_BARRIER = "::phase:post::";
 const pad = (value: number): string => String(value).padStart(3, "0");
 
-type ExecIn = { in: Socket<"exec"> };
-type ExecOut = { out: Socket<"exec"> };
-
 /**
  * 插件依赖图:封装 `@openconsole/graph`,增量维护顺序;顺序码 = 过滤 barrier 后的 rank。
  */
 export class PluginGraph {
   public readonly graph: Graph<OrderNode, void>;
-  public readonly topo: IncrementalTopo<OrderNode, void>;
+  public readonly topo: Ordering<OrderNode, void>;
 
   public constructor(id: GraphId = "plugins" as GraphId) {
     this.graph = new Graph<OrderNode, void>(id);
     this.vertex({ name: PRE_BARRIER });
     this.vertex({ name: POST_BARRIER });
     this.link(PRE_BARRIER as NodeId, POST_BARRIER as NodeId);
-    this.topo = new IncrementalTopo(this.graph);
+    this.topo = new Ordering(this.graph);
   }
 
   /** 事务:批量图变更只触发一次 `IncrementalTopo` 重算。 */
@@ -93,8 +92,10 @@ export class PluginGraph {
   /** 连 pre/post 依赖边(引用名不存在则忽略)。 */
   public linkDeps(node: OrderNode): void {
     const id = node.name as NodeId;
-    for (const pre of node.pre ?? []) if (this.graph.hasNode(pre as NodeId)) this.link(pre as NodeId, id);
-    for (const post of node.post ?? []) if (this.graph.hasNode(post as NodeId)) this.link(id, post as NodeId);
+    for (const pre of node.pre ?? [])
+      if (this.graph.hasNode(pre as NodeId)) this.link(pre as NodeId, id);
+    for (const post of node.post ?? [])
+      if (this.graph.hasNode(post as NodeId)) this.link(id, post as NodeId);
   }
 
   /** 摘除节点(级联移除关联边 → `IncrementalTopo` 增量更新)。 */
@@ -108,27 +109,31 @@ export class PluginGraph {
   }
 
   public get hasCycle(): boolean {
-    return this.topo.hasCycle;
+    return this.topo.cyclic;
   }
 
   public cycleError(): CycleError {
     return new CycleError(
-      scc(this.graph)
-        .filter((component) => component.length > 1)
-        .map((component) => component.map(String)),
+      this.topo.cycles().map((component) => component.map(String)),
     );
   }
 
   /** 全量顺序码(自省 / 打印用):过滤 barrier、压成 0..N-1。含环抛 {@link CycleError}。 */
   public codes(): Map<string, OrderCode> {
-    if (this.topo.hasCycle) throw this.cycleError();
+    if (this.topo.cyclic) throw this.cycleError();
     const real = this.topo.sorted().filter((id) => !this.isBarrier(id));
     const layer = this.layers(real);
     const out = new Map<string, OrderCode>();
     real.forEach((id, sequence) => {
-      const node = this.graph.node(id)?.weight;
-      const bucket = node?.enforce === "pre" ? 0 : node?.enforce === "post" ? 2 : 1;
-      out.set(String(id), { bucket, layer: layer.get(id) ?? 0, sequence, code: `${bucket}.${pad(sequence)}` });
+      const node = this.graph.weightOf(id);
+      const bucket =
+        node?.enforce === "pre" ? 0 : node?.enforce === "post" ? 2 : 1;
+      out.set(String(id), {
+        bucket,
+        layer: layer.get(id) ?? 0,
+        sequence,
+        code: `${bucket}.${pad(sequence)}`,
+      });
     });
     return out;
   }
@@ -142,12 +147,11 @@ export class PluginGraph {
   }
 
   private vertex(node: OrderNode): NodeId {
-    const id = node.name as NodeId;
-    const vertex = new Vertex<ExecIn, ExecOut, OrderNode>(id, node);
-    vertex.addInput("in", Socket.exec);
-    vertex.addOutput("out", Socket.exec);
-    this.graph.addNode(vertex);
-    return id;
+    return this.graph.addNode(
+      new Vertex<Sockets, Sockets, OrderNode>(node.name as NodeId, node)
+        .addInput("in", Socket.exec)
+        .addOutput("out", Socket.exec),
+    );
   }
 
   private link(from: NodeId, to: NodeId): void {

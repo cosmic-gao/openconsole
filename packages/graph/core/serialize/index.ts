@@ -1,8 +1,21 @@
-export * from "./format";
-export * from "./sockets";
-export * from "./pack";
-export * from "./unpack";
-export * from "./remap";
-export * from "./ops";
-export * from "./diff";
-export * from "./ratio";
+export { compression, expand, pack, unpack, VERSION } from "./format";
+export type {
+  Bundle,
+  Compact,
+  CompactEdge,
+  CompactNode,
+  IdTable,
+  PackOptions,
+  PortLimits,
+  PortTuple,
+  SocketLookup,
+  UnpackOptions,
+} from "./format";
+export { apply, diff, invert } from "./patch";
+export type {
+  ApplyOptions,
+  Change,
+  DiffOptions,
+  EdgeShape,
+  NodeShape,
+} from "./patch";

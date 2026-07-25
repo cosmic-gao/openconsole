@@ -8,9 +8,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": [
-    "index.ts",
-    "core/**/*.ts",
-    "tests/**/*.ts"
-  ]
+  "include": ["index.ts", "core/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

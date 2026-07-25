@@ -2,6 +2,20 @@
   "name": "@openconsole/queue",
   "version": "0.0.1",
   "private": true,
+  "description": "面向整数下标的优先队列：惰性二叉堆与 Dial 桶队列",
+  "license": "MIT",
+  "keywords": [
+    "priority-queue",
+    "bucket-queue",
+    "dial",
+    "dijkstra",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosmic-gao/openconsole.git",
+    "directory": "packages/queue"
+  },
   "type": "module",
   "main": "index.ts",
   "types": "index.ts",

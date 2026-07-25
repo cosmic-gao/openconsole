@@ -82,11 +82,6 @@ export class LazyQueue implements IndexQueue {
     return top;
   }
 
-  /** 查看优先级最小的下标但不出队；空队列返回 `-1`。 */
-  public peek(): number {
-    return this._size === 0 ? -1 : this._index[0]!;
-  }
-
   public clear(): void {
     this._size = 0;
   }

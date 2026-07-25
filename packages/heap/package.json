@@ -2,6 +2,21 @@
   "name": "@openconsole/heap",
   "version": "0.0.1",
   "private": true,
+  "description": "数组二叉堆与配对堆：带稳定句柄、支持 decrease-key 的优先级结构",
+  "license": "MIT",
+  "keywords": [
+    "heap",
+    "binary-heap",
+    "pairing-heap",
+    "priority-queue",
+    "decrease-key",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosmic-gao/openconsole.git",
+    "directory": "packages/heap"
+  },
   "type": "module",
   "main": "index.ts",
   "types": "index.ts",

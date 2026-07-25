@@ -109,22 +109,10 @@ export class BucketQueue implements IndexQueue {
     }
   }
 
-  /** 查看优先级最小的下标但不出队；空队列返回 `-1`。 */
-  public peek(): number {
-    if (this._size === 0) return NONE;
-    let cursor = this._cursor;
-    for (;;) {
-      const head = this._head[cursor % this._width]!;
-      if (head !== NONE) return head;
-      cursor++;
-    }
-  }
-
   /** 清空并把游标归零，实例可跨多次运行复用。 */
   public clear(): void {
+    // 只清桶头与在队标记：_next / _prev 仅对在队元素有意义，重新入队时必被覆写。
     this._head.fill(NONE);
-    this._next.fill(NONE);
-    this._prev.fill(NONE);
     this._queued.fill(0);
     this._cursor = 0;
     this._size = 0;

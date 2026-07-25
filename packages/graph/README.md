@@ -1,358 +1,278 @@
 # @openconsole/graph
 
-类型化端口、Trait 解耦、零成本视图与紧凑序列化的有向图核心模型。
+类型化端口的有向图内核：整数索引存储、不可变快照、可中断的算法。
 
-## 特性
+## 三层职责
 
-- **类型化端口模型**：`Vertex` 携带强类型 `Inputs` / `Outputs`；`Socket` 描述端口数据类型并校验边连接的兼容性；端口可声明连接重数 / 必填 / 默认值约束
-- **Trait 与存储解耦**：算法仅依赖 `Catalog` / `Neighbors` / `IntoEdges` / `Walkable` / `Hierarchy` 等能力接口，与具体存储无关
-- **两种访问者风格**：状态化遍历器 (`Dfs` / `Bfs` / `Topo` / `Postorder`) 控制推进节奏；事件回调遍历 (`visit`) 用 `Control` 决定继续 / 剪枝 / 中止
-- **零成本视图适配器**：`reversed` / `undirected` / `collapse` / `NodeFilter` / `EdgeFilter` 仅做 trait 转发，不复制底层数据，可任意嵌套
-- **完整算法集**：拓扑排序与分层、关键路径、强 / 弱连通分量、缩点、环枚举、传递闭包 / 归约、DFS / BFS / 后序、可达性、度数、Dijkstra / 双向 Dijkstra / A\* / Bellman-Ford / Floyd-Warshall 最短路、Prim / Kruskal 最小生成森林、桥与割点、支配树
-- **CSR 热路径**：`csr` 把结构冻结的图编译为 typed-array 快照，`sssp` 在整数下标空间跑原生 Dijkstra（零 `EdgeView` 分配），`bfsLevels` 走 Beamer 方向优化 BFS
-- **增量拓扑**：`IncrementalTopo` 订阅图事件，不破坏拓扑的变更走 O(1) 快路径，违反但无环走 Pearce-Kelly 局部重排，遇环延后全量重算
-- **复合图层次**：`parent` / `children` / `setParent` 表达节点分组 / 子图，配套层次遍历与折叠视图
-- **紧凑序列化与结构化 diff**：元组压缩格式 (~60-70% 字节缩减，守恒端口约束与复合层次)、拓扑稳定 ID 重映射、可应用 / 可撤销的图差异
-- **变更事件**：基于 `@openconsole/signal` 的强类型 `nodeAdded` / `nodeDropped` / `nodeUpdated` / `edgeAdded` / `edgeDropped` / `edgeUpdated`
-- **O(1) 节点寻址**：`at` / `indexOf` / `bound`；`Graph` 删除走 swap-and-pop（下标会移动），`StableGraph` 走 free-list 空位复用（下标永不移动）
-- **完整 TSDoc**：公共 API 带中文文档注释，支持 `typedoc` 生成 + IDE 悬浮提示
+| 层               | 负责       | 形态                                              |
+| ---------------- | ---------- | ------------------------------------------------- |
+| {@link Graph}    | 编辑       | 整数索引 + 平行数组，邻接是纯数组读取，变更走事件 |
+| {@link Snapshot} | 计算的输入 | 不可变 CSR，全部数据在 typed-array 里             |
+| {@link Task}     | 调度       | 分步推进，可中断、可续跑、可分帧                  |
 
-## 在本仓库中使用
-
-```json
-{
-  "dependencies": {
-    "@openconsole/graph": "workspace:*"
-  }
-}
-```
+算法只吃快照，不吃图。输入不可变带来三件事：长跑任务中断后恢复不会读到半改的图；快照能整份搬进
+Worker；过滤 / 折叠 / 无向化在编译期一次做完，运行期没有任何谓词回调或视图转发的开销。
 
 ## 快速开始
 
 ```ts
-import { dijkstra, Graph, path, Socket, toposort, Vertex, type GraphId, type NodeId } from "@openconsole/graph";
+import { Graph, graphId, nodeId, settle, shortestPath, Snapshot, Socket, toposort, Vertex, type Sockets } from "@openconsole/graph";
 
-type AddIn = { lhs: Socket<"number">; rhs: Socket<"number"> };
-type AddOut = { sum: Socket<"number"> };
-type Weight = { label: string };
+const graph = new Graph<string, number>(graphId("demo"));
 
-const graph = new Graph<Weight, void>("demo" as GraphId);
+for (const name of ["a", "b", "c"]) {
+  graph.addNode(new Vertex<Sockets, Sockets, string>(nodeId(name), name).addInput("in", Socket.number).addOutput("out", Socket.number));
+}
+graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 3 });
+graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"], { weight: 4 });
 
-const a = new Vertex<AddIn, AddOut, Weight>("a" as NodeId, { label: "add" });
-a.addInput("lhs", Socket.number);
-a.addInput("rhs", Socket.number);
-a.addOutput("sum", Socket.number);
-graph.addNode(a);
+const snapshot = Snapshot.of(graph, { weight: (edge) => edge.weight ?? 1 });
 
-const b = new Vertex<AddIn, AddOut, Weight>("b" as NodeId, { label: "add" });
-b.addInput("lhs", Socket.number);
-b.addInput("rhs", Socket.number);
-b.addOutput("sum", Socket.number);
-graph.addNode(b);
-
-graph.connect([a.id, "sum"], [b.id, "lhs"]);
-
-const order = toposort(graph); // NodeId[]
-const tree = dijkstra(graph, a.id, undefined, () => 1); // Map<NodeId, { distance, predecessor }>
-const route = path(tree, b.id); // a → b 的最短路径
+settle(toposort(snapshot)); // [a, b, c]
+settle(shortestPath(snapshot, nodeId("a"), nodeId("c"))); // { distance: 7, path: [a, b, c] }
 ```
 
-## 核心概念
+## Graph：编辑层
 
-### Socket
-
-声明端口承载的数据类型，用于校验连接的兼容性。
+节点与边都以整数索引寻址，属性存在平行数组里。删除只在索引位上留空并进入自由表，
+**已发出的索引永不改指**——外部持有的下标不会静默指向别的节点。空位由 `compact()` 显式回收。
 
 ```ts
-Socket.number; // "number"
-Socket.string; // "string"
-Socket.boolean; // "boolean"
-Socket.object; // "object"
-Socket.array; // "array"
-Socket.exec; // "exec"（纯执行流，不传数据）
-Socket.any; // "*"（与任意类型兼容）
+graph.addNode(spec); // 返回 NodeId，重复抛 Duplicate
+graph.mergeNode(spec); // upsert，新增返回 true
+graph.dropNode(id); // 级联删边、子节点提升到祖父
+graph.connect(from, to, options); // 返回 EdgeId
+graph.disconnect(edge);
 
-const url = new Socket("url", [Socket.string]); // url <-> string 也兼容
-Socket.number.matches(Socket.any); // true
+graph.weightOf(id); // 零分配读权重
+graph.updateNode(id, (w) => next);
+graph.setEdgeWeight(edge, w);
+
+graph.outNeighbors(id); // 数组，可重复遍历
+graph.outEdges(id);
+graph.between(a, b); // 全部平行边
+graph.outDegree(id);
+graph.forEachOut(id, (target, edge) => {}); // 零分配，返回 false 提前停止
+graph.forEachNode((id, weight) => {}); // 按存储顺序，不经 id 查表
+graph.forEachEdge((record) => {});
+
+graph.setParent(child, group); // 复合层级，内建环检测
+graph.batch(work); // 事务：事件推迟到最外层结束统一派发
+graph.compact(); // 回收空位并重新稠密编号
+graph.copy() / graph.subgraph(keep) / graph.union(other);
 ```
 
-### Vertex / Port
+### 节点与端口是声明，不是状态
 
-`Vertex` 是节点，携带类型化端口字典与任意权重载荷。端口是 `Input` / `Output` 实例，自持与之相连的边 ID 列表——邻接关系直接从端口派生，无中央缓存。
-
-端口可在 `addInput` / `addOutput` 时声明约束：
+`Vertex` 是节点模板，`Port` 是不可变的端口声明——两者都不持有任何连接状态，边由图独家持有。
+因此同一个模板可以复用去建多个节点、用在多张图上，也不存在"跨图共享导致度数互相污染"这回事。
 
 ```ts
-node.addInput("lhs", Socket.number, {
-  multiple: false, // 单连接（默认 true 允许多连）；违反时 connect 抛 Capacity
-  required: true, // 标记必填（声明性元数据）
-  fallback: 0, // 未连接时的默认值（声明性元数据）
+const template = new Vertex<Sockets, Sockets, string>(nodeId("a")).addInput("lhs", Socket.number, { multiple: false, required: true, fallback: 0 }).addOutput("sum", Socket.number);
+
+graph.addNode(template); // 按值拷入，之后改模板不影响图
+```
+
+`connect` 会校验端口存在、Socket 兼容（`Mismatch`）、单连接容量（`Capacity`）。
+
+## Snapshot：计算的输入
+
+```ts
+const snapshot = Snapshot.of(graph, {
+  weight: (edge) => edge.weight ?? 1, // 带权编译，省略则每条边按 1 计
+  node: (id, weight) => keep(id), // 节点过滤
+  edge: (edge) => (edge.weight ?? 0) > 5, // 边过滤
+  collapse: [groupId], // 把分组折叠成单节点
+  undirected: true, // 每条边在两端各出现一次
+  outbound: true, // 只编译出向，省一半内存与时间
 });
+
+snapshot.reverse(); // O(1)，与原快照共享底层数组
+snapshot.verify(); // 源图已变更则抛 Stale
 ```
 
-> `multiple` 默认 `true`（不限制连接数）。仅在声明 `multiple: false` 时，向已连接的端口再次连边会抛 `Capacity`。
+以前需要嵌套视图适配器（`reversed(new NodeFilter(g, p))`）的场景，现在是一次编译的几个选项。
+代价是编译要 O(V+E)，收益是运行期零开销、且不再有"视图上 `order` 是 O(V)"这类陷阱。
 
-端口自持边表，因此改动端口结构前必须先断开边——移除或覆盖仍连着边的端口会抛 `Attached`：
+出向与入向各是一个 `Adjacency`（`offset` / `other` / `edge` 三条数组绑在一起），
+所以"有没有入向"是一次判断而不是三个各自可空的字段。
+
+### 跨线程
+
+快照的 `data` 只含 typed-array 与字符串数组，可以直接 `postMessage`：
 
 ```ts
-node.removeInput("lhs"); // 该端口仍有边 → 抛 Attached
-node.addInput("lhs", Socket.string); // 覆盖仍有边的同名端口 → 抛 Attached
-
-graph.dropEdge(edgeId); // 先断边
-node.removeInput("lhs"); // → true
+worker.postMessage(snapshot.data);
+// Worker 侧
+const snapshot = Snapshot.from(data);
+settle(scc(snapshot));
 ```
 
-### Endpoint / Edge
+## Task：中断 / 分步 / 恢复
 
-`Edge` 是有向边，两端用 `Endpoint`（节点 + 端口）描述。`connect(from, to, options?)` 以 `[nodeId, portName]` 元组连接，创建边并触发 Socket 兼容性与端口约束校验。
-
-### Graph
-
-主容器，继承自 `Model`（存储 + CRUD + 权重事件 + 复合图 + 事务）并补充查询层。
-
-**计数与枚举**：`order`（节点数）/ `size`（边数）/ `nodes()` / `edges()`。
-
-**增删改与权重**：
+所有 O(V+E) 及以上的算法都返回 `Task`，中间状态全在实例上，因此随时可停、可续。
 
 ```ts
-graph.addNode(vertex); // 严格新增，重复抛 Duplicate；vertex 端口带边抛 Attached
-graph.mergeNode(vertex); // upsert：存在则更新权重，否则加入；返回 added
-graph.dropNode(id); // 删节点（级联删边、清空其端口、清理层次）
-graph.connect([a, "out"], [b, "in"]); // 建边
-graph.dropEdge(id);
+settle(task); // 同步跑完
+settle(task, signal); // 受 AbortSignal 中断，抛 Interrupted
+await schedule(task, { budget: 2048, signal, onProgress }); // 分帧推进，不冻结 UI
 
-graph.setNodeWeight(id, w); // 触发 nodeUpdated
-graph.updateNode(id, (w) => next); // 函数式更新
-graph.setEdgeWeight(id, w); // 触发 edgeUpdated
-graph.updateEdge(id, (w) => next);
-
-graph.node(id); // 取节点实例
-graph.edge(id); // 取边实例
-graph.copy(); // 深拷贝（结构 + 权重 + 层次）
-graph.subgraph(nodeIds); // 诱导子图（两端都在集合内的边）
-graph.union(other); // 并图（重复以本图为准）
-graph.emptyCopy();
-graph.clear(); // 清空全图，派发全部 dropped 事件
-graph.clearEdges(); // 只清边，派发 edgeDropped
+task.advance(100); // 手动推进 100 步，返回 false 表示已跑完
+task.progress; // 0..1
+task.settled;
+task.result(); // 未跑完抛 Incomplete——中间态一律不对外
 ```
 
-> **节点由图独占**：`addNode` 直接持有传入的 `Vertex`（不复制），而邻接关系存在端口的边表里——同一实例被两个图共享会让双方度数互相污染，故带连边的 `Vertex` 一律拒绝（抛 `Attached`）。`dropNode` 会清空被删节点的端口，因此"摘出来再放回去"是合法路径。跨图复制请用 `copy` / `subgraph` / `union`，它们会重建端口。
+中断不丢现场：
 
-**邻居与边查询**（lazy）：`inNeighbors` / `outNeighbors` / `neighbors`、`inEdges` / `outEdges` / `edgeViews`；`find` / `between` / `adjacent` / `endpoints`；度数 `inDegree` / `outDegree` / `degree`。
+```ts
+try {
+  settle(task, signal);
+} catch (error) {
+  if (error instanceof Interrupted) {
+    // 任务停在原处，换个时机继续跑就是了
+    const answer = settle(task);
+  }
+}
+```
 
-## Trait（能力接口）
-
-| Trait           | 能力                                                           |
-| --------------- | -------------------------------------------------------------- |
-| `Catalog`       | 节点 / 边枚举与计数 (`order` / `size` / `nodes()` / `edges()`) |
-| `Neighbors`     | 邻接查询 (`inNeighbors` / `outNeighbors` / `neighbors`)        |
-| `IntoEdges<E>`  | 流式边视图 (`inEdges` / `outEdges` / `edgeViews`)              |
-| `IntoDegree`    | 入度 / 出度查询                                                |
-| `Walkable`      | 可遍历（`Catalog` + `Neighbors`）                              |
-| `NodeIndexable` | O(1) `at(i)` / `indexOf(id)` / `bound()` 寻址                  |
-| `Hierarchy`     | 复合图层次 (`parent` / `children`)                             |
-| `Subscribable`  | 增量算法的事件订阅（暴露 `signal`）                            |
+组合器：`ready(value)` / `chain(first, next)` / `transform(task, convert)`，中断点贯穿组合后的全程。
 
 ## 算法
 
 ```ts
-import { ancestors, ancestry, astar, bellmanFord, bfs, bfsLevels, bidijkstra, bridges, components, condensation, criticalPath, csr, Csr, csrPath, cycles, degrees, descendants, dfs, dijkstra, dominator, floydWarshall, generations, IncrementalTopo, isCyclic, isolated, kruskal, neighborhood, path, postorder, prim, ranks, reachable, roots, scc, simpleCycles, sinks, sources, sssp, subtree, topology, toposort, transitiveClosure, transitiveReduction } from "@openconsole/graph";
+import { acyclic, ancestors, astar, bellmanFord, bfs, bidirectional, bottleneck, closure, components, condensation, criticalPath, cuts, degrees, descendants, dfs, dominators, floydWarshall, generations, isolated, kruskal, levels, neighborhood, Ordering, postorder, prim, ranks, reachable, reduction, scc, shortestPath, shortestPaths, simpleCycles, sinks, sources, topology, toposort, trace, visit } from "@openconsole/graph";
 ```
 
-- **拓扑**：`toposort` / `topology` / `cycles` / `isCyclic` / `ranks`（Kahn）；`generations`（拓扑分层，同层可并行）
-- **关键路径**：`criticalPath`（DAG 最长路，返回 `{ path, length }`）
-- **强连通**：`scc`（Pearce 2016 迭代实现，分量按逆拓扑序返回）；`condensation`（缩点为 DAG）
-- **弱连通**：`components`
-- **环枚举**：`simpleCycles`（Johnson，枚举所有简单环）
-- **遍历**：`dfs` / `bfs` / `postorder`
-- **可达 / 传递**：`reachable`（双向 BFS）/ `ancestors` / `descendants`；`transitiveClosure` / `transitiveReduction`（缩点 + 位图单遍传播）
-- **度数 / 邻域**：`degrees` / `sources` / `sinks` / `isolated` / `neighborhood`
-- **层次**：`roots`（顶层节点）/ `subtree`（子树）/ `ancestry`（祖先链）
-- **最短路**：`dijkstra`（非负权，返回 `{ distance, predecessor }`，配 `path` 重建）/ `bidijkstra` / `astar` / `bellmanFord`（容许负权，负环抛 `Cycle`）/ `floydWarshall`（全源，负环抛 `Cycle`）
-- **最小生成森林**：`prim` / `kruskal`（均接受 `undirected(graph)` 视图）
-- **连通结构**：`bridges`（桥 + 割点）/ `dominator`（Lengauer-Tarjan 支配树）
-- **CSR 编译**：`csr` / `Csr.compile`（typed-array 视图，结构冻结后多次跑算法；带权 `IntoEdges` 让最短路也能受益）
-- **CSR 原生算法**：`sssp`（整数下标空间的 Dijkstra，配 `csrPath` 重建路径）/ `bfsLevels`（Beamer 方向优化多源 BFS，返回层级数组）
+- **拓扑**：`topology`（环单列出来）/ `toposort`（遇环抛 `Cycle`）/ `acyclic` / `ranks` / `generations`（分层，同层可并行）/ `criticalPath`
+- **连通**：`components`（弱）/ `scc`（Pearce 2016）/ `condensation` / `simpleCycles`（Johnson）/ `cuts`（桥与割点）/ `dominators`（Lengauer-Tarjan）
+- **可达**：`reachable`（双向 BFS）/ `ancestors` / `descendants` / `closure`（按 SCC 存位图）/ `reduction`
+- **最短路**：`shortestPaths`（单源全树）/ `shortestPath`（单条）/ `astar` / `bidirectional` / `bellmanFord`（容许负权）/ `floydWarshall`（全源）
+- **生成森林**：`prim` / `kruskal`
+- **遍历**：`dfs` / `bfs`（生成器）/ `postorder` / `levels` / `visit`（事件式，带边分类）
+- **查询**：`degrees` / `sources` / `sinks` / `isolated` / `neighborhood` / `roots` / `subtree` / `ancestry`
+- **增量**：`Ordering`（Pearce-Kelly 增量拓扑序）
 
-> `sssp` 与 `dijkstra` 的稠密快路都**不做 decrease-key**：改善即入队，靠 `settled` 位图跳过过期条目，因此没有句柄簿记。`sssp` 还会扫一遍权重自动选队列 —— 非负整数且最大边权有界时走 [`BucketQueue`](../queue/README.md)（O(1) 出入队），否则走 `LazyQueue`。同一张图上实测：桶队列 **2.27x**、惰性堆 **1.56x**（对比原先的配对堆 + decrease-key），距离结果完全一致。
+### 提前终止不泄漏未收敛的值
 
-- **增量拓扑**：`IncrementalTopo`
+`shortestPath` 摸到终点即停，因此它**只**返回那一条路线，不给路径树——类型上就杜绝了
+"读提前终止时其他节点的距离"这种误用。需要全树就用 `shortestPaths`，它会跑完整个搜索。
 
-> `transitiveClosure` 返回的是真正的可达集：环上节点（含自环）**包含自身**，无环节点不含自身。只需"后代"语义时用 `descendants`。
+### 权重语义可换
 
-### 最短路示例
+Dijkstra 的贪心只要求 `combine(total, step) >= total`，满足这一点的语义共用同一份实现：
 
 ```ts
-const cost = (edge: EdgeView<number>) => edge.weight ?? 1;
-
-const tree = dijkstra(graph, start, undefined, cost); // 到所有可达节点
-path(tree, end); // start → end 路径；传 end 时 dijkstra 摸到即提前返回
-bidijkstra(graph, start, end, cost); // { distance, path } | undefined
-astar(graph, start, end, cost, (n) => heuristic(n));
-bellmanFord(graph, start, cost); // 容许负权；负环抛 Cycle
-floydWarshall(graph, cost); // Map<NodeId, Map<NodeId, number>>
+settle(shortestPaths(snapshot, source)); // 默认 sum：常规最短路
+settle(shortestPaths(snapshot, source, { combine: bottleneck })); // 最大边权最小的路线
 ```
 
-### CSR 热路径示例
+### 增量拓扑序
 
-结构冻结后编译一次，在同一快照上反复跑算法——距离与前驱都在整数下标空间，无对象分配、无字符串哈希。
+`Ordering` 订阅图事件就地重排。成环的边不触发重算，而是记入 `conflicts` 并排除在拓扑约束外——
+剩下的子图始终是 DAG，顺序始终有效，因此"编辑器里长期带环"不会让每次变更都退化成 O(V+E)。
 
 ```ts
-import { bfsLevels, csr, csrPath, sssp } from "@openconsole/graph";
-
-const compiled = csr(graph, (from, to) => weightOf(from, to)); // 带权编译
-
-const tree = sssp(compiled, start); // { dist: Float64Array, prev: Int32Array }
-tree.dist[compiled.indexOf(end)]; // 下标即节点索引，不可达为 Infinity
-csrPath(compiled, tree, end); // NodeId[]，不可达返回 []
-
-bfsLevels(compiled, [a, b]); // Int32Array 层级（多源，不可达为 -1）
+const ordering = new Ordering(graph);
+ordering.rank(node);
+ordering.sorted();
+ordering.cyclic; // O(1)
+ordering.cycles(); // 按需 O(V+E)
+ordering.dispose();
 ```
-
-> `Csr` 自身实现了 `Walkable` / `IntoDegree` / `NodeIndexable` / `IntoEdges<number>`，可直接喂给通用算法。注意其 `EdgeView.id` 是合成 id（`e{k}` / `i{k}`），**不对应原图 `EdgeId`**；`weight` 按 `(from, to)` 求值，无法区分平行边。
-
-## 复合图（层次）
-
-```ts
-import { ancestry, collapse, roots, subtree } from "@openconsole/graph";
-
-graph.setParent(child, group); // 归入分组（环检测内建）
-graph.parent(child); // group | undefined
-[...graph.children(group)]; // 直接子节点
-graph.unparent(child); // 解除父子关系
-
-roots(graph); // 所有顶层节点（无父）
-subtree(graph, group); // group 子树全部节点（含自身）
-ancestry(graph, child); // child 的祖先链（自底向上）
-
-// 折叠视图：把 group 当单节点、聚合跨层边，输出仍是合法 Walkable，可喂给任何算法
-const folded = collapse(graph, [group]);
-toposort(folded);
-```
-
-删除节点时，其子节点会自动提升到被删节点的父层。
-
-## 视图适配器（零成本）
-
-适配器只做 trait 转发，不持有底层数据副本；适配后仍满足相同 trait，可层层嵌套。
-
-```ts
-import { components, dfs, EdgeFilter, NodeFilter, reversed, undirected } from "@openconsole/graph";
-
-const ancestorsOf = dfs(reversed(graph), target); // 反向图：祖先遍历 / 反向拓扑
-const comps = components(graph); // 内部用 undirected 视图
-const onlyData = new NodeFilter(graph, (id) => graph.node(id)?.weight?.kind === "data");
-const heavy = new EdgeFilter(graph, (edge) => (edge.weight ?? 0) > 10);
-const view = reversed(new NodeFilter(graph, isData)); // 可嵌套
-```
-
-> `reversed` / `undirected` / `collapse` 均为工厂函数，边权重泛型自动从内层图推导。
-
-## 访问者
-
-```ts
-import { Dfs, visit } from "@openconsole/graph";
-
-// 1. 状态化遍历器：调用方控节奏
-const it = Dfs.start(graph, root);
-for (const id of it.iterator(graph)) {
-  /* ... */
-}
-
-// 2. 事件回调遍历：回调返回 "continue" / "prune" / "break"
-//    起点为 NodeId 序列，或 null = 按 nodes() 全图扫描
-visit(graph, [root], {
-  discover: (event) => (event.node === target ? "break" : "continue"),
-  backEdge: (event) => "continue", // 环检测点
-});
-```
-
-`Topo` 额外提供一次性消费：`Topo.start(graph).collect(graph, onCycle?)` 直接返回 `{ order, cycles }`，`toposort` / `topology` 就是它的两层封装（分别把 `onCycle` 定为抛错与原样追加）。
 
 ## 序列化
 
 ```ts
-import { apply, diff, invert, pack, packRemap, unpack, unpackRemap } from "@openconsole/graph";
+const bundle = pack(graph); // 元组化紧凑格式
+const bundle = pack(graph, { intern: true, order: toposorted }); // 短 id + 稳定顺序
+const restored = unpack<N, E>(bundle);
 
-const compact = pack(graph); // 紧凑格式（含端口约束与复合层次）
-const restored = unpack(compact);
-
-const { compact: remapped, remap } = packRemap(graph); // 长 UUID → 短整数
-const round = unpackRemap({ compact: remapped, remap });
-
-const ops = diff(before, after); // 结构化差异（节点 / 边 / 权重 / 端口结构 / 层次变更）
-apply(target, ops);
-apply(target, invert(ops)); // undo
+const changes = diff(before, after); // 结构化差异
+apply(graph, changes);
+apply(graph, invert(changes)); // 撤销
 ```
 
-`Graph.toJSON()` 输出纯对象快照（含层次与端口约束）；`compressionRatio(graph)` 估算压缩率。
+`Compact<N, E>` 带权重泛型，因此还原时不需要任何类型断言。端口结构变了的节点按"删除 + 重建"
+处理；边 id 会被自由表回收复用，所以 `diff` 判定"是不是同一条边"时除了 id 还比端点。
 
-## 变更事件
+## 事件
 
 ```ts
 graph.signal.on("nodeAdded", ({ node }) => {});
-graph.signal.on("nodeDropped", ({ node }) => {});
-graph.signal.on("nodeUpdated", ({ node, before, after }) => {});
-graph.signal.on("edgeAdded", ({ edge }) => {});
-graph.signal.on("edgeDropped", ({ edge }) => {});
-graph.signal.on("edgeUpdated", ({ edge, before, after }) => {});
-graph.signal.watch((type, payload) => {}); // 通配
+graph.signal.on("edgeDropped", ({ edge, source, target, weight }) => {});
+graph.signal.on("parentChanged", ({ node, before, after }) => {});
+graph.signal.watch((type, payload) => {});
 ```
 
-底层走 [`@openconsole/signal`](../signal/README.md)，支持 `AbortSignal` / `Symbol.dispose` / `once` / `rescue`。`Model.batch(work)` 把一批 CRUD 事件推迟到事务末尾统一派发。
+七类事件：`nodeAdded` / `nodeDropped` / `nodeUpdated` / `edgeAdded` / `edgeDropped` /
+`edgeUpdated` / `parentChanged`。载荷是值快照而非活对象，因此在事务里缓冲、稍后派发也不会
+读到已失效的状态。`clear()` 走删除原语，订阅者不会与图失同步。
 
-`clear()` / `clearEdges()` 走 `dropNode` / `dropEdge` 原语，会派发完整的 dropped 事件（合并在一个事务里），因此 `IncrementalTopo` 等订阅者不会与图失同步。层级变更（`setParent` / `unparent`）不派发事件，需要时用 `diff` 捕获。
+## 性能
+
+`pnpm --filter @openconsole/graph bench`，V=5000 / E=39992 的随机 DAG：
+
+| 操作                          | 均值    |
+| ----------------------------- | ------- |
+| 全图邻接遍历 — `outNeighbors` | 0.22 ms |
+| 全图邻接遍历 — `forEachOut`   | 0.27 ms |
+| 全图邻接遍历 — 快照 CSR 直读  | 0.04 ms |
+| `Snapshot.of` 双向带权        | 5.41 ms |
+| `Snapshot.of` 单向带权        | 4.82 ms |
+| `toposort`                    | 0.29 ms |
+| `components`                  | 0.33 ms |
+| `scc`                         | 0.40 ms |
+| `shortestPaths`               | 0.39 ms |
+
+**编译一次约等于 15–20 次算法运行**，所以这套架构的适用形态是「批量编辑 → 编译一次 → 跑一批算法」。
+只跑单个算法且图频繁变动时，编译会占掉绝大部分时间——这是"算法只有一套实现"换来的确定性代价，
+用 `outbound: true` 可以省掉其中约 15%。
+
+`forEachOut` 比 `outNeighbors` 略慢是因为它额外解析了边 id；它的价值是拿边 id 时不分配数组，
+不是比取邻居更快。
 
 ## 模块边界
 
 ```
 core/
-├── types/        - 品牌 ID、Socket 字典、能力 trait、事件、序列化形态（纯类型层）
-├── model/        - Socket / Port / Vertex / Endpoint / Edge / Model / Graph / StableGraph（运行时元模型）
-├── traverse/     - Dfs / Bfs / Topo / Postorder 遍历器 + visit 事件遍历
-├── view/         - reversed / undirected / collapse / NodeFilter / EdgeFilter 零成本视图
-│                  （Forwarding 基类统一转发节点集合与下标寻址）
-├── algorithms/   - 仅依赖 trait，按职责分组：
-│   ├── traversal.ts   dfs / bfs / postorder
-│   ├── topology/      toposort / generations / criticalPath / IncrementalTopo
-│   ├── connectivity/  components / scc / condensation / simpleCycles / bridges / dominator
-│   ├── path/          dijkstra / bidijkstra / astar / bellmanFord / floydWarshall
-│   ├── spanning.ts    prim / kruskal
-│   ├── query/         degrees / neighborhood / hierarchy / reachable / transitive
-│   └── compiled/      csr / sssp / bfsLevels（CSR 快照上的原生实现）
-├── serialize/    - pack / unpack / remap / diff 紧凑序列化
-│                  （kernel 提供打包/还原内核，pack 与 packRemap 只差一层 id 映射）
-└── support/      - 包内共享支撑：能力探测、节点索引、端口与 JSON 导出（不对外导出）
+├── ident / error / event      品牌 id、错误体系、事件类型
+├── socket / vertex            Socket 类型系统、节点模板与端口声明（无状态）
+├── slots                      稳定索引分配器，节点与边共用
+├── graph                      编辑层：存储 + CRUD + 层级 + 事务 + 事件
+├── snapshot                   不可变 CSR + 编译期视图
+├── task                       Task / settle / schedule / 组合器
+├── algorithm/                 只吃快照，每个算法一套实现
+└── serialize/                 紧凑格式与结构化差异
 ```
 
-依赖方向单向收敛：`view/` 只认 trait（完全不知道 `Graph` 存在），`algorithms/` 只在抛错时反向引用 `model/` 的错误类，`serialize/` 是唯一同时依赖具体类与算法的层。
+依赖单向收敛：`algorithm/` 只认 `Snapshot` 与 `Task`；`serialize/` 是唯一同时依赖 `Graph`
+与格式定义的层；`slots` 谁都不认。
 
 ## 设计要点
 
-- **无中央邻接缓存**：邻接关系直接由端口的边列表派生，结构变更立刻反映，无失效钩子
-- **算法不挂在 Graph 上**：通过 trait 解耦为独立函数，核心类轻、易测试与组合
-- **节点由图独占**：端口自持边表，跨图共享同一 `Vertex` 会污染双方度数，故带连边的节点不能加入图、仍连边的端口不能移除或覆盖（均抛 `Attached`）
-- **删除后的下标语义二选一**：`Graph` 走 swap-and-pop（O(1) 但**会打乱下标**），需要长期持有下标引用时用 `StableGraph`（free-list 空位复用，`at(i)` 稳定，代价是 `bound()` 计入空位、`at()` 可能返回 `undefined`）
-- **能力探测统一在一处**：trait 是可选实现，视图与算法运行时嗅探（`hasEdges` / `hasDegree` / `hasIndex`），命中走直通快路径、否则退化通用实现，两条路结果一致
-- **无向用视图而非改模型**：端口天生有向；`undirected(graph)` 为 `components` / `prim` / `kruskal` 等无向算法统一提供合并方向的视图
-- **热路径用 CSR**：端口模型的邻接查询有一层边解引用开销；结构冻结后用 `csr(graph)` 编译为 typed-array 视图再跑算法。实测（V=5000 / E≈40000 的弱连通分量）：`Graph` 邻接 + `Set<NodeId>` 58.7ms → CSR 邻接 + `Set<NodeId>` 7.6ms → CSR 邻接 + `Uint8Array` 0.68ms（合计 **86x**），一次编译约 82ms，**从第二次遍历起就回本**
-- **通用算法保持 trait 化，不为性能牺牲通用性**：`components` / `reachable` / `visit` 这类算法接受任意 `Walkable`，内部仍用 `Set<NodeId>`——把它们改成整数下标只能拿到约 1.5x（`NodeId → 下标` 的转换成本抵掉了大半）。真正的数量级收益来自「先 `csr()` 编译，再跑整数原生实现」，这是 `compiled/` 目录存在的理由
-- **视图上的计数不是 O(1)**：`NodeFilter.order` / `EdgeFilter.size` / `Collapsed.order` 都是遍历实现，别放进循环条件里
+- **可变与不可变分家**：编辑走 `Graph`，计算走 `Snapshot`。算法因此只有一套实现，不存在
+  "通用版 + 编译版"两条需要同步维护的代码路径。
+- **视图是编译选项，不是运行期包装**：过滤 / 折叠 / 无向化一次做完，运行期零开销。
+- **删除后索引稳定**：自由表复用空位，已发出的下标永不改指；要回收空位就显式 `compact()`。
+- **不可变在类型层面成立**：快照暴露的是只读的 `Ints` / `Reals`，不是可写的 typed-array。
+- **索引访问契约收在一处**：`at()` 供外部查询（越界返回 `undefined`），`label()` / `key()`
+  供内部遍历（越界即程序错误），因此算法里没有一处非空断言。
+- **中间态不对外**：`result()` 在跑完之前抛 `Incomplete`，提前终止的接口不返回全量结构。
+- **端口是声明**：`Vertex` / `Port` 无状态，可复用、可跨图，没有"节点被图独占"这类限制。
 
 ## 开发
 
 ```bash
+pnpm --filter @openconsole/graph test        # vitest run
 pnpm --filter @openconsole/graph typecheck   # tsc --noEmit
-pnpm --filter @openconsole/graph doc         # typedoc 生成 API 文档
+pnpm --filter @openconsole/graph bench       # vitest bench --run
+pnpm --filter @openconsole/graph doc         # typedoc
 ```
 
-基准（`tests/agroup.bench.ts`，V=5000 / E≈40000，`vitest bench` 运行）：
-
-```bash
-pnpm --filter @openconsole/graph exec vitest bench --run
-```
-
-同一张图上单源最短路，CSR 原生 `sssp` 比 `Graph` 上的稠密快路快 **9.7x**、比通用 Map/Set 实现快 **13.4x**；但一次 CSR 编译的成本约等于 3.5 次 `Graph` 上的 Dijkstra——**编译一次多次查询才划算**。
+测试以 property-based 对拍为主：随机图上把 `scc` / `toposort` / `dijkstra` / `dominators` /
+`cuts` / `closure` 的结果与各自独立的朴素实现逐一比对，覆盖 Task 的中断续跑、快照的编译选项与
+跨线程还原、序列化往返与撤销。
 
 ## License
 
