@@ -4,11 +4,9 @@ import { Capacity, Cycle, Duplicate, Mismatch, Missing } from "./error";
 import type { Events } from "./event";
 import { edgeId, type EdgeId, type GraphId, type NodeId } from "./ident";
 import { gather, Slots } from "./slots";
-import type { Port } from "./vertex";
+import type { Ports } from "./vertex";
 
 const NONE = -1;
-
-export type Ports = Readonly<Record<string, Port | undefined>>;
 
 /** 加入图所需的节点描述。{@link Vertex} 与 {@link NodeRecord} 都满足它，故可直接互相搬运。 */
 export interface NodeSpec<W = unknown> {
@@ -178,6 +176,41 @@ export class Graph<N = unknown, E = unknown> {
       inputs: this._inputs[u]!,
       outputs: this._outputs[u]!,
     };
+  }
+
+  /**
+   * 替换节点的端口集合，尽量保住现有连线。省略的一侧保持不变。
+   *
+   * 三类边会被断开并派发 `edgeDropped`：端口消失、Socket 不再兼容、超出新的单连接容量
+   * （保留最早那条）。断边而不是抛错，因为这是编辑器动作——上层靠事件决定是否提示与撤销。
+   *
+   * @throws {@link Missing} 节点不存在
+   */
+  public reshape(
+    node: NodeId,
+    ports: Pick<NodeSpec, "inputs" | "outputs">,
+  ): this {
+    const u = this._nodes.indexOf(node);
+    if (u < 0) throw new Missing("node", node, "reshape");
+
+    const inputs =
+      ports.inputs === undefined ? this._inputs[u]! : { ...ports.inputs };
+    const outputs =
+      ports.outputs === undefined ? this._outputs[u]! : { ...ports.outputs };
+    this._inputs[u] = inputs;
+    this._outputs[u] = outputs;
+
+    const stale = new Set<EdgeId>();
+    this._prune(this._out[u]!, outputs, true, stale);
+    this._prune(this._in[u]!, inputs, false, stale);
+
+    this.batch(() => {
+      for (const edge of stale) this.disconnect(edge);
+      this._touch(() =>
+        this.signal.emit("nodeReshaped", { node, inputs, outputs }),
+      );
+    });
+    return this;
   }
 
   /** 零分配地读节点权重。 */
@@ -387,20 +420,37 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  /** 零分配地枚举出边；`visit` 返回 `false` 可提前停止。 */
+  /**
+   * 零分配地枚举出边；`visit` 返回 `false` 可提前停止。
+   * `port` 是本端（源侧）的端口名，据此可只处理某个引脚上的连接。
+   */
   public forEachOut(
     node: NodeId,
-    visit: (target: NodeId, edge: EdgeId) => boolean | void,
+    visit: (target: NodeId, edge: EdgeId, port: string) => boolean | void,
   ): void {
     this._walk(node, true, visit);
   }
 
-  /** 零分配地枚举入边；`visit` 返回 `false` 可提前停止。 */
+  /** 零分配地枚举入边；`port` 是本端（目标侧）的端口名。 */
   public forEachIn(
     node: NodeId,
-    visit: (source: NodeId, edge: EdgeId) => boolean | void,
+    visit: (source: NodeId, edge: EdgeId, port: string) => boolean | void,
   ): void {
     this._walk(node, false, visit);
+  }
+
+  /**
+   * 某个输出端口连出的目标。多连接端口返回其中第一个，无连接返回 `undefined`。
+   *
+   * @remarks 编排执行器的最内层查询——"这个引脚接到哪"。直读平行数组，无中间数组与对象。
+   */
+  public linkedTo(node: NodeId, port: string): NodeId | undefined {
+    return this._peer(node, port, true);
+  }
+
+  /** 某个输入端口的来源，语义同 {@link Graph.linkedTo}。 */
+  public linkedFrom(node: NodeId, port: string): NodeId | undefined {
+    return this._peer(node, port, false);
   }
 
   /** 全部 `source → target` 的平行边。 */
@@ -607,14 +657,72 @@ export class Graph<N = unknown, E = unknown> {
   private _walk(
     node: NodeId,
     outward: boolean,
-    visit: (other: NodeId, edge: EdgeId) => boolean | void,
+    visit: (other: NodeId, edge: EdgeId, port: string) => boolean | void,
   ): void {
     const list = this._incident(node, outward);
     const ends = outward ? this._to : this._from;
+    const ports = outward ? this._fromPort : this._toPort;
     for (let i = 0; i < list.length; i++) {
       const e = list[i]!;
-      if (visit(this._nodes.key(ends[e]!), this._edges.key(e)) === false)
-        return;
+      const stop =
+        visit(this._nodes.key(ends[e]!), this._edges.key(e), ports[e]!) ===
+        false;
+      if (stop) return;
+    }
+  }
+
+  private _peer(
+    node: NodeId,
+    port: string,
+    outward: boolean,
+  ): NodeId | undefined {
+    const u = this._nodes.indexOf(node);
+    if (u < 0) return undefined;
+    const list = outward ? this._out[u]! : this._in[u]!;
+    const ports = outward ? this._fromPort : this._toPort;
+    const ends = outward ? this._to : this._from;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i]!;
+      if (ports[e] === port) return this._nodes.key(ends[e]!);
+    }
+    return undefined;
+  }
+
+  /** 收集在新端口集合下不再合法的边。 */
+  private _prune(
+    list: number[],
+    own: Ports,
+    outward: boolean,
+    stale: Set<EdgeId>,
+  ): void {
+    const ownPorts = outward ? this._fromPort : this._toPort;
+    const peerPorts = outward ? this._toPort : this._fromPort;
+    const peerNodes = outward ? this._to : this._from;
+    const peerSide = outward ? this._inputs : this._outputs;
+    const taken = new Set<string>();
+
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i]!;
+      const name = ownPorts[e]!;
+      const port = own[name];
+      if (!port) {
+        stale.add(this._edges.key(e));
+        continue;
+      }
+      // 兼容性按边的实际方向判定——`accepts` 的 compatible 列表不对称。
+      const peer = peerSide[peerNodes[e]!]![peerPorts[e]!];
+      const fits =
+        peer !== undefined &&
+        (outward
+          ? port.socket.accepts(peer.socket)
+          : peer.socket.accepts(port.socket));
+      if (!fits) {
+        stale.add(this._edges.key(e));
+        continue;
+      }
+      if (port.multiple) continue;
+      if (taken.has(name)) stale.add(this._edges.key(e));
+      else taken.add(name);
     }
   }
 

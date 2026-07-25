@@ -40,7 +40,6 @@
     "doc": "typedoc"
   },
   "dependencies": {
-    "@openconsole/heap": "workspace:*",
     "@openconsole/queue": "workspace:*",
     "@openconsole/signal": "workspace:*"
   },

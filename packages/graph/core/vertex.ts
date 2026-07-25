@@ -30,6 +30,9 @@ export class Port<S extends Socket = Socket> {
   }
 }
 
+/** 按名称索引的端口集合。 */
+export type Ports = Readonly<Record<string, Port | undefined>>;
+
 type Declared<S extends Sockets> = { [K in keyof S]?: Port<S[K]> };
 
 /**

@@ -96,9 +96,6 @@ importers:
 
   packages/graph:
     dependencies:
-      '@openconsole/heap':
-        specifier: workspace:*
-        version: link:../heap
       '@openconsole/queue':
         specifier: workspace:*
         version: link:../queue

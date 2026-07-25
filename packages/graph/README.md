@@ -52,9 +52,13 @@ graph.outNeighbors(id); // 数组，可重复遍历
 graph.outEdges(id);
 graph.between(a, b); // 全部平行边
 graph.outDegree(id);
-graph.forEachOut(id, (target, edge) => {}); // 零分配，返回 false 提前停止
+graph.forEachOut(id, (target, edge, port) => {}); // 零分配，返回 false 提前停止
 graph.forEachNode((id, weight) => {}); // 按存储顺序，不经 id 查表
 graph.forEachEdge((record) => {});
+
+graph.linkedTo(id, "then"); // 某个输出端口的对端，零分配
+graph.linkedFrom(id, "value"); // 某个输入端口的来源
+graph.reshape(id, { outputs }); // 换端口集合，保住仍然合法的连线
 
 graph.setParent(child, group); // 复合层级，内建环检测
 graph.batch(work); // 事务：事件推迟到最外层结束统一派发
@@ -74,6 +78,27 @@ graph.addNode(template); // 按值拷入，之后改模板不影响图
 ```
 
 `connect` 会校验端口存在、Socket 兼容（`Mismatch`）、单连接容量（`Capacity`）。
+
+节点上线后还能换端口——`reshape` 尽量保住现有连线，只断三类边：端口消失、Socket 不再兼容、
+超出收紧后的单连接容量（保留最早那条）。它断边而不抛错，因为这是编辑器动作；被断的边照常派发
+`edgeDropped`，上层据此提示或计入撤销栈。
+
+```ts
+graph.reshape(node, { outputs: { "0": pin, "1": pin } }); // 加一路输出，"0" 上的连线不动
+graph.reshape(node, { inputs: {}, outputs: {} }); // 断掉该节点全部连线，节点保留
+```
+
+### 按端口查连接
+
+端口是这个模型的一等概念，所以"某个引脚接到哪"是直读平行数组的一次线性扫，没有中间数组、
+没有边对象分配：
+
+```ts
+const next = graph.linkedTo(node, "then"); // 单连接引脚
+graph.forEachOut(node, (target, edge, port) => {
+  if (port === "main") consume(target); // 多连接引脚
+});
+```
 
 ## Snapshot：计算的输入
 
@@ -193,21 +218,25 @@ apply(graph, changes);
 apply(graph, invert(changes)); // 撤销
 ```
 
-`Compact<N, E>` 带权重泛型，因此还原时不需要任何类型断言。端口结构变了的节点按"删除 + 重建"
-处理；边 id 会被自由表回收复用，所以 `diff` 判定"是不是同一条边"时除了 id 还比端点。
+`Compact<N, E>` 带权重泛型，因此还原时不需要任何类型断言。边 id 会被自由表回收复用，所以
+`diff` 判定"是不是同一条边"时除了 id 还比端点。
+
+端口结构变了的节点，`diff` 按"删除 + 重建"处理——`apply` 的结果与 `reshape` 等价，但补丁更大
+（连带产出那些边的重建操作）。要精确记录引脚变更时，直接把 `reshape` 记进自己的撤销栈。
 
 ## 事件
 
 ```ts
 graph.signal.on("nodeAdded", ({ node }) => {});
 graph.signal.on("edgeDropped", ({ edge, source, target, weight }) => {});
+graph.signal.on("nodeReshaped", ({ node, inputs, outputs }) => {});
 graph.signal.on("parentChanged", ({ node, before, after }) => {});
 graph.signal.watch((type, payload) => {});
 ```
 
-七类事件：`nodeAdded` / `nodeDropped` / `nodeUpdated` / `edgeAdded` / `edgeDropped` /
-`edgeUpdated` / `parentChanged`。载荷是值快照而非活对象，因此在事务里缓冲、稍后派发也不会
-读到已失效的状态。`clear()` 走删除原语，订阅者不会与图失同步。
+八类事件：`nodeAdded` / `nodeDropped` / `nodeUpdated` / `nodeReshaped` / `edgeAdded` /
+`edgeDropped` / `edgeUpdated` / `parentChanged`。载荷是值快照而非活对象，因此在事务里缓冲、
+稍后派发也不会读到已失效的状态。`clear()` 走删除原语，订阅者不会与图失同步。
 
 ## 性能
 
@@ -260,6 +289,9 @@ core/
   供内部遍历（越界即程序错误），因此算法里没有一处非空断言。
 - **中间态不对外**：`result()` 在跑完之前抛 `Incomplete`，提前终止的接口不返回全量结构。
 - **端口是声明**：`Vertex` / `Port` 无状态，可复用、可跨图，没有"节点被图独占"这类限制。
+- **不预设编排形态**：`Socket.exec` 只是个预置常量名，图本身不认识它的含义；`N` / `E` 完全
+  不透明；连线可以成环（只有层级禁环）。执行语义留给上层，n8n 式数据流、Node-RED 式消息流、
+  蓝图式 exec/data 双轨都能落在同一个底座上。
 
 ## 开发
 
