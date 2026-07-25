@@ -33,13 +33,11 @@ export type Outputs<O extends Sockets> = { [K in keyof O]?: Output<O[K]> };
 
 /**
  * 带输入/输出端口的图节点。
- * @typeParam W - 节点权重（payload）类型。
  */
 export type Node<W = unknown> = Vertex<Sockets, Sockets, W>;
 
 /**
  * 端口字典：按名称索引的端口集合（各项可空）。
- * @typeParam P - 端口类型。
  */
 export type Ports<P extends Port = Port> = {
   readonly [key: string]: P | undefined;

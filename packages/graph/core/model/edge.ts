@@ -3,8 +3,6 @@ import type { Endpoint } from "./endpoint";
 
 /**
  * 有向边：从源端点指向目标端点，并携带可选权重。
- *
- * @typeParam W - 边权重类型
  */
 export class Edge<W = unknown> {
   /** 边权重（可选）。 */

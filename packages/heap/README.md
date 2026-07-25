@@ -2,6 +2,9 @@
 
 两种互补的堆实现:常数小的数组二叉堆,与带稳定句柄、支持 decrease-key 的配对堆。
 
+> 元素本身就是**整数下标**(节点编号、数组位置)时,用 [`@openconsole/queue`](../queue/README.md)——
+> 它把优先级留在调用方的平行数组里,零元素对象分配、零比较器回调。**堆存值,队列排下标。**
+
 ## 特性
 
 - **数组二叉堆** `BinaryHeap`:纯优先队列场景常数最小;批量入堆走 Floyd O(n) 建堆
@@ -30,6 +33,9 @@
 | 出堆前需要调整优先级(Dijkstra / A\* 的 decrease-key) | `PairingHeap` | 句柄稳定,`update` 摊销 O(log n)         |
 | 需要按元素删除任意位置                               | `PairingHeap` | 句柄删除 O(log n);二叉堆按值删除是 O(n) |
 | 需要频繁合并两个堆                                   | `PairingHeap` | `meld` 天然 O(1)                        |
+
+> 若元素是整数下标且需要 decrease-key,先看 [`@openconsole/queue`](../queue/README.md):
+> 同一张图上实测,去掉 decrease-key 的惰性队列比配对堆快 1.56x,桶队列快 2.27x。
 
 ## 使用指南
 

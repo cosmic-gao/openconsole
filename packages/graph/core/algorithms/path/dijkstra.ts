@@ -1,4 +1,5 @@
 import { PairingHeap, type PairingNode } from "@openconsole/heap";
+import { LazyQueue } from "@openconsole/queue";
 
 import { Negative } from "../../model";
 import { hasIndex } from "../../support";
@@ -18,11 +19,6 @@ export interface Path {
 
 interface Reach {
   readonly node: NodeId;
-  readonly dist: number;
-}
-
-interface Dense {
-  readonly i: number;
   readonly dist: number;
 }
 
@@ -46,7 +42,11 @@ export function dijkstra<E, G extends Catalog & IntoEdges<E>>(
   return sparse(graph, start, end, edgeCost);
 }
 
-/** 稠密整数下标快路：visited/distance/前驱/句柄全部按 {@link NodeIndexable.indexOf} 下标存入 typed-array。 */
+/**
+ * 稠密整数下标快路：距离 / 前驱 / 访问标记全部按 {@link NodeIndexable.indexOf}
+ * 下标存入 typed-array，优先队列走 {@link LazyQueue}——改善即入队，靠 `settled`
+ * 位图跳过过期条目，因此不需要 decrease-key 也不需要句柄簿记。
+ */
 function dense<E>(
   graph: Catalog & IntoEdges<E> & NodeIndexable,
   start: NodeId,
@@ -65,38 +65,33 @@ function dense<E>(
   const prev = new Int32Array(n).fill(-1);
   const settled = new Uint8Array(n);
   const reached = new Uint8Array(n);
-  const handles = new Array<PairingNode<Dense> | undefined>(n);
-  const heap = new PairingHeap<Dense>((a, b) => a.dist - b.dist);
+  const queue = new LazyQueue(n);
 
   dist[s] = 0;
   reached[s] = 1;
-  handles[s] = heap.push({ i: s, dist: 0 });
+  queue.push(s, 0);
 
-  while (!heap.empty()) {
-    const top = heap.poll()!;
-    const u = top.i;
-    handles[u] = undefined;
+  for (let u = queue.poll(); u !== -1; u = queue.poll()) {
+    // 下标首次出队时携带的必是其最小距离，其余条目一律过期。
+    if (settled[u] === 1) continue;
     settled[u] = 1;
 
     const uid = graph.at(u)!;
     if (uid === end) break;
 
+    const base = dist[u]!;
     for (const edge of graph.outEdges(uid)) {
       const v = graph.indexOf(edge.target);
       if (v < 0 || settled[v] === 1) continue;
       const cost = edgeCost(edge);
       if (cost < 0) throw new Negative(cost, edge.id);
-      const candidate = top.dist + cost;
+      const candidate = base + cost;
 
-      if (reached[v] === 0) {
+      if (reached[v] === 0 || candidate < dist[v]!) {
         reached[v] = 1;
         dist[v] = candidate;
         prev[v] = u;
-        handles[v] = heap.push({ i: v, dist: candidate });
-      } else if (candidate < dist[v]!) {
-        dist[v] = candidate;
-        prev[v] = u;
-        heap.update(handles[v]!, { i: v, dist: candidate });
+        queue.push(v, candidate);
       }
     }
   }

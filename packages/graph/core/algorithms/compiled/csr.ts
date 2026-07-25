@@ -13,28 +13,27 @@ import type {
 } from "../../types";
 
 /**
- * 将图编译为 CSR（压缩稀疏行）结构：用 typed-array 紧凑存储邻接，适合在同一快照上多次跑算法。
- * 节点按首次出现顺序索引（labels/index），可选携带正反向权重。
- * 注意：edgeViews/inEdges/outEdges 产出的 EdgeView.id 是合成 id（e{k}/i{k}），不对应原图 EdgeId，仅供需要权重的算法消费。
+ * CSR（压缩稀疏行）快照：typed-array 紧凑存储邻接，适合在同一快照上多次跑算法。
+ * 节点按首次出现顺序编号，可选携带正反向权重。
+ *
+ * @remarks `edgeViews` / `inEdges` / `outEdges` 产出的 `EdgeView.id` 是合成 id（`e{k}` / `i{k}`），
+ *   **不对应原图 `EdgeId`**，也无法区分平行边。
  */
 export class Csr
   implements Walkable, IntoDegree, NodeIndexable, IntoEdges<number>
 {
-  /** 出边的行偏移数组，长度 order+1；节点 i 的出边切片为 [outOffsets[i], outOffsets[i+1])。 */
+  /** 行偏移，长度 `order+1`；节点 i 的出边切片为 `[outOffsets[i], outOffsets[i+1])`。 */
   public readonly outOffsets: Int32Array;
-  /** 出边目标的节点索引（非 NodeId），按 outOffsets 切片访问。 */
+  /** 出边目标的**节点索引**（非 NodeId），按 {@link Csr.outOffsets} 切片访问。 */
   public readonly outTargets: Int32Array;
-  /** 入边的行偏移数组，长度 order+1；语义同 outOffsets。 */
   public readonly inOffsets: Int32Array;
-  /** 入边源的节点索引（非 NodeId），按 inOffsets 切片访问。 */
   public readonly inTargets: Int32Array;
-  /** 按索引顺序排列的节点 id 表（index 的逆映射）。 */
+  /** 按索引排列的节点 id（{@link Csr.index} 的逆映射）。 */
   public readonly labels: ReadonlyArray<NodeId>;
-  /** NodeId 到内部数组索引的映射。 */
   public readonly index: ReadonlyMap<NodeId, number>;
-  /** 与 outTargets 对齐的出边权重；未编译权重时为 undefined。 */
+  /** 与 {@link Csr.outTargets} 对齐；未编译权重时为 `undefined`。 */
   public readonly weights: Float64Array | undefined;
-  /** 与 inTargets 对齐的入边权重；未编译权重时为 undefined。 */
+  /** 与 {@link Csr.inTargets} 对齐；未编译权重时为 `undefined`。 */
   public readonly inWeights: Float64Array | undefined;
 
   private constructor(init: {
@@ -57,22 +56,19 @@ export class Csr
     this.inWeights = init.inWeights;
   }
 
-  /** 节点数。 */
   public get order(): number {
     return this.labels.length;
   }
 
-  /** 出边总数。 */
   public get size(): number {
     return this.outTargets.length;
   }
 
-  /** 遍历所有节点 id。 */
   public nodes(): Iterable<NodeId> {
     return this.labels;
   }
 
-  /** 遍历所有边的合成 id（e{k}），不对应原图 EdgeId。 */
+  /** 合成 id `e{k}`，不对应原图 `EdgeId`。 */
   public edges(): Iterable<EdgeId> {
     const count = this.outTargets.length;
     return {
@@ -82,7 +78,7 @@ export class Csr
     };
   }
 
-  /** 遍历邻居节点；direction 为 'input'/'output' 时只取一侧，省略则先入后出全取。 */
+  /** 省略 `direction` 时先入邻居后出邻居。 */
   public *neighbors(nodeId: NodeId, direction?: Direction): Iterable<NodeId> {
     if (direction === "input") {
       yield* this.inNeighbors(nodeId);
@@ -96,7 +92,6 @@ export class Csr
     yield* this.outNeighbors(nodeId);
   }
 
-  /** 遍历指向 nodeId 的入边邻居（前驱节点）。 */
   public *inNeighbors(nodeId: NodeId): Iterable<NodeId> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
@@ -105,7 +100,6 @@ export class Csr
     for (let k = start; k < end; k++) yield this.labels[this.inTargets[k]!]!;
   }
 
-  /** 遍历 nodeId 出边邻居（后继节点）。 */
   public *outNeighbors(nodeId: NodeId): Iterable<NodeId> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
@@ -114,7 +108,6 @@ export class Csr
     for (let k = start; k < end; k++) yield this.labels[this.outTargets[k]!]!;
   }
 
-  /** 遍历所有出边视图（含权重）。EdgeView.id 是合成 id（e{k}），不对应原图 EdgeId。 */
   public *edgeViews(): Iterable<EdgeView<number>> {
     for (let i = 0; i < this.labels.length; i++) {
       const source = this.labels[i]!;
@@ -131,7 +124,6 @@ export class Csr
     }
   }
 
-  /** 遍历指向 nodeId 的入边视图（含权重）。EdgeView.id 是合成 id（i{k}），不对应原图 EdgeId。 */
   public *inEdges(nodeId: NodeId): Iterable<EdgeView<number>> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
@@ -148,7 +140,6 @@ export class Csr
     }
   }
 
-  /** 遍历 nodeId 出边视图（含权重）。EdgeView.id 是合成 id（e{k}），不对应原图 EdgeId。 */
   public *outEdges(nodeId: NodeId): Iterable<EdgeView<number>> {
     const i = this.index.get(nodeId);
     if (i === undefined) return;
@@ -165,39 +156,34 @@ export class Csr
     }
   }
 
-  /** nodeId 的入度；未知节点返回 0。 */
+  /** 未知节点返回 0。 */
   public inDegree(nodeId: NodeId): number {
     const i = this.index.get(nodeId);
     if (i === undefined) return 0;
     return this.inOffsets[i + 1]! - this.inOffsets[i]!;
   }
 
-  /** nodeId 的出度；未知节点返回 0。 */
+  /** 未知节点返回 0。 */
   public outDegree(nodeId: NodeId): number {
     const i = this.index.get(nodeId);
     if (i === undefined) return 0;
     return this.outOffsets[i + 1]! - this.outOffsets[i]!;
   }
 
-  /** 索引上界，等于节点数；可作 typed-array 缓冲的尺寸。 */
   public bound(): number {
     return this.labels.length;
   }
 
-  /** 按索引取节点 id；越界返回 undefined。 */
   public at(index: number): NodeId | undefined {
     return this.labels[index];
   }
 
-  /** 取节点的内部索引；未知节点返回 -1。 */
+  /** 未知节点返回 -1。 */
   public indexOf(nodeId: NodeId): number {
     return this.index.get(nodeId) ?? -1;
   }
 
-  /**
-   * 将图编译为 {@link Csr} 快照。传入 weight 时按 (from,to) 求值并填充正反向权重数组。
-   * @param weight 可选边权函数；省略则不携带权重。
-   */
+  /** @param weight 边权函数，按 `(from, to)` 求值；省略则不携带权重 */
   public static compile<G extends Catalog & Neighbors>(
     graph: G,
     weight?: (from: NodeId, to: NodeId) => number,
@@ -277,11 +263,7 @@ export class Csr
   }
 }
 
-/**
- * {@link Csr.compile} 的便捷函数，把图编译为 CSR 快照供多次跑算法。
- * 注意：产出的 EdgeView.id 是合成 id（e{k}/i{k}），不对应原图 EdgeId，仅供需要权重的算法消费。
- * @param weight 可选边权函数；省略则不携带权重。
- */
+/** {@link Csr.compile} 的便捷函数。 */
 export function csr<G extends Catalog & Neighbors>(
   graph: G,
   weight?: (from: NodeId, to: NodeId) => number,

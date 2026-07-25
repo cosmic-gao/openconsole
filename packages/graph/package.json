@@ -5,11 +5,12 @@
   "type": "module",
   "main": "index.ts",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && vitest run",
+    "check": "tsc --noEmit && vitest run --passWithNoTests",
     "doc": "typedoc"
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@openconsole/heap": "workspace:*",
+    "@openconsole/queue": "workspace:*",
     "@openconsole/signal": "workspace:*"
   }
 }

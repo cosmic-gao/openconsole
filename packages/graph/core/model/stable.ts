@@ -8,9 +8,6 @@ import { StableRegistry, type Indexer } from "./registry";
  * 适合外部长期持有节点下标引用的场景（如 UI 选中态、缓存映射）。
  * 代价：`bound()` 计入空位、`at()` 可能返回 `undefined`；`copy` / `subgraph` / `union`
  * 仍返回普通 {@link Graph}（下标语义随之回到 swap-and-pop）。
- *
- * @typeParam N - 节点权重类型
- * @typeParam E - 边权重类型
  */
 export class StableGraph<N = unknown, E = unknown> extends Graph<N, E> {
   protected override createRegistry(): Indexer {

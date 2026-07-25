@@ -4,9 +4,6 @@ import type { Vertex } from "./vertex";
 
 /**
  * 端点：一个节点与其上某个端口的组合，用于定位边的连接位置。
- *
- * @typeParam N - 节点类型
- * @typeParam P - 端口类型
  */
 export class Endpoint<N extends Vertex = Vertex, P extends Port = Port> {
   public constructor(

@@ -1,17 +1,12 @@
 import type { Comparator } from "../types";
 import type { Linked } from "./node";
 
-/**
- * 合并两棵非空堆序树：值较小者成为新根，另一棵挂到它的子链首位。
- *
- * @returns 合并后的根，必非空
- */
+/** 合并两棵非空堆序树：值较小者成为新根，另一棵挂到它的子链首位。 */
 export function link<T>(
   a: Linked<T>,
   b: Linked<T>,
   compare: Comparator<T>,
 ): Linked<T> {
-  // 让 parent 为较小者、attach 为较大者，随后统一挂接。
   const inverted = compare(a.value, b.value) > 0;
   const parent = inverted ? b : a;
   const attach = inverted ? a : b;
@@ -36,14 +31,11 @@ export function meld<T>(
 }
 
 /**
- * 两阶段配对合并：
- *  1. 沿兄弟链从左到右两两 {@link link}，得到的子树用 `prev` 临时串成单链；
- *  2. 自右向左累积 {@link link}，收敛成单一根。
+ * 两阶段配对合并：先沿兄弟链两两 {@link link}（结果用 `prev` 临时串成单链），
+ * 再自右向左累积收敛成单一根。
  *
- * 这是配对堆摊销 O(log n) 的关键：单趟合并会退化成链表，两阶段才能压平层高。
- *
- * @param node 兄弟链的首节点（通常是某节点的 `child`）
- * @returns 合并后的根；输入为空时返回 `null`
+ * @remarks 这是配对堆摊销 O(log n) 的关键——单趟合并会退化成链表，两阶段才能压平层高。
+ * @param node 兄弟链的首节点，通常是某节点的 `child`
  */
 export function collapse<T>(
   node: Linked<T> | null,
@@ -51,12 +43,12 @@ export function collapse<T>(
 ): Linked<T> | null {
   if (node === null) return null;
 
-  // 第一阶段：两两配对，结果经 prev 串成一条「待收敛」链。
+  // 第一阶段：两两配对，结果经 prev 串成待收敛链。
   let tail: Linked<T> | null = null;
   let cursor: Linked<T> | null = node;
 
   while (cursor !== null) {
-    // 显式标注：否则 cursor 的赋值链会让 TS 在 first/second 上陷入循环推断。
+    // 显式标注：否则 cursor 的赋值链会让 TS 陷入循环推断。
     const first: Linked<T> = cursor;
     const second: Linked<T> | null = first.next;
 

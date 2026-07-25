@@ -10,33 +10,24 @@ import {
 } from "./format";
 import { mergeLookup, type SocketLookup } from "./sockets";
 
-/**
- * id 映射：紧凑格式与原始 id 之间的折算。
- * 直接打包用 {@link IDENTITY}（原样保留），需要短 id 时用 {@link Intern}（重映射为整数下标）。
- */
+/** id 映射：直接打包用 {@link IDENTITY}，需要短 id 时用 {@link Intern}。 */
 export interface Mapping {
   node(id: NodeId): NodeId;
   port(id: PortId): PortId;
   edge(id: EdgeId): EdgeId;
 }
 
-/** 恒等映射：id 原样保留。 */
+/** id 原样保留。 */
 export const IDENTITY: Mapping = {
   node: (id) => id,
   port: (id) => id,
   edge: (id) => id,
 };
 
-/**
- * 内化映射：按首次出现顺序把每个 id 折算成整数下标，同时记录逆向表以便还原。
- * 下标即在 {@link Intern.nodes} / {@link Intern.ports} / {@link Intern.edges} 中的位置。
- */
+/** 按首次出现顺序把 id 折算成整数下标，并记录逆向表以便还原。 */
 export class Intern implements Mapping {
-  /** 按下标排列的原始节点 id。 */
   public readonly nodes: string[] = [];
-  /** 按下标排列的原始端口 id。 */
   public readonly ports: string[] = [];
-  /** 按下标排列的原始边 id。 */
   public readonly edges: string[] = [];
 
   private readonly _nodes = new Map<string, string>();
@@ -70,10 +61,7 @@ export class Intern implements Mapping {
   }
 }
 
-/**
- * 打包内核：按 `order` 顺序发出节点，再发全部边与层级关系，所有 id 经 `map` 折算。
- * {@link pack} 与 {@link packRemap} 的唯一区别就是 `order` 与 `map`。
- */
+/** 打包内核；{@link pack} 与 {@link packRemap} 的唯一区别就是 `order` 与 `map`。 */
 export function emit<N, E>(
   graph: Graph<N, E>,
   order: Iterable<NodeId>,
@@ -119,8 +107,7 @@ export function emit<N, E>(
 }
 
 /**
- * 还原内核：校验版本后在一个事务里重建节点、边与层级，所有 id 经 `map` 反向折算。
- * {@link unpack} 与 {@link unpackRemap} 的唯一区别就是 `map`。
+ * 还原内核：校验版本后在一个事务里重建全图。
  *
  * @throws {@link Schema} 版本不匹配
  */

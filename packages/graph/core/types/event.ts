@@ -24,8 +24,6 @@ export interface DfsEvent<T = number> {
 
 /**
  * 图变更事件映射：键为事件名，值为对应的事件负载。
- * @typeParam N - 节点权重类型。
- * @typeParam E - 边权重类型。
  */
 export interface Events<N = unknown, E = unknown> {
   /** 节点被添加。 */
@@ -44,8 +42,6 @@ export interface Events<N = unknown, E = unknown> {
 
 /**
  * 可订阅能力：暴露图变更事件信号供外部监听。
- * @typeParam N - 节点权重类型。
- * @typeParam E - 边权重类型。
  */
 export interface Subscribable<N = unknown, E = unknown> {
   /** 图变更事件信号。 */

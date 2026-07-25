@@ -173,6 +173,9 @@ import { ancestors, ancestry, astar, bellmanFord, bfs, bfsLevels, bidijkstra, br
 - **连通结构**：`bridges`（桥 + 割点）/ `dominator`（Lengauer-Tarjan 支配树）
 - **CSR 编译**：`csr` / `Csr.compile`（typed-array 视图，结构冻结后多次跑算法；带权 `IntoEdges` 让最短路也能受益）
 - **CSR 原生算法**：`sssp`（整数下标空间的 Dijkstra，配 `csrPath` 重建路径）/ `bfsLevels`（Beamer 方向优化多源 BFS，返回层级数组）
+
+> `sssp` 与 `dijkstra` 的稠密快路都**不做 decrease-key**：改善即入队，靠 `settled` 位图跳过过期条目，因此没有句柄簿记。`sssp` 还会扫一遍权重自动选队列 —— 非负整数且最大边权有界时走 [`BucketQueue`](../queue/README.md)（O(1) 出入队），否则走 `LazyQueue`。同一张图上实测：桶队列 **2.27x**、惰性堆 **1.56x**（对比原先的配对堆 + decrease-key），距离结果完全一致。
+
 - **增量拓扑**：`IncrementalTopo`
 
 > `transitiveClosure` 返回的是真正的可达集：环上节点（含自环）**包含自身**，无环节点不含自身。只需"后代"语义时用 `descendants`。
@@ -332,7 +335,8 @@ core/
 - **删除后的下标语义二选一**：`Graph` 走 swap-and-pop（O(1) 但**会打乱下标**），需要长期持有下标引用时用 `StableGraph`（free-list 空位复用，`at(i)` 稳定，代价是 `bound()` 计入空位、`at()` 可能返回 `undefined`）
 - **能力探测统一在一处**：trait 是可选实现，视图与算法运行时嗅探（`hasEdges` / `hasDegree` / `hasIndex`），命中走直通快路径、否则退化通用实现，两条路结果一致
 - **无向用视图而非改模型**：端口天生有向；`undirected(graph)` 为 `components` / `prim` / `kruskal` 等无向算法统一提供合并方向的视图
-- **热路径用 CSR**：端口模型的邻接查询有一层边解引用开销；结构冻结后用 `csr(graph)` 编译为 typed-array 视图再跑算法
+- **热路径用 CSR**：端口模型的邻接查询有一层边解引用开销；结构冻结后用 `csr(graph)` 编译为 typed-array 视图再跑算法。实测（V=5000 / E≈40000 的弱连通分量）：`Graph` 邻接 + `Set<NodeId>` 58.7ms → CSR 邻接 + `Set<NodeId>` 7.6ms → CSR 邻接 + `Uint8Array` 0.68ms（合计 **86x**），一次编译约 82ms，**从第二次遍历起就回本**
+- **通用算法保持 trait 化，不为性能牺牲通用性**：`components` / `reachable` / `visit` 这类算法接受任意 `Walkable`，内部仍用 `Set<NodeId>`——把它们改成整数下标只能拿到约 1.5x（`NodeId → 下标` 的转换成本抵掉了大半）。真正的数量级收益来自「先 `csr()` 编译，再跑整数原生实现」，这是 `compiled/` 目录存在的理由
 - **视图上的计数不是 O(1)**：`NodeFilter.order` / `EdgeFilter.size` / `Collapsed.order` 都是遍历实现，别放进循环条件里
 
 ## 开发

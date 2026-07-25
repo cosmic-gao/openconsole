@@ -1,35 +1,52 @@
-import { PairingHeap, type PairingNode } from "@openconsole/heap";
+import { BucketQueue, LazyQueue, type IndexQueue } from "@openconsole/queue";
 
 import { Negative } from "../../model";
 import type { EdgeId, NodeId } from "../../types";
 import type { Csr } from "./csr";
 
-interface Reach {
-  readonly i: number;
-  readonly dist: number;
-}
-
-/** CSR 原生最短路径树：距离与前驱均以内部整数下标表示（与 {@link Csr.at} 对应）。 */
+/** 最短路径树，下标即 {@link Csr} 的节点索引。 */
 export interface CsrTree {
-  /** 各节点到起点的最短距离，下标即节点索引；不可达为 Infinity。 */
+  /** 不可达为 `Infinity`。 */
   readonly dist: Float64Array;
-  /** 各节点的前驱节点索引，下标即节点索引；无前驱为 -1。 */
+  /** 无前驱为 `-1`。 */
   readonly prev: Int32Array;
 }
 
+/** 超过此上界时桶数组与空桶扫描都不划算，退回 {@link LazyQueue}。 */
+const BUCKET_LIMIT = 1 << 16;
+
 /**
- * CSR 原生 Dijkstra：直接在 {@link Csr} 的 typed-array 邻接与预烘焙权重上运行。
+ * 挑选优先队列：扫一遍权重（O(E)，顺手校验负权），非负整数且有界时用
+ * {@link BucketQueue}，否则用 {@link LazyQueue}。两者产出的距离一致，只影响耗时。
+ */
+function select(weights: Float64Array, order: number): IndexQueue {
+  let integral = true;
+  let max = 0;
+
+  for (let k = 0; k < weights.length; k++) {
+    const weight = weights[k]!;
+    if (weight < 0) throw new Negative(weight, `e${k}` as EdgeId);
+    if (integral) {
+      if (Number.isInteger(weight)) {
+        if (weight > max) max = weight;
+      } else {
+        integral = false;
+      }
+    }
+  }
+
+  if (integral && max <= BUCKET_LIMIT) return new BucketQueue(order, max);
+  return new LazyQueue(weights.length);
+}
+
+/**
+ * CSR 原生 Dijkstra：全程在整数下标空间，邻接与权重直读 typed-array——
+ * 零 `EdgeView` 分配、零字符串哈希。优先队列不做 decrease-key（见 {@link select}）。
  *
- * 相比通用 {@link dijkstra}，全程在整数下标空间：距离/访问/前驱用 typed-array，
- * 邻接与权重直读 `outTargets` / `weights`——**零 `EdgeView` 对象分配、零字符串哈希**。
- * 适合「编译一次、同一快照上多次跑」的热路径。权重取自编译期 `csr(graph, weight)`。
- *
- * @param csr 已带权编译的 CSR 快照（需 `csr(graph, weight)` 生成）。
- * @param source 起点节点。
- * @param target 可选终点；摸到即提前返回。
- * @returns 整数下标表示的最短路径树，配 {@link csrPath} 重建路径。
- * @throws Error 当 CSR 未携带权重时抛出。
- * @throws Negative 当遇到负权时抛出。
+ * @param target 可选终点，摸到即提前返回
+ * @returns 最短路径树，配 {@link csrPath} 重建路径
+ * @throws Error CSR 未携带权重
+ * @throws Negative 存在负权边
  */
 export function sssp(csr: Csr, source: NodeId, target?: NodeId): CsrTree {
   const weights = csr.weights;
@@ -43,7 +60,6 @@ export function sssp(csr: Csr, source: NodeId, target?: NodeId): CsrTree {
   const dist = new Float64Array(n).fill(Infinity);
   const prev = new Int32Array(n).fill(-1);
   const settled = new Uint8Array(n);
-  const handles = new Array<PairingNode<Reach> | undefined>(n);
 
   const outOffsets = csr.outOffsets;
   const outTargets = csr.outTargets;
@@ -52,33 +68,27 @@ export function sssp(csr: Csr, source: NodeId, target?: NodeId): CsrTree {
   if (s < 0) return { dist, prev };
   const t = target === undefined ? -1 : csr.indexOf(target);
 
-  const heap = new PairingHeap<Reach>((a, b) => a.dist - b.dist);
+  const queue = select(weights, n);
   dist[s] = 0;
-  handles[s] = heap.push({ i: s, dist: 0 });
+  queue.push(s, 0);
 
-  while (!heap.empty()) {
-    const top = heap.poll()!;
-    const u = top.i;
-    handles[u] = undefined;
+  for (let u = queue.poll(); u !== -1; u = queue.poll()) {
+    // 下标首次出队时携带的必是其最小距离，其余条目一律过期。
     if (settled[u] === 1) continue;
     settled[u] = 1;
     if (u === t) break;
 
+    const base = dist[u]!;
     const start = outOffsets[u]!;
     const end = outOffsets[u + 1]!;
     for (let k = start; k < end; k++) {
       const v = outTargets[k]!;
       if (settled[v] === 1) continue;
-      const cost = weights[k]!;
-      if (cost < 0) throw new Negative(cost, `e${k}` as EdgeId);
-      const candidate = top.dist + cost;
+      const candidate = base + weights[k]!;
       if (candidate < dist[v]!) {
         dist[v] = candidate;
         prev[v] = u;
-        const handle = handles[v];
-        if (handle !== undefined)
-          heap.update(handle, { i: v, dist: candidate });
-        else handles[v] = heap.push({ i: v, dist: candidate });
+        queue.push(v, candidate);
       }
     }
   }

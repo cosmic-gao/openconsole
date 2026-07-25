@@ -20,9 +20,6 @@ import type { Vertex } from "./vertex";
 
 /**
  * 图的存储与变更层：维护节点/边集合，提供 CRUD、权重更新、复合层级与事务批处理，并通过 {@link Model.signal} 派发变更事件。
- *
- * @typeParam N - 节点权重类型
- * @typeParam E - 边权重类型
  */
 export class Model<N = unknown, E = unknown>
   implements Subscribable<N, E>, Hierarchy
@@ -33,24 +30,18 @@ export class Model<N = unknown, E = unknown>
   private readonly _parent = new Map<NodeId, NodeId>();
   private readonly _children = new Map<NodeId, Set<NodeId>>();
 
-  /** 图变更事件源（节点/边的增删改）。 */
+  /** 节点 / 边增删改的事件源。 */
   public readonly signal = new Signal<Events<N, E>>();
 
   private _sequence = 0;
   private _depth = 0;
   private readonly _pending: Array<() => void> = [];
 
-  public constructor(
-    /** 图唯一 id。 */
-    public readonly id: GraphId,
-  ) {
+  public constructor(public readonly id: GraphId) {
     this._registry = this.createRegistry();
   }
 
-  /**
-   * 创建节点索引器。子类可覆盖以改变删除后的下标语义——默认 {@link Registry}（swap-and-pop，
-   * 下标会移动），{@link StableGraph} 覆盖为 {@link StableRegistry}（下标稳定）。
-   */
+  /** 子类覆盖此处即可改变删除后的下标语义，见 {@link StableGraph}。 */
   protected createRegistry(): Indexer {
     return new Registry();
   }
@@ -75,11 +66,7 @@ export class Model<N = unknown, E = unknown>
     return this;
   }
 
-  /**
-   * 合并节点：已存在则更新其权重，否则新增。
-   *
-   * @returns 新增返回 `true`，更新已有返回 `false`
-   */
+  /** upsert：已存在则更新权重返回 `false`，否则新增返回 `true`。 */
   public mergeNode<I extends Sockets, O extends Sockets>(
     vertex: Vertex<I, O, N>,
   ): boolean {
@@ -91,11 +78,7 @@ export class Model<N = unknown, E = unknown>
     return true;
   }
 
-  /**
-   * 删除节点，并连带删除其所有关联边、解除层级关系。
-   *
-   * @returns 被删除的节点，不存在则返回 `undefined`
-   */
+  /** 级联删除其关联边并解除层级关系；节点不存在返回 `undefined`。 */
   public dropNode(node: NodeId): Node<N> | undefined {
     const found = this._nodes.get(node);
     if (!found) return undefined;
@@ -126,30 +109,20 @@ export class Model<N = unknown, E = unknown>
     return found;
   }
 
-  /** 按 id 获取节点，不存在返回 `undefined`。 */
   public node(node: NodeId): Node<N> | undefined {
     return this._nodes.get(node);
   }
 
-  /** 是否存在指定节点。 */
   public hasNode(node: NodeId): boolean {
     return this._nodes.has(node);
   }
 
-  /**
-   * 设置节点权重并派发更新事件。
-   *
-   * @throws {@link Missing} 节点不存在
-   */
+  /** @throws {@link Missing} 节点不存在 */
   public setNodeWeight(node: NodeId, weight: N | undefined): this {
     return this.updateNode(node, () => weight);
   }
 
-  /**
-   * 以函数方式更新节点权重并派发更新事件。
-   *
-   * @throws {@link Missing} 节点不存在
-   */
+  /** @throws {@link Missing} 节点不存在 */
   public updateNode(
     node: NodeId,
     updater: (weight: N | undefined) => N | undefined,
@@ -166,7 +139,7 @@ export class Model<N = unknown, E = unknown>
   }
 
   /**
-   * 添加一条边（先经 {@link validate} 校验合法性）。
+   * 添加一条边，先经 {@link validate} 校验。
    *
    * @throws {@link Duplicate} 边 id 已存在
    * @throws {@link Missing} 端点节点不存在
@@ -186,11 +159,8 @@ export class Model<N = unknown, E = unknown>
   }
 
   /**
-   * 按 `[节点, 端口名]` 在源输出端口与目标输入端口间创建并添加一条边。
+   * 按 `[节点 id, 端口名]` 在源输出端口与目标输入端口间建边。
    *
-   * @param from - 源 `[节点 id, 输出端口名]`
-   * @param to - 目标 `[节点 id, 输入端口名]`
-   * @returns 新建的边
    * @throws {@link Missing} 节点或端口不存在
    */
   public connect(
@@ -234,11 +204,7 @@ export class Model<N = unknown, E = unknown>
     return edge;
   }
 
-  /**
-   * 删除一条边并从两端端口解除连接。
-   *
-   * @returns 被删除的边，不存在则返回 `undefined`
-   */
+  /** 从两端端口解除连接；边不存在返回 `undefined`。 */
   public dropEdge(edge: EdgeId): Edge<E> | undefined {
     const found = this._edges.get(edge);
     if (!found) return undefined;
@@ -249,30 +215,20 @@ export class Model<N = unknown, E = unknown>
     return found;
   }
 
-  /** 按 id 获取边，不存在返回 `undefined`。 */
   public edge(edge: EdgeId): Edge<E> | undefined {
     return this._edges.get(edge);
   }
 
-  /** 是否存在指定边。 */
   public hasEdge(edge: EdgeId): boolean {
     return this._edges.has(edge);
   }
 
-  /**
-   * 设置边权重并派发更新事件。
-   *
-   * @throws {@link Missing} 边不存在
-   */
+  /** @throws {@link Missing} 边不存在 */
   public setEdgeWeight(edge: EdgeId, weight: E | undefined): this {
     return this.updateEdge(edge, () => weight);
   }
 
-  /**
-   * 以函数方式更新边权重并派发更新事件。
-   *
-   * @throws {@link Missing} 边不存在
-   */
+  /** @throws {@link Missing} 边不存在 */
   public updateEdge(
     edge: EdgeId,
     updater: (weight: E | undefined) => E | undefined,
@@ -289,7 +245,7 @@ export class Model<N = unknown, E = unknown>
   }
 
   /**
-   * 为节点设置父节点以构建复合层级（会先解除原有父子关系）。
+   * 设置父节点以构建复合层级；会先解除原有父子关系。
    *
    * @throws {@link Missing} 节点或父节点不存在
    * @throws {@link Cycle} 会形成层级环
@@ -318,27 +274,22 @@ export class Model<N = unknown, E = unknown>
     return this;
   }
 
-  /** 获取节点的父节点，无父节点返回 `undefined`。 */
   public parent(node: NodeId): NodeId | undefined {
     return this._parent.get(node);
   }
 
-  /** 获取节点的直接子节点（惰性迭代）。 */
   public children(node: NodeId): Iterable<NodeId> {
     const kids = this._children.get(node);
     return kids ? { [Symbol.iterator]: () => kids.values() } : EMPTY;
   }
 
-  /** 解除节点与其父节点的关系。 */
   public unparent(node: NodeId): this {
     this._detachParent(node);
     return this;
   }
 
   /**
-   * 在事务中执行 `work`：期间产生的变更事件会缓冲，待最外层事务结束后统一派发（即使抛错也会派发已积累的事件）。
-   *
-   * @returns `work` 的返回值
+   * 事务：期间的变更事件缓冲到最外层事务结束后统一派发，抛错也会派发已积累的事件。
    */
   public batch<T>(work: () => T): T {
     this._depth++;
@@ -356,9 +307,8 @@ export class Model<N = unknown, E = unknown>
   }
 
   /**
-   * 清空整个图：节点、边、层级关系全部移除。
-   * 走 {@link Model.dropNode} 逐个删除，因此会派发完整的 dropped 事件（合并在一个事务里），
-   * 订阅者（如 IncrementalTopo）不会与图失同步。
+   * 清空整个图。走 {@link Model.dropNode} 逐个删除，因此会在一个事务里派发完整的
+   * dropped 事件——订阅者（如 IncrementalTopo）不会与图失同步。
    */
   public clear(): void {
     this.batch(() => {
@@ -378,39 +328,34 @@ export class Model<N = unknown, E = unknown>
     });
   }
 
-  /** 节点数量（图的阶）。 */
+  /** 图的阶（节点数）。 */
   public get order(): number {
     return this._nodes.size;
   }
 
-  /** 边数量（图的规模）。 */
+  /** 图的规模（边数）。 */
   public get size(): number {
     return this._edges.size;
   }
 
-  /** 遍历所有节点 id（惰性）。 */
   public nodes(): Iterable<NodeId> {
     const nodes = this._nodes;
     return { [Symbol.iterator]: () => nodes.keys() };
   }
 
-  /** 遍历所有边 id（惰性）。 */
   public edges(): Iterable<EdgeId> {
     const edges = this._edges;
     return { [Symbol.iterator]: () => edges.keys() };
   }
 
-  /** 节点下标上界（用于矩阵类算法）。 */
   public bound(): number {
     return this._registry.bound();
   }
 
-  /** 按下标取节点 id，越界返回 `undefined`。 */
   public at(index: number): NodeId | undefined {
     return this._registry.at(index);
   }
 
-  /** 取节点下标，未登记返回 `-1`。 */
   public indexOf(node: NodeId): number {
     return this._registry.indexOf(node);
   }

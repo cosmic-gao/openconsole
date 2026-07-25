@@ -99,6 +99,9 @@ importers:
       '@openconsole/heap':
         specifier: workspace:*
         version: link:../heap
+      '@openconsole/queue':
+        specifier: workspace:*
+        version: link:../queue
       '@openconsole/signal':
         specifier: workspace:*
         version: link:../signal
@@ -145,6 +148,8 @@ importers:
       '@openconsole/graph':
         specifier: workspace:*
         version: link:../graph
+
+  packages/queue: {}
 
   packages/shadcn:
     dependencies:

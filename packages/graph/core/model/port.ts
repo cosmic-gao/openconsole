@@ -9,8 +9,6 @@ interface Constraints {
 
 /**
  * 端口抽象基类：自持所连边的列表，并携带 multiple/required/fallback 约束。
- *
- * @typeParam S - 端口的数据类型
  */
 export abstract class Port<S extends Socket = Socket> {
   /** 端口方向（输入或输出），由子类固定。 */
@@ -85,8 +83,6 @@ export abstract class Port<S extends Socket = Socket> {
 
 /**
  * 输入端口。
- *
- * @typeParam S - 端口的数据类型
  */
 export class Input<S extends Socket = Socket> extends Port<S> {
   /** 端口方向，固定为 `'input'`。 */
@@ -99,8 +95,6 @@ export class Input<S extends Socket = Socket> extends Port<S> {
 
 /**
  * 输出端口。
- *
- * @typeParam S - 端口的数据类型
  */
 export class Output<S extends Socket = Socket> extends Port<S> {
   /** 端口方向，固定为 `'output'`。 */

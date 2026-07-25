@@ -3,26 +3,24 @@ import type { Catalog, Neighbors, NodeId } from "../../types";
 import { scc } from "../connectivity/scc";
 
 /**
- * 可达性位图：按强连通分量存储，同一分量内所有节点的可达集完全相同，故只存一行。
- * 每行 words 个 32 位字，第 j 位表示是否可达下标 j 的节点。
+ * 可达性位图：按强连通分量存储——同一分量内所有节点的可达集完全相同，故只存一行。
+ * 每行 `words` 个 32 位字，第 j 位表示可达下标 j 的节点。
  */
 interface Closure {
   readonly labels: NodeId[];
   readonly index: Map<NodeId, number>;
-  /** 每行的字数（ceil(n / 32)）。 */
   readonly words: number;
   /** 节点下标 → 所属分量下标。 */
   readonly component: Int32Array;
-  /** 分量可达位图，行首偏移 = 分量下标 × words。 */
+  /** 行首偏移 = 分量下标 × words。 */
   readonly bits: Uint32Array;
 }
 
 /**
- * 一次性求出全图可达性位图。
+ * 一次性求出全图可达性位图，O(V + E·V/32)。
  *
- * 先缩点（{@link scc} 按逆拓扑序产出分量），再按该顺序逐个分量做位图或运算——
- * 处理某分量时其所有后继分量已算完，故一遍扫描即可收敛。
- * 复杂度 O(V + E·V/32)，相比「每个节点跑一次 DFS」省掉一个数量级的重复遍历与临时集合。
+ * @remarks 先缩点（{@link scc} 按逆拓扑序产出分量），再按该顺序做位图或运算——处理某分量时
+ *   其后继分量已算完，故一遍扫描即收敛。相比「每个节点跑一次 DFS」省掉一个数量级。
  */
 function closure<G extends Catalog & Neighbors>(graph: G): Closure {
   const { labels, index } = enumerate(graph);
@@ -76,13 +74,11 @@ function closure<G extends Catalog & Neighbors>(graph: G): Closure {
   return { labels, index, words, component, bits };
 }
 
-/** 位图行内是否置位。 */
 function reaches(closed: Closure, from: number, to: number): boolean {
   const row = closed.component[from]! * closed.words;
   return (closed.bits[row + (to >>> 5)]! & (1 << (to & 31))) !== 0;
 }
 
-/** 展开位图行为节点集合。 */
 function expand(closed: Closure, node: number): Set<NodeId> {
   const result = new Set<NodeId>();
   const row = closed.component[node]! * closed.words;
@@ -97,10 +93,7 @@ function expand(closed: Closure, node: number): Set<NodeId> {
   return result;
 }
 
-/**
- * 计算传递闭包，返回每个节点到其全部可达节点集合的映射。
- * 环上的节点（含自环）可达自身，无环节点不含自身。
- */
+/** 传递闭包；环上节点（含自环）可达自身，无环节点不含自身。 */
 export function transitiveClosure<G extends Catalog & Neighbors>(
   graph: G,
 ): Map<NodeId, Set<NodeId>> {
@@ -112,10 +105,7 @@ export function transitiveClosure<G extends Catalog & Neighbors>(
   return result;
 }
 
-/**
- * 计算传递归约，去除可由其他路径间接到达的冗余边，返回保留的边列表。
- * 只对 DAG 有唯一解；有环图上结果取决于枚举顺序。
- */
+/** 传递归约：去掉可由其他路径间接到达的边。只对 DAG 有唯一解。 */
 export function transitiveReduction<G extends Catalog & Neighbors>(
   graph: G,
 ): Array<[NodeId, NodeId]> {
