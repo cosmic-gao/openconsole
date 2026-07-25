@@ -1,27 +1,9 @@
-import { Graph } from "../classic";
+import { Graph } from "../model";
+import { dumpEdge, dumpNode } from "../support";
 import type { NodeId } from "../types";
-import {
-  dumpEdge,
-  dumpNode,
-  loadEdge,
-  loadNode,
-  samePorts,
-  sameWeight,
-} from "./internal";
+import { loadEdge, loadNode, samePorts, sameWeight } from "./codec";
 import type { GraphOp, GraphPatch } from "./ops";
 import { mergeLookup, type SocketLookup } from "./sockets";
-
-export type {
-  AddEdge,
-  AddNode,
-  DropEdge,
-  DropNode,
-  GraphOp,
-  GraphPatch,
-  ReweightEdge,
-  ReweightNode,
-  SetParent,
-} from "./ops";
 
 /** diff 选项，可自定义权重相等比较函数 equals。 */
 export interface DiffOptions {

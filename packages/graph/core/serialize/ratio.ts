@@ -1,4 +1,4 @@
-import type { Graph } from "../classic";
+import type { Graph } from "../model";
 import { pack } from "./pack";
 
 interface TextEncoderLike {

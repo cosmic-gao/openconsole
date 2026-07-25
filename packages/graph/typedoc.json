@@ -4,5 +4,5 @@
   "out": "docs",
   "readme": "README.md",
   "excludeInternal": true,
-  "exclude": ["**/internal/**"]
+  "exclude": ["**/support/**"]
 }

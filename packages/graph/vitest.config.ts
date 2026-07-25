@@ -5,5 +5,8 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    benchmark: {
+      include: ["tests/**/*.bench.ts"],
+    },
   },
 });

@@ -1,4 +1,4 @@
-import type { Input, Output, Port, Socket, Vertex } from "../classic";
+import type { Input, Output, Port, Socket, Vertex } from "../model";
 import type { PortId } from "./brand";
 
 /** 端口方向：输入或输出。 */

@@ -1,4 +1,4 @@
-import { Socket } from "../classic";
+import { Socket } from "../model";
 
 /** Socket 查找表，可为按名称索引的 Map 或 Socket 数组。 */
 export type SocketLookup = ReadonlyMap<string, Socket> | ReadonlyArray<Socket>;

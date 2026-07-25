@@ -1,6 +1,6 @@
 import type { Signal } from "@openconsole/signal";
 
-import type { Edge } from "../classic";
+import type { Edge } from "../model";
 import type { NodeId } from "./brand";
 import type { Node } from "./port";
 
