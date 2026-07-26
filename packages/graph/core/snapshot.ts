@@ -1,4 +1,4 @@
-import { Stale } from "./error";
+import { Invalid, Stale } from "./error";
 import type { EdgeRecord, Graph } from "./graph";
 import type { EdgeId, GraphId, NodeId } from "./ident";
 
@@ -126,13 +126,19 @@ export interface CompileOptions<N = unknown, E = unknown> {
 export interface SnapshotData {
   readonly graph: GraphId;
   readonly revision: number;
-  readonly labels: ReadonlyArray<NodeId>;
-  readonly edges: ReadonlyArray<EdgeId>;
+  readonly order: number;
+  readonly size: number;
+  /** 索引 → 节点 id；按 {@link Snapshot.core} 搬运时缺省。 */
+  readonly labels?: ReadonlyArray<NodeId> | undefined;
+  /** 边序号 → 边 id；按 {@link Snapshot.core} 搬运时缺省。 */
+  readonly edges?: ReadonlyArray<EdgeId> | undefined;
   readonly outbound: Adjacency;
   readonly inbound?: Adjacency | undefined;
   /** 边序号 → 权重。正反向共享一份。 */
   readonly weight?: Reals | undefined;
 }
+
+const UNLABELED: ReadonlyArray<never> = [];
 
 /** id → 索引表的惰性容器；`reverse` 与增量重编译共享同一个，避免重复建表。 */
 interface Lookup {
@@ -167,6 +173,9 @@ interface Source {
 export class Snapshot implements Structure {
   public readonly graph: GraphId;
   public readonly revision: number;
+  public readonly order: number;
+  public readonly size: number;
+  /** 按 {@link Snapshot.core} 搬运过来的快照没有标签层，这里是空数组。 */
   public readonly labels: ReadonlyArray<NodeId>;
   public readonly edges: ReadonlyArray<EdgeId>;
   public readonly outbound: Adjacency;
@@ -180,21 +189,15 @@ export class Snapshot implements Structure {
   private constructor(data: SnapshotData, source?: Source, lookup?: Lookup) {
     this.graph = data.graph;
     this.revision = data.revision;
-    this.labels = data.labels;
-    this.edges = data.edges;
+    this.order = data.order;
+    this.size = data.size;
+    this.labels = data.labels ?? UNLABELED;
+    this.edges = data.edges ?? UNLABELED;
     this.outbound = data.outbound;
     this.inbound = data.inbound;
     this.weight = data.weight;
     this._lookup = lookup ?? {};
     this._source = source;
-  }
-
-  public get order(): number {
-    return this.labels.length;
-  }
-
-  public get size(): number {
-    return this.edges.length;
   }
 
   public indexOf(node: NodeId): number {
@@ -215,7 +218,11 @@ export class Snapshot implements Structure {
   public label(index: number): NodeId {
     const found = this.labels[index];
     if (found === undefined) {
-      throw new RangeError(`node index ${index} is out of range`);
+      throw new RangeError(
+        this.labels.length === 0 && this.order > 0
+          ? "snapshot was transferred without labels; send `data` instead of `core`"
+          : `node index ${index} is out of range`,
+      );
     }
     return found;
   }
@@ -227,17 +234,28 @@ export class Snapshot implements Structure {
     return found;
   }
 
-  /** 交给 `postMessage` 的纯数据；`Snapshot.from` 可在另一线程还原。 */
-  public get data(): SnapshotData {
+  /**
+   * 只含 CSR 与权重的搬运形态，不带标签层。
+   *
+   * @remarks 标签是字符串数组，结构化克隆时只能逐个深拷贝——V=5 万的快照里它占掉整份
+   *   `data` 克隆耗时的九成（21ms → 1.9ms），而只跑索引空间算法的 Worker 侧根本用不到它。
+   *   这样还原出来的快照 `at` / `indexOf` 查不到东西，`label` / `names` 明确报错。
+   */
+  public get core(): SnapshotData {
     return {
       graph: this.graph,
       revision: this.revision,
-      labels: this.labels,
-      edges: this.edges,
+      order: this.order,
+      size: this.size,
       outbound: this.outbound,
       inbound: this.inbound,
       weight: this.weight,
     };
+  }
+
+  /** 交给 `postMessage` 的纯数据；`Snapshot.from` 可在另一线程还原。 */
+  public get data(): SnapshotData {
+    return { ...this.core, labels: this.labels, edges: this.edges };
   }
 
   /**
@@ -349,6 +367,8 @@ export class Snapshot implements Structure {
       {
         graph: graph.id,
         revision: graph.revision,
+        order,
+        size: count,
         labels,
         edges,
         outbound,
@@ -403,6 +423,8 @@ export class Snapshot implements Structure {
       {
         graph: this.graph,
         revision: graph.revision,
+        order: this.order,
+        size: this.size,
         labels: this.labels,
         edges: this.edges,
         outbound: this.outbound,
@@ -415,6 +437,7 @@ export class Snapshot implements Structure {
   }
 }
 
+/** @throws {@link Invalid} `weight` 回调给出了 `NaN` */
 function measure<N, E>(
   graph: Graph<N, E>,
   slots: Int32Array,
@@ -424,7 +447,11 @@ function measure<N, E>(
   if (weight === undefined) return undefined;
   const costs = new Float64Array(count);
   for (let i = 0; i < count; i++) {
-    costs[i] = weight(graph.edgeWeightAt(slots[i]!));
+    const slot = slots[i]!;
+    const cost = weight(graph.edgeWeightAt(slot));
+    // 在这里拦，报得出边 id；漏到算法里就只剩一个静默的"不可达"。
+    if (Number.isNaN(cost)) throw new Invalid(graph.edgeIdAt(slot)!);
+    costs[i] = cost;
   }
   return costs;
 }

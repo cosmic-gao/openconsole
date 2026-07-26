@@ -5,6 +5,7 @@ import {
   Graph,
   graphId,
   inDegree,
+  Invalid,
   merged,
   nodeId,
   outDegree,
@@ -75,6 +76,15 @@ describe("编译", () => {
       weights.push(costOf(snapshot, snapshot.outbound.edge[k]!));
     }
     expect(weights.sort()).toEqual([3, 7]);
+  });
+
+  it("weight 回调给出 NaN 时编译即报错，并报得出是哪条边", () => {
+    // NaN 与任何值比较都是 false：漏到算法里就是一个连通节点被静默报成不可达。
+    const graph = randomGraph(5, { order: 6, density: 2 });
+    expect(() => Snapshot.of(graph, { weight: () => NaN })).toThrow(Invalid);
+    expect(() => Snapshot.of(graph, { weight: () => NaN })).toThrow(
+      new RegExp(`edge ${graph.edgeIdAt(0)}`),
+    );
   });
 
   it("未编译权重时每条边按 1 计", () => {
@@ -220,5 +230,22 @@ describe("跨线程搬运", () => {
     // 还原出来的快照没有源图，因此不会误报陈旧。
     expect(revived.current).toBe(true);
     expect(settle(scc(revived)).count).toBe(settle(scc(snapshot)).count);
+  });
+
+  it("core 省掉标签层，索引空间的算法照跑，问名字则明确报错", () => {
+    const graph = randomGraph(31, { order: 20, density: 2, acyclic: true });
+    const snapshot = Snapshot.of(graph, { weight: cost });
+    const revived = Snapshot.from(structuredClone(snapshot.core));
+
+    expect(revived.order).toBe(snapshot.order);
+    expect(revived.size).toBe(snapshot.size);
+    expect([...revived.weight!]).toEqual([...snapshot.weight!]);
+    expect([...settle(toposort(revived))]).toEqual([
+      ...settle(toposort(snapshot)),
+    ]);
+    // 名字没搬过来：查不到就是查不到，且错误说得出原因。
+    expect(revived.at(0)).toBeUndefined();
+    expect(revived.indexOf(graph.nodes()[0]!)).toBe(-1);
+    expect(() => revived.names([0])).toThrow(/without labels/);
   });
 });

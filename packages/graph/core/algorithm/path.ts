@@ -1,6 +1,6 @@
 import { BucketQueue, LazyQueue, type IndexQueue } from "@openconsole/queue";
 
-import { Cycle, Negative } from "../error";
+import { Cycle, Invalid, Negative } from "../error";
 import { reversed, type Reals, type Structure } from "../snapshot";
 import { Stepwise, transform, type Task } from "../task";
 
@@ -51,17 +51,25 @@ interface Profile {
  *   这一遍扫描要占单次 Dijkstra 的 17%，多源场景更是白付一个 O(V·E)。记在 `WeakMap` 上
  *   而不是 `Snapshot` 字段上，是为了让自定义 {@link Structure} 实现同样享受到。
  *
+ *   键取**权重数组**而不是结构：`reversed()` / {@link Snapshot.reverse} 每次都产出新的
+ *   结构对象却共享同一份权重，以结构为键的话反向搜索每跑一次就要重扫一遍全部边权。
+ *
  *   前提是权重数组不被就地改写——`Reals` 在类型上只读，{@link Snapshot} 也从不复用它：
  *   增量重编译产出的是新数组、新实例，因此不会读到过期画像。
  */
-const profiles = new WeakMap<Structure, Profile>();
+const profiles = new WeakMap<Reals | Structure, Profile>();
 
-/** @throws {@link Negative} 存在负权边 */
+/**
+ * @throws {@link Negative} 存在负权边
+ * @throws {@link Invalid} 存在 `NaN` 权边
+ */
 function profileOf(structure: Structure): Profile {
-  const known = profiles.get(structure);
+  const weight = structure.weight;
+  // 无权结构没有可共享的数组，退回以结构本身为键。
+  const key = weight ?? structure;
+  const known = profiles.get(key);
   if (known) return known;
 
-  const weight = structure.weight;
   let found: Profile;
   if (weight === undefined) {
     found = { integral: true, max: 1 };
@@ -70,13 +78,15 @@ function profileOf(structure: Structure): Profile {
     let max = 0;
     for (let e = 0; e < weight.length; e++) {
       const cost = weight[e]!;
+      // 这一遍本来就要走完，顺手拦下 NaN 是零成本；放过去就是一个查不出的"不可达"。
+      if (Number.isNaN(cost)) throw new Invalid(e);
       if (cost < 0) throw new Negative(cost, e);
       if (integral && !Number.isInteger(cost)) integral = false;
       if (cost > max) max = cost;
     }
     found = { integral, max };
   }
-  profiles.set(structure, found);
+  profiles.set(key, found);
   return found;
 }
 
@@ -459,12 +469,15 @@ export const bidirectional = (
   target: number,
 ): Task<Route | undefined> => new Bidirectional(structure, source, target);
 
-/** Bellman-Ford：容许负权，每步推进一轮松弛。 */
+/** Bellman-Ford：容许负权，每步松弛一个节点的出边。 */
 class BellmanFord extends Stepwise<Tree> {
   private readonly _distance: Float64Array;
   private readonly _parent: Int32Array;
   private readonly _weight: Reals | undefined;
   private _round = 0;
+  private _cursor = 0;
+  /** 本轮是否有过改善；一整轮无改善即收敛。 */
+  private _changed = false;
 
   public constructor(
     private readonly _structure: Structure,
@@ -478,41 +491,46 @@ class BellmanFord extends Stepwise<Tree> {
   }
 
   public get progress(): number {
-    return this._structure.order === 0
-      ? 1
-      : this._round / this._structure.order;
+    const n = this._structure.order;
+    return n === 0 ? 1 : (this._round * n + this._cursor) / (n * n);
   }
 
+  /**
+   * 一步 = 一轮松弛里的一个节点，O(deg)。
+   *
+   * @remarks 一整轮是 O(E)；在稠密图上那已经比其他算法的单步粗一个数量级，分帧时会
+   *   卡出可见的掉帧。轮次边界单独占一步，收敛判定与负环判定都落在那里。
+   */
   protected step(): boolean {
-    if (this._round >= this._structure.order) return false;
-    this._round++;
-    const changed = this._relax();
-    // 第 order 轮仍有改善 ⇒ 存在从起点可达的负环。
-    if (changed && this._round === this._structure.order) {
-      throw new Cycle(this._blame());
-    }
-    return changed;
-  }
+    const n = this._structure.order;
+    if (this._round >= n) return false;
 
-  private _relax(): boolean {
-    const { order } = this._structure;
+    if (this._cursor >= n) {
+      this._round++;
+      this._cursor = 0;
+      const changed = this._changed;
+      this._changed = false;
+      // 第 order 轮仍有改善 ⇒ 存在从起点可达的负环。
+      if (changed && this._round === n) throw new Cycle(this._blame());
+      return changed;
+    }
+
+    const u = this._cursor++;
+    const base = this._distance[u]!;
+    if (base === Infinity) return true;
+
     const { offset, other, edge } = this._structure.outbound;
     const weight = this._weight;
-    let changed = false;
-    for (let u = 0; u < order; u++) {
-      const base = this._distance[u]!;
-      if (base === Infinity) continue;
-      for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-        const v = other[k]!;
-        const candidate = base + (weight === undefined ? 1 : weight[edge[k]!]!);
-        if (candidate < this._distance[v]!) {
-          this._distance[v] = candidate;
-          this._parent[v] = u;
-          changed = true;
-        }
+    for (let k = offset[u]!; k < offset[u + 1]!; k++) {
+      const v = other[k]!;
+      const candidate = base + (weight === undefined ? 1 : weight[edge[k]!]!);
+      if (candidate < this._distance[v]!) {
+        this._distance[v] = candidate;
+        this._parent[v] = u;
+        this._changed = true;
       }
     }
-    return changed;
+    return true;
   }
 
   /** 沿前驱链走 order 步必然落在环上，再绕一圈即得环成员。 */
@@ -567,10 +585,11 @@ export class Matrix {
   }
 }
 
-/** Floyd-Warshall：每步推进一个中转节点。 */
+/** Floyd-Warshall：每步推进一个中转节点的一行。 */
 class FloydWarshall extends Stepwise<Matrix> {
   private readonly _cells: Float64Array;
   private _through = 0;
+  private _row = 0;
 
   public constructor(private readonly _structure: Structure) {
     super();
@@ -590,26 +609,37 @@ class FloydWarshall extends Stepwise<Matrix> {
   }
 
   public get progress(): number {
-    return this._structure.order === 0
-      ? 1
-      : this._through / this._structure.order;
+    const n = this._structure.order;
+    return n === 0 ? 1 : (this._through * n + this._row) / (n * n);
   }
 
+  /**
+   * 一步 = 一个中转节点的一行，O(V)。
+   *
+   * @remarks 整个矩阵是 O(V³)，一步吃掉一个完整的中转节点就是 O(V²)——V=5000 时单步
+   *   要几十毫秒，`schedule` 的一帧预算再小也让不出去。粒度必须细到与其他算法可比。
+   */
   protected step(): boolean {
     const n = this._structure.order;
     if (this._through >= n) return false;
-    const k = this._through++;
-    const kRow = k * n;
-    for (let u = 0; u < n; u++) {
-      const uRow = u * n;
-      const reach = this._cells[uRow + k]!;
-      if (reach === Infinity) continue;
+
+    const k = this._through;
+    const uRow = this._row * n;
+    const reach = this._cells[uRow + k]!;
+    if (reach !== Infinity) {
+      const kRow = k * n;
       for (let v = 0; v < n; v++) {
         const candidate = reach + this._cells[kRow + v]!;
-        if (candidate < this._cells[uRow + v]!)
+        if (candidate < this._cells[uRow + v]!) {
           this._cells[uRow + v] = candidate;
+        }
       }
     }
+
+    this._row++;
+    if (this._row < n) return true;
+    this._row = 0;
+    this._through++;
     if (this._through < n) return true;
 
     for (let u = 0; u < n; u++) {

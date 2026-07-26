@@ -144,11 +144,13 @@ graph.reshape(node, { outputs: { "0": pin, "1": pin } }); // 加一路输出，"
 graph.reshape(node, { inputs: {}, outputs: {} }); // 断掉该节点全部连线，节点保留
 ```
 
-### 删高扇出节点是线性的
+### 摘链是 O(1)，删边路径不会平方退化
 
-`dropNode` 先把关联边整批从**对端**摘掉，再一次性清空自己的两条邻接表。若逐条走
-`disconnect`，每条边都要在正在收缩的自身列表上做一次线性查找，删一个高扇出节点就是
-O(deg²)：3 万扇出要几百毫秒，10 万扇出到秒级。现在 10 万扇出也在几十毫秒内。
+每条边都记着自己在两端邻接表里的下标，摘链因此是「末尾补位 + pop」，不必在列表上
+`indexOf`。`disconnect` / `clearEdges` / `reshape` / `dropNode` 共用这一个原语，于是
+"清掉一个高扇出节点的全部连线"是线性的：4 万扇出各在十几毫秒内完成。换成线性查找，
+每条边都要在**正在收缩的**列表上扫一遍，整件事变成 O(deg²)——同样的 4 万扇出要几百毫秒
+（`reshape` 清空端口更是 1.5 秒）。分组的子表用同一个原语，因此解散大分组也是线性的。
 
 ## Snapshot：计算的输入
 
@@ -172,7 +174,8 @@ snapshot.names(indices); // 索引 → NodeId；边序号换 id 直接读 snapsh
 代价是编译要 O(V+E)，收益是运行期零开销、且不再有"视图上 `order` 是 O(V)"这类陷阱。
 
 `weight` 回调只吃边自己的权重值，不给整条记录——这正是增量重编译能便宜的前提。要按端点算权，
-把它烘进 `E` 里。
+把它烘进 `E` 里。回调给出 `NaN` 时编译就抛 `Invalid` 并报出是哪条边：`NaN` 与任何值比较都是
+`false`，放过去只会让最短路把明明连通的节点静默报成不可达。
 
 ### 增量重编译
 
@@ -197,7 +200,8 @@ snapshot = Snapshot.of(graph, { weight: cost, reuse: snapshot });
 快照的 `data` 只含 typed-array 与字符串数组，可以直接 `postMessage`：
 
 ```ts
-worker.postMessage(snapshot.data);
+worker.postMessage(snapshot.data); // 带标签层
+worker.postMessage(snapshot.core); // 只有 CSR 与权重
 // Worker 侧
 const snapshot = Snapshot.from(data);
 settle(scc(snapshot));
@@ -205,6 +209,10 @@ settle(scc(snapshot));
 
 id → 索引表是**惰性**的：只跑索引空间算法的一侧从不碰它，因此 Worker 还原一份 V=100 万的快照
 不必先付一遍百万次哈希。只在第一次调 `indexOf` / `names` 时建表，`reverse()` 与增量重编译共享同一份。
+
+标签本身是字符串数组，结构化克隆时只能逐个深拷贝——V=5 万的快照里它占掉整份 `data` 克隆耗时的
+九成以上（21ms → 1.9ms）。Worker 只跑索引空间算法时改搬 `core`：结构与权重照旧，`at` / `indexOf`
+查不到东西，`label` / `names` 会明确报错而不是给出可疑答案。
 
 ## Task：中断 / 分步 / 恢复
 
@@ -220,6 +228,10 @@ task.progress; // 0..1
 task.settled;
 task.result(); // 未跑完抛 Incomplete——中间态一律不对外
 ```
+
+单步的规模刻意压在 O(deg) / O(V)：`floydWarshall` 一步是一个中转节点的**一行**而不是整个
+中转节点，`bellmanFord` 一步是一轮松弛里的**一个节点**而不是整轮。否则 `schedule` 的预算
+再小也让不出帧——V=1200 时一步 O(V²) 就是 3.8ms，默认预算 4096 步一帧要卡十几秒。
 
 中断不丢现场：
 
@@ -367,12 +379,16 @@ graph.signal.watch((type, payload) => {});
 
 真正进 CI 的不是耗时基线，而是 `tests/scaling.test.ts` 里的**同进程规模比**断言：规模翻 4 倍，
 耗时不许涨过 9 倍。这类比值不受整机快慢影响，因此不会误报，而它要挡的东西——某个 O(n) 悄悄
-变回 O(n²)——无论机器多快都会被抓住。目前钉住四条：
+变回 O(n²)——无论机器多快都会被抓住。目前钉住七条：
 
-- `dropNode` 随扇出线性，不随平方；
+- `dropNode` / 逐条 `disconnect` / `clearEdges` / `reshape` 断全部连线，四条删边路径都随扇出线性；
 - `Snapshot.of` 随边数线性；
 - 增量重编译只随改动量走，且必须快过全量；
-- 单源最短路的耗时不随图里**无关的**边数增长（边权画像被缓存的可观测后果）。
+- 单源最短路的耗时不随图里**无关的**边数增长，反向快照上同样成立（边权画像被缓存、
+  且缓存对 `reverse()` 生效的可观测后果）。
+
+另有两条不靠耗时的粒度断言在 `tests/task.test.ts`：`floydWarshall` 的推进步数必须在 V² 量级、
+`bellmanFord` 必须多于 V 步——单步一旦变粗，分帧就名存实亡，而这一点耗时是看不出来的。
 
 ## 模块边界
 
@@ -415,6 +431,9 @@ import { pack } from "@openconsole/graph/serialize";
 - **索引访问契约收在一处**：`at()` 供外部查询（越界返回 `undefined`），`label()` / `key()`
   供内部遍历（越界即程序错误），因此算法里没有一处非空断言。
 - **中间态不对外**：`result()` 在跑完之前抛 `Incomplete`，提前终止的接口不返回全量结构。
+- **可疑输入不静默通过**：负权抛 `Negative` 并点名 `bellmanFord`，`NaN` 权抛 `Invalid`，源图
+  变更后 `verify()` 抛 `Stale`，没搬标签就问名字也明确报错。这些恰是"给个看起来正常的答案"
+  最容易骗过人的地方——`NaN` 尤其典型：它与任何值比较都是 `false`，于是连通节点被报成不可达。
 - **端口是声明**：`Vertex` / `Port` 无状态，可复用、可跨图，没有"节点被图独占"这类限制。
 - **不预设编排形态**：`Socket.exec` 只是个预置常量名，图本身不认识它的含义；`N` / `E` 完全
   不透明；连线可以成环（只有层级禁环）。执行语义留给上层，n8n 式数据流、Node-RED 式消息流、

@@ -7,6 +7,7 @@ export type Code =
   | "socket"
   | "capacity"
   | "negative"
+  | "invalid"
   | "schema"
   | "stale"
   | "incomplete"
@@ -88,6 +89,23 @@ export class Negative extends GraphError {
     super(
       "negative",
       `negative cost ${cost} on edge #${edge}; use bellmanFord`,
+    );
+  }
+}
+
+/**
+ * 边权是 `NaN`。
+ *
+ * @remarks 单独立一类而不是放过去，因为 `NaN` 与任何值比较都是 `false`：不拦住的话
+ *   最短路会把明明连通的节点静默报成不可达，且没有任何迹象可查。
+ *
+ *   `edge` 在编译期是 {@link EdgeId}，在算法里是边序号（{@link Snapshot.edges} 的下标）。
+ */
+export class Invalid extends GraphError {
+  public constructor(public readonly edge: string | number) {
+    super(
+      "invalid",
+      `NaN cost on edge ${edge}; it would silently read as unreachable`,
     );
   }
 }

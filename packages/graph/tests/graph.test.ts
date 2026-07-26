@@ -15,7 +15,7 @@ import {
   type NodeId,
   type Sockets,
 } from "../index";
-import { randomGraph, vertex } from "./random";
+import { randomGraph, Rng, vertex } from "./random";
 
 const blank = (): Graph<string, number> => new Graph(graphId("t"));
 const a = nodeId("a");
@@ -233,6 +233,44 @@ describe("稳定索引", () => {
       expect(graph.parent(record.node)).toBe(record.parent);
     }
   });
+
+  it("随机增删与 compact 之后，两侧邻接表始终与边表一致", () => {
+    // 摘链靠"边记住自己在邻接表里的下标"来做到 O(1)，这份下标一旦与列表失同步，
+    // 症状就是邻接表里多出或少掉某条边——遍历、编译、算法随后全都跟着错。
+    const graph = randomGraph(17, { order: 40, density: 3, loops: true });
+    const rng = new Rng(99);
+    const audit = (): void => {
+      const out = new Map<NodeId, EdgeId[]>();
+      const into = new Map<NodeId, EdgeId[]>();
+      for (const node of graph.nodes()) {
+        out.set(node, []);
+        into.set(node, []);
+      }
+      for (const edge of graph.edges()) {
+        const record = graph.edge(edge)!;
+        out.get(record.source)!.push(edge);
+        into.get(record.target)!.push(edge);
+      }
+      for (const node of graph.nodes()) {
+        expect(graph.outEdges(node).sort()).toEqual(out.get(node)!.sort());
+        expect(graph.inEdges(node).sort()).toEqual(into.get(node)!.sort());
+      }
+    };
+
+    for (let round = 0; round < 40; round++) {
+      const dice = rng.int(10);
+      if (dice < 5) {
+        const edges = graph.edges();
+        if (edges.length > 0) graph.disconnect(edges[rng.int(edges.length)]!);
+      } else if (dice < 8) {
+        const nodes = graph.nodes();
+        if (nodes.length > 0) graph.dropNode(nodes[rng.int(nodes.length)]!);
+      } else {
+        graph.compact();
+      }
+      audit();
+    }
+  });
 });
 
 describe("复合层级", () => {
@@ -262,6 +300,22 @@ describe("复合层级", () => {
     graph.dropNode(b);
     expect(graph.parent(c)).toBe(a);
     expect(graph.children(a)).toEqual([c]);
+  });
+
+  it("删除分组时全部子节点都提升，一个不漏", () => {
+    const graph = blank();
+    const kids = ["k0", "k1", "k2", "k3", "k4"].map(nodeId);
+    graph.addNode(vertex("root"));
+    graph.addNode(vertex("group"));
+    for (const kid of kids) graph.addNode(vertex(kid));
+    graph.setParent(nodeId("group"), nodeId("root"));
+    for (const kid of kids) graph.setParent(kid, nodeId("group"));
+
+    graph.dropNode(nodeId("group"));
+    // 摘链若落在正被迭代的子表上，补位到已访问下标的孩子会被整个跳过，其 parent
+    // 留在已释放的槽位上——等那个槽位被复用，孩子就无声无息地挂到了别的节点下面。
+    for (const kid of kids) expect(graph.parent(kid)).toBe(nodeId("root"));
+    expect(graph.children(nodeId("root")).sort()).toEqual(kids);
   });
 });
 

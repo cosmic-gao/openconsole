@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bellmanFord,
   chain,
   closure,
+  floydWarshall,
   Incomplete,
   Interrupted,
   nodeId,
@@ -53,6 +55,30 @@ describe("分步推进", () => {
       last = task.progress;
     }
     expect(task.progress).toBe(1);
+  });
+
+  it("单步细到一行 / 一个节点，长跑算法才让得出帧", () => {
+    // 分帧的实际粒度由单步大小决定：一步 O(V²) 的话，`schedule` 的预算再小也让不出去。
+    const snapshot = sample();
+    const n = snapshot.order;
+
+    let steps = 0;
+    const matrix = floydWarshall(snapshot);
+    while (matrix.advance(1)) steps++;
+    // 一步吃掉一整个中转节点就是 O(V²)，那样这里只会有 V 步。
+    expect(steps).toBeGreaterThan(n * (n - 1));
+    expect([...matrix.result().cells]).toEqual([
+      ...settle(floydWarshall(snapshot)).cells,
+    ]);
+
+    steps = 0;
+    const ford = bellmanFord(snapshot, 0);
+    while (ford.advance(1)) steps++;
+    // 一步一整轮松弛就是 O(E)，那样步数最多只有 order（轮数上界）。
+    expect(steps).toBeGreaterThan(n);
+    expect([...ford.result().distance]).toEqual([
+      ...settle(bellmanFord(snapshot, 0)).distance,
+    ]);
   });
 
   it("未跑完时取结果抛 Incomplete，不返回中间态", () => {

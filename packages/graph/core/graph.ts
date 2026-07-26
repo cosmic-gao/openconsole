@@ -65,6 +65,11 @@ export class Graph<N = unknown, E = unknown> {
   private readonly _fromPort: string[] = [];
   private readonly _toPort: string[] = [];
   private readonly _edgeWeight: Array<E | undefined> = [];
+  /** 边在两端邻接表里的下标，摘链时同步维护，见 {@link unhook}。 */
+  private readonly _outAt: number[] = [];
+  private readonly _inAt: number[] = [];
+  /** 节点在父节点子表里的下标，语义同 {@link Graph._outAt}。 */
+  private readonly _childAt: number[] = [];
 
   private _revision = 0;
   private _shape = 0;
@@ -147,6 +152,7 @@ export class Graph<N = unknown, E = unknown> {
     this._in[u] = [];
     this._parent[u] = NONE;
     this._children[u] = undefined;
+    this._childAt[u] = NONE;
     if (this._wants("nodeAdded", true)) {
       this._queue.push("nodeAdded", { node: spec.id, slot: u });
     }
@@ -164,38 +170,30 @@ export class Graph<N = unknown, E = unknown> {
     return false;
   }
 
-  /**
-   * 级联删除关联边，并把子节点提升到被删节点的父层。
-   *
-   * @remarks 关联边先整批从对端摘掉，再一次性清空本节点的两条邻接表。逐条走
-   *   {@link Graph.disconnect} 的话，每条边都要在**正在收缩的自身列表**上做一次线性查找，
-   *   删一个高扇出节点就是 O(deg²)。
-   */
+  /** 级联删除关联边，并把子节点提升到被删节点的父层。 */
   public dropNode(node: NodeId): boolean {
     const u = this._nodes.indexOf(node);
     if (u < 0) return false;
+    this._drop(u, node);
+    return true;
+  }
 
+  /** 按槽位删节点，{@link Graph.dropNode} 与 {@link Graph.clear} 共用。 */
+  private _drop(u: number, node: NodeId): void {
     this.batch(() => {
-      const out = this._out[u]!;
-      const inbound = this._in[u]!;
-      // 自环同时挂在两侧，平行边可能重复；先去重再摘，保证每条边只处理一次。
-      const doomed = new Set<number>(out);
-      for (const e of inbound) doomed.add(e);
-      for (const e of doomed) {
-        const from = this._from[e]!;
-        const to = this._to[e]!;
-        if (from !== u) unlink(this._out[from]!, e);
-        if (to !== u) unlink(this._in[to]!, e);
-        this._release(e);
-      }
-      out.length = 0;
-      inbound.length = 0;
+      // 自环同时挂在两侧；去重后每条边只摘一次。
+      const doomed = new Set<number>(this._out[u]!);
+      for (const e of this._in[u]!) doomed.add(e);
+      for (const e of doomed) this._sever(e);
 
+      // 先摘掉子表：整表随节点一起丢弃，`_detach` 因此不会在**正被迭代的数组**上做
+      // swap-pop——那样会把补位到已访问下标的子节点整个漏掉。
       const grand = this._parent[u]!;
-      for (const child of this._children[u] ?? []) {
-        this._reparent(child, grand);
-      }
+      const children = this._children[u];
       this._children[u] = undefined;
+      if (children) {
+        for (const child of children) this._reparent(child, grand);
+      }
       this._detach(u);
 
       const weight = this._weight[u];
@@ -207,7 +205,6 @@ export class Graph<N = unknown, E = unknown> {
         this._queue.push("nodeDropped", { node, slot: u, weight });
       }
     });
-    return true;
   }
 
   public node(node: NodeId): NodeRecord<N> | undefined {
@@ -256,12 +253,13 @@ export class Graph<N = unknown, E = unknown> {
     this._inputs[u] = inputs;
     this._outputs[u] = outputs;
 
-    const stale = new Set<EdgeId>();
+    // 收边槽位而不是 id：断边全程留在整数空间，不为每条边付一次哈希往返。
+    const stale = new Set<number>();
     this._prune(this._out[u]!, outputs, true, stale);
     this._prune(this._in[u]!, inputs, false, stale);
 
     this.batch(() => {
-      for (const edge of stale) this.disconnect(edge);
+      for (const e of stale) this._sever(e);
       if (this._wants("nodeReshaped", true)) {
         this._queue.push("nodeReshaped", { node, slot: u, inputs, outputs });
       }
@@ -354,8 +352,8 @@ export class Graph<N = unknown, E = unknown> {
     this._fromPort[e] = sourceName;
     this._toPort[e] = targetName;
     this._edgeWeight[e] = options.weight;
-    this._out[u]!.push(e);
-    this._in[v]!.push(e);
+    this._outAt[e] = this._out[u]!.push(e) - 1;
+    this._inAt[e] = this._in[v]!.push(e) - 1;
     if (this._wants("edgeAdded", true)) {
       this._queue.push("edgeAdded", {
         edge: id,
@@ -371,9 +369,7 @@ export class Graph<N = unknown, E = unknown> {
   public disconnect(edge: EdgeId): boolean {
     const e = this._edges.indexOf(edge);
     if (e < 0) return false;
-    unlink(this._out[this._from[e]!]!, e);
-    unlink(this._in[this._to[e]!]!, e);
-    this._release(e);
+    this._sever(e);
     this._commit();
     return true;
   }
@@ -640,15 +636,21 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
+  /** 按槽位扫，不物化 id 数组也不为每条边付一次哈希。 */
   public clearEdges(): void {
     this.batch(() => {
-      for (const edge of this.edges()) this.disconnect(edge);
+      for (let e = 0; e < this._edges.bound; e++) {
+        if (this._edges.at(e) !== undefined) this._sever(e);
+      }
     });
   }
 
   public clear(): void {
     this.batch(() => {
-      for (const node of this.nodes()) this.dropNode(node);
+      for (let u = 0; u < this._nodes.bound; u++) {
+        const id = this._nodes.at(u);
+        if (id !== undefined) this._drop(u, id);
+      }
     });
   }
 
@@ -675,11 +677,15 @@ export class Graph<N = unknown, E = unknown> {
     gather(this._in, nodes, order);
     gather(this._parent, nodes, order);
     gather(this._children, nodes, order);
+    gather(this._childAt, nodes, order);
     gather(this._from, edges, size);
     gather(this._to, edges, size);
     gather(this._fromPort, edges, size);
     gather(this._toPort, edges, size);
     gather(this._edgeWeight, edges, size);
+    // 位置索引跟着边一起搬：`remap` 只改列表元素的值，不动它们的次序，所以下标本身不变。
+    gather(this._outAt, edges, size);
+    gather(this._inAt, edges, size);
 
     for (let e = 0; e < size; e++) {
       this._from[e] = nodes[this._from[e]!]!;
@@ -764,11 +770,17 @@ export class Graph<N = unknown, E = unknown> {
     };
   }
 
-  /** 释放边槽位并登记事件；**不碰任何邻接表**，摘链由调用方负责。 */
-  private _release(e: number): void {
+  /**
+   * 删一条边：两端摘链、释放槽位、登记 `edgeDropped`。全程按边槽位走，不经 id 查表，
+   * 因此四条删边路径（`disconnect` / `clearEdges` / `reshape` / `dropNode`）都能直接用它。
+   */
+  private _sever(e: number): void {
+    unhook(this._out[this._from[e]!]!, this._outAt, e);
+    unhook(this._in[this._to[e]!]!, this._inAt, e);
+
     const edge = this._edges.key(e);
-    const listening = this._wants("edgeDropped", true);
-    const payload = listening
+    // 载荷要在释放之前取：`_wants` 之后端点与权重就该视作已失效。
+    const payload = this._wants("edgeDropped", true)
       ? {
           edge,
           slot: e,
@@ -854,12 +866,12 @@ export class Graph<N = unknown, E = unknown> {
     return undefined;
   }
 
-  /** 收集在新端口集合下不再合法的边。 */
+  /** 收集在新端口集合下不再合法的边，给出边槽位。 */
   private _prune(
     list: number[],
     own: Ports,
     outward: boolean,
-    stale: Set<EdgeId>,
+    stale: Set<number>,
   ): void {
     const ownPorts = outward ? this._fromPort : this._toPort;
     const peerPorts = outward ? this._toPort : this._fromPort;
@@ -872,7 +884,7 @@ export class Graph<N = unknown, E = unknown> {
       const name = ownPorts[e]!;
       const port = own[name];
       if (!port) {
-        stale.add(this._edges.key(e));
+        stale.add(e);
         continue;
       }
       // 兼容性按边的实际方向判定——`accepts` 的 compatible 列表不对称。
@@ -883,11 +895,11 @@ export class Graph<N = unknown, E = unknown> {
           ? port.socket.accepts(peer.socket)
           : peer.socket.accepts(port.socket));
       if (!fits) {
-        stale.add(this._edges.key(e));
+        stale.add(e);
         continue;
       }
       if (port.multiple) continue;
-      if (taken.has(name)) stale.add(this._edges.key(e));
+      if (taken.has(name)) stale.add(e);
       else taken.add(name);
     }
   }
@@ -905,7 +917,7 @@ export class Graph<N = unknown, E = unknown> {
     this._detach(u);
     this._parent[u] = parent;
     if (parent !== NONE) {
-      (this._children[parent] ??= []).push(u);
+      this._childAt[u] = (this._children[parent] ??= []).push(u) - 1;
     }
     if (this._wants("parentChanged", true)) {
       this._queue.push("parentChanged", {
@@ -922,7 +934,7 @@ export class Graph<N = unknown, E = unknown> {
     this._parent[u] = NONE;
     if (parent === NONE) return;
     const siblings = this._children[parent];
-    if (siblings) unlink(siblings, u);
+    if (siblings) unhook(siblings, this._childAt, u);
   }
 
   private _mint(): EdgeId {
@@ -1010,12 +1022,20 @@ export class Graph<N = unknown, E = unknown> {
   }
 }
 
-/** 从无序列表中移除一个值（swap-pop）。 */
-function unlink(list: number[], value: number): void {
-  const at = list.indexOf(value);
-  if (at < 0) return;
+/**
+ * 按位置索引从无序列表里摘掉一项，O(1)：末尾那项补位，并改写补位者的位置索引。
+ *
+ * @remarks 边的两条邻接表与分组的子表共用这一个原语。换成在列表上 `indexOf` 就是
+ *   O(size)，清空一个高扇出节点的连线会整体退化成平方。
+ */
+function unhook(list: number[], place: number[], item: number): void {
+  const at = place[item]!;
   const last = list.length - 1;
-  if (at !== last) list[at] = list[last]!;
+  if (at !== last) {
+    const moved = list[last]!;
+    list[at] = moved;
+    place[moved] = at;
+  }
   list.pop();
 }
 

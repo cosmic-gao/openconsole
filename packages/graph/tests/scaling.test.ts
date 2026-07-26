@@ -71,17 +71,39 @@ const mesh = (order: number, density: number): Graph<number, number> => {
 };
 
 describe("复杂度闸门", () => {
-  it("dropNode 随扇出线性增长，不随平方", () => {
-    // 摘边若在自身那条正在收缩的邻接表上逐条线性查找，这里就是 O(deg²)。
+  /** 断言同一个删除动作在 4 倍扇出下不超过 9 倍耗时。 */
+  const linear = (drain: (graph: Graph<number, number>) => void): void => {
     const small = hub(10_000);
     const large = hub(40_000);
 
-    const one = fastest(1, () => void small.dropNode(nodeId("h")));
-    const four = fastest(1, () => void large.dropNode(nodeId("h")));
+    const one = fastest(1, () => drain(small));
+    const four = fastest(1, () => drain(large));
 
     expect(small.size).toBe(0);
     expect(large.size).toBe(0);
     expect(four).toBeLessThan(Math.max(one, 1) * 9);
+  };
+
+  // 下面四条走的是同一条摘链原语。它若退回"在邻接表上 indexOf"，每条边都要在正在收缩的
+  // 列表上线性查找一遍，四条一起变成 O(deg²)——4 万扇出从几十毫秒掉到几百毫秒。
+  it("dropNode 随扇出线性增长，不随平方", () => {
+    linear((graph) => void graph.dropNode(nodeId("h")));
+  });
+
+  it("逐条 disconnect 随扇出线性增长，不随平方", () => {
+    linear((graph) => {
+      for (const edge of graph.edges()) graph.disconnect(edge);
+    });
+  });
+
+  it("clearEdges 随扇出线性增长，不随平方", () => {
+    linear((graph) => void graph.clearEdges());
+  });
+
+  it("reshape 断掉全部连线随扇出线性增长，不随平方", () => {
+    linear(
+      (graph) => void graph.reshape(nodeId("h"), { inputs: {}, outputs: {} }),
+    );
   });
 
   it("Snapshot.of 随边数线性增长", () => {
@@ -115,28 +137,37 @@ describe("复杂度闸门", () => {
     );
   });
 
-  it("单源最短路的耗时不随图里无关的边数增长", () => {
-    // 节点数固定（每次调用的 O(V) 分配因此一样多），只把无关的边数放大几十倍；起点仍只够到
-    // 两个节点。若每次调用都要重扫一遍全部边权（挑优先队列时的那一遍），耗时就会跟着涨。
-    const build = (density: number): Snapshot => {
-      const graph = mesh(500, density);
-      for (const name of ["s", "a", "b"]) graph.addNode(pin(name));
-      graph.connect([nodeId("s"), "out"], [nodeId("a"), "in"], { weight: 1 });
-      graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 1 });
-      return Snapshot.of(graph, { weight: cost });
-    };
+  // 节点数固定（每次调用的 O(V) 分配因此一样多），只把无关的边数放大几十倍；起点仍只够到
+  // 两个节点。若每次调用都要重扫一遍全部边权（挑优先队列时的那一遍），耗时就会跟着涨。
+  // 反向那一轮每次都新建 `reverse()`：画像若以结构对象为键，新对象就永远命中不了缓存。
+  const views = [
+    ["正向", (snapshot: Snapshot): Snapshot => snapshot],
+    ["反向", (snapshot: Snapshot): Snapshot => snapshot.reverse()],
+  ] as const;
 
-    const measure = (snapshot: Snapshot): number => {
-      const s = snapshot.indexOf(nodeId("s"));
-      settle(shortestPaths(snapshot, s));
-      return fastest(3, () => {
-        for (let i = 0; i < 50; i++) settle(shortestPaths(snapshot, s));
-      });
-    };
+  it.each(views)(
+    "%s快照上的单源最短路不随图里无关的边数增长",
+    (_label, view) => {
+      const build = (density: number): Snapshot => {
+        const graph = mesh(500, density);
+        for (const name of ["s", "a", "b"]) graph.addNode(pin(name));
+        graph.connect([nodeId("s"), "out"], [nodeId("a"), "in"], { weight: 1 });
+        graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 1 });
+        return Snapshot.of(graph, { weight: cost });
+      };
 
-    const lean = build(1);
-    const bulky = build(200);
-    expect(bulky.size).toBeGreaterThan(lean.size * 20);
-    expect(measure(bulky)).toBeLessThan(Math.max(measure(lean), 0.2) * 3);
-  });
+      const measure = (snapshot: Snapshot): number => {
+        const s = snapshot.indexOf(nodeId("s"));
+        settle(shortestPaths(view(snapshot), s));
+        return fastest(3, () => {
+          for (let i = 0; i < 50; i++) settle(shortestPaths(view(snapshot), s));
+        });
+      };
+
+      const lean = build(1);
+      const bulky = build(200);
+      expect(bulky.size).toBeGreaterThan(lean.size * 20);
+      expect(measure(bulky)).toBeLessThan(Math.max(measure(lean), 0.2) * 3);
+    },
+  );
 });

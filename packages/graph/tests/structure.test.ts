@@ -4,6 +4,7 @@ import {
   components,
   Graph,
   graphId,
+  Invalid,
   merged,
   nodeId,
   reversed,
@@ -52,6 +53,11 @@ describe("Structure 是算法的唯一契约", () => {
     expect(back.outbound).toBe(chain.inbound);
     expect(back.inbound).toBe(chain.outbound);
     expect([...settle(toposort(back))]).toEqual([2, 1, 0]);
+  });
+
+  it("NaN 权在自定义实现上也拦得住", () => {
+    const broken: Structure = { ...chain, weight: Float64Array.of(3, NaN) };
+    expect(() => settle(shortestPaths(broken, 0))).toThrow(Invalid);
   });
 
   it("无入向的实现上 reversed 明确报错而不是给出错误答案", () => {
