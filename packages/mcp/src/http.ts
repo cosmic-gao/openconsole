@@ -1,10 +1,32 @@
 import express, { type Request, type RequestHandler, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { Server as HttpServer } from 'node:http';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GatewaySpec } from './config.js';
+import type { Endpoint } from './endpoint.js';
 import type { Reconciler } from './reconciler.js';
+
+export interface AuthOptions {
+  verifier: OAuthTokenVerifier;
+  requiredScopes?: string[];
+  /** 401 响应的 WWW-Authenticate 头里回指的 OAuth Protected Resource Metadata 地址 */
+  resourceMetadataUrl?: string;
+}
+
+export interface EndpointStatus {
+  readonly path: string;
+  readonly version: number;
+  readonly tools: number;
+  readonly sessions: number;
+}
+
+export interface Serving {
+  readonly listener: HttpServer;
+  endpoints(): readonly EndpointStatus[];
+}
 
 const SESSION_HEADER = 'mcp-session-id';
 const noop = (): void => {};
@@ -12,32 +34,45 @@ const noop = (): void => {};
 export function serve(
   spec: GatewaySpec,
   reconciler: Reconciler,
-  createServer: () => McpServer,
-): HttpServer {
-  const sessions = new SessionPool(createServer);
-  reconciler.onChange = () => sessions.announceListChanged();
-
+  createServer: (endpoint: Endpoint) => McpServer,
+  auth?: AuthOptions,
+): Serving {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
   app.use(originGuard(spec.allowsOrigin));
 
-  app.post(spec.path, (req, res) => void sessions.dispatch(req, res));
-  app.get(spec.path, (req, res) => void sessions.forward(req, res));
-  app.delete(spec.path, (req, res) => void sessions.forward(req, res));
+  const guard: RequestHandler[] = auth ? [requireBearerAuth(auth)] : [];
 
-  app.get('/healthz', (_req, res) => {
-    const { catalog, version } = reconciler.snapshot;
-    res.json({
-      version,
-      tools: catalog.tools.length,
-      sessions: sessions.size,
-      upstreams: reconciler.statuses(),
-    });
+  const mounted = reconciler.endpoints.map((endpoint) => {
+    const pool = new SessionPool(() => createServer(endpoint));
+    endpoint.onChange = () => pool.announceListChanged();
+
+    app.post(endpoint.path, ...guard, (req, res) => void pool.dispatch(req, res));
+    app.get(endpoint.path, ...guard, (req, res) => void pool.forward(req, res));
+    app.delete(endpoint.path, ...guard, (req, res) => void pool.forward(req, res));
+
+    return { endpoint, pool };
   });
 
-  return app.listen(spec.port, () =>
-    console.log(`[openmcp] http://localhost:${spec.port}${spec.path}`),
-  );
+  const endpoints = (): readonly EndpointStatus[] =>
+    mounted.map(({ endpoint, pool }) => ({
+      path: endpoint.path,
+      version: endpoint.snapshot.version,
+      tools: endpoint.snapshot.catalog.tools.length,
+      sessions: pool.size,
+    }));
+
+  app.get('/healthz', (_req, res) => {
+    res.json({ endpoints: endpoints(), upstreams: reconciler.statuses() });
+  });
+
+  const listener = app.listen(spec.port, () => {
+    for (const { endpoint } of mounted) {
+      console.log(`[openmcp] http://localhost:${spec.port}${endpoint.path}`);
+    }
+  });
+
+  return { listener, endpoints };
 }
 
 interface Session {
@@ -45,7 +80,7 @@ interface Session {
   readonly transport: StreamableHTTPServerTransport;
 }
 
-/** 每个 MCP 会话独占一个 McpServer 实例（SDK 的要求），共享同一个 Reconciler。 */
+/** 每个 MCP 会话独占一个 McpServer 实例（SDK 的要求），共享同一个 Endpoint 快照。 */
 class SessionPool {
   private readonly sessions = new Map<string, Session>();
 
@@ -75,6 +110,7 @@ class SessionPool {
     for (const { server } of this.sessions.values()) {
       server.sendToolListChanged();
       server.sendPromptListChanged();
+      server.sendResourceListChanged();
     }
   }
 

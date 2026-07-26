@@ -67,4 +67,11 @@ mcp.registerPrompt('greet', { description: `${NAME} 的问候模板` }, () => ({
   messages: [{ role: 'user', content: { type: 'text', text: `来自 ${NAME} 的问候` } }],
 }));
 
+mcp.registerResource(
+  'config',
+  `mock://${NAME}/config`,
+  { description: `${NAME} 的配置`, mimeType: 'text/plain' },
+  (uri) => ({ contents: [{ uri: uri.href, text: `${NAME} 的配置内容` }] }),
+);
+
 await mcp.connect(new StdioServerTransport());

@@ -6,9 +6,12 @@ import type {
   GetPromptResult,
   ListChangedOptions,
   Prompt,
+  ReadResourceResult,
+  Resource,
+  ResourceTemplate,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Endpoint, UpstreamSpec } from './config.js';
+import type { Connection, UpstreamSpec } from './config.js';
 
 export type UpstreamState = 'pending' | 'ready' | 'unreachable';
 
@@ -17,6 +20,8 @@ export interface UpstreamStatus {
   readonly state: UpstreamState;
   readonly tools: number;
   readonly prompts: number;
+  readonly resources: number;
+  readonly breakerOpen: boolean;
   readonly failure: string | null;
   readonly probedAt: number | null;
 }
@@ -27,10 +32,14 @@ export class Upstream {
   state: UpstreamState = 'pending';
   tools: readonly Tool[] = [];
   prompts: readonly Prompt[] = [];
+  resources: readonly Resource[] = [];
+  templates: readonly ResourceTemplate[] = [];
   onContractChange: () => void = noop;
 
   private failure: string | null = null;
   private probedAt: number | null = null;
+  private failures = 0;
+  private openUntil = 0;
   private client: Client | null = null;
   private opening: Promise<Client> | null = null;
 
@@ -42,32 +51,44 @@ export class Upstream {
       state: this.state,
       tools: this.tools.length,
       prompts: this.prompts.length,
+      resources: this.resources.length,
+      breakerOpen: this.breakerOpen,
       failure: this.failure,
       probedAt: this.probedAt,
     };
   }
 
-  /** 失败时保留上一次快照：模型该看到「工具暂时不可用」，而不是「工具不存在」 */
+  /**
+   * 失败时保留上一次快照：模型该看到「工具暂时不可用」，而不是「工具不存在」。
+   * 探测不受熔断拦截，成功即清零失败计数 —— 它同时充当半开探测。
+   */
   async probe(): Promise<void> {
     this.probedAt = Date.now();
     try {
       const client = await this.open();
-      const capabilities = client.getServerCapabilities() ?? {};
-      this.tools = capabilities.tools
-        ? (await this.paginate((cursor) => client.listTools({ cursor }, this.options))).flatMap(
-            (page) => page.tools,
+      const { tools, prompts, resources } = client.getServerCapabilities() ?? {};
+
+      this.tools = tools ? await this.collect((cursor) => client.listTools({ cursor }, this.options), (page) => page.tools) : [];
+      this.prompts = prompts
+        ? await this.collect((cursor) => client.listPrompts({ cursor }, this.options), (page) => page.prompts)
+        : [];
+      this.resources = resources
+        ? await this.collect((cursor) => client.listResources({ cursor }, this.options), (page) => page.resources)
+        : [];
+      this.templates = resources
+        ? await this.collect(
+            (cursor) => client.listResourceTemplates({ cursor }, this.options),
+            (page) => page.resourceTemplates,
           )
         : [];
-      this.prompts = capabilities.prompts
-        ? (await this.paginate((cursor) => client.listPrompts({ cursor }, this.options))).flatMap(
-            (page) => page.prompts,
-          )
-        : [];
+
       this.state = 'ready';
       this.failure = null;
+      this.failures = 0;
+      this.openUntil = 0;
     } catch (error) {
       this.state = 'unreachable';
-      this.failure = error instanceof Error ? error.message : String(error);
+      this.failure = reasonOf(error);
       this.client = null;
     }
   }
@@ -77,17 +98,21 @@ export class Upstream {
     args: Record<string, unknown> | undefined,
     signal: AbortSignal,
   ): Promise<CallToolResult> {
-    const client = await this.open();
-    const result = await client.callTool({ name, arguments: args }, undefined, {
-      ...this.options,
-      signal,
+    return this.guard(async (client) => {
+      const result = await client.callTool({ name, arguments: args }, undefined, {
+        ...this.options,
+        signal,
+      });
+      return result as CallToolResult;
     });
-    return result as CallToolResult;
   }
 
   async getPrompt(name: string, args: Record<string, string> | undefined): Promise<GetPromptResult> {
-    const client = await this.open();
-    return client.getPrompt({ name, arguments: args });
+    return this.guard((client) => client.getPrompt({ name, arguments: args }, this.options));
+  }
+
+  async readResource(uri: string): Promise<ReadResourceResult> {
+    return this.guard((client) => client.readResource({ uri }, this.options));
   }
 
   async close(): Promise<void> {
@@ -96,8 +121,29 @@ export class Upstream {
     await client?.close().catch(noop);
   }
 
+  private get breakerOpen(): boolean {
+    return Date.now() < this.openUntil;
+  }
+
   private get options(): { timeout: number } {
     return { timeout: this.spec.timeout };
+  }
+
+  /** 连续失败达到阈值即开路，把慢上游的代价挡在调用方之外 */
+  private async guard<T>(operation: (client: Client) => Promise<T>): Promise<T> {
+    if (this.breakerOpen) {
+      throw new Error(`熔断中，${Math.ceil((this.openUntil - Date.now()) / 1000)} 秒后恢复`);
+    }
+    try {
+      const result = await operation(await this.open());
+      this.failures = 0;
+      return result;
+    } catch (error) {
+      if (++this.failures >= this.spec.breaker.failures) {
+        this.openUntil = Date.now() + this.spec.breaker.resetMs;
+      }
+      throw error;
+    }
   }
 
   private async open(): Promise<Client> {
@@ -109,14 +155,12 @@ export class Upstream {
   }
 
   private async dial(): Promise<Client> {
+    const signal = this.signalContractChange();
     const client = new Client(
       { name: 'openmcp', version: '0.0.1' },
-      {
-        capabilities: {},
-        listChanged: { tools: this.signalContractChange(), prompts: this.signalContractChange() },
-      },
+      { capabilities: {}, listChanged: { tools: signal, prompts: signal, resources: signal } },
     );
-    await client.connect(transportFor(this.spec.endpoint));
+    await client.connect(transportFor(this.spec.connection));
 
     client.onclose = (): void => {
       this.client = null;
@@ -131,21 +175,25 @@ export class Upstream {
     return { autoRefresh: false, debounceMs: 0, onChanged: () => this.onContractChange() };
   }
 
-  private async paginate<P extends { nextCursor?: string | undefined }>(
+  private async collect<P extends { nextCursor?: string | undefined }, T>(
     fetch: (cursor: string | undefined) => Promise<P>,
-  ): Promise<P[]> {
-    const pages: P[] = [];
+    pick: (page: P) => T[],
+  ): Promise<T[]> {
+    const items: T[] = [];
     let cursor: string | undefined;
     do {
       const page = await fetch(cursor);
-      pages.push(page);
+      items.push(...pick(page));
       cursor = page.nextCursor;
     } while (cursor);
-    return pages;
+    return items;
   }
 }
 
-const transportFor = (endpoint: Endpoint): StdioClientTransport | StreamableHTTPClientTransport =>
-  endpoint.kind === 'stdio'
-    ? new StdioClientTransport(endpoint.params)
-    : new StreamableHTTPClientTransport(endpoint.url, { requestInit: endpoint.init });
+export const reasonOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const transportFor = (connection: Connection): StdioClientTransport | StreamableHTTPClientTransport =>
+  connection.kind === 'stdio'
+    ? new StdioClientTransport(connection.params)
+    : new StreamableHTTPClientTransport(connection.url, { requestInit: connection.init });

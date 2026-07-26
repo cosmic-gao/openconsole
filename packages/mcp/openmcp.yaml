@@ -1,8 +1,13 @@
 port: 8080
-path: /mcp
 reconcileIntervalMs: 60000
-# 不配 allowedOrigins 则不校验 Origin；本地与生产都应显式配置
-# allowedOrigins: ["http://localhost:3000"]
+# 省略 allowedOrigins 即不校验 Origin；本地与生产都应显式配置
+# allowedOrigins: ['http://localhost:3000']
+
+# 挂载点。省略 upstreams 表示挂载全部；分组挂载可按需裁剪客户端的上下文预算
+endpoints:
+  - path: /mcp
+  - path: /mcp/alpha
+    upstreams: [alpha]
 
 upstreams:
   # 两个上游指向同一个 mock server，工具名相同 —— 用于观察 alias 前缀如何消歧
@@ -24,7 +29,9 @@ upstreams:
       args: ['tests/mock-server.js']
       env:
         MOCK_NAME: beta
-    # 过滤掉 slow_*，演示 exclude
     tools:
       exclude: ['slow_*']
     timeoutMs: 10000
+    breaker:
+      failures: 5
+      resetMs: 30000

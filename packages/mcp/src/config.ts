@@ -19,13 +19,20 @@ export interface UpstreamInput {
     | { type: 'http'; url: string; headers?: Record<string, string> };
   tools?: { include?: string[]; exclude?: string[] };
   timeoutMs?: number;
+  breaker?: { failures?: number; resetMs?: number };
+}
+
+/** 一个对外挂载点。省略 upstreams 表示挂载全部。 */
+export interface EndpointInput {
+  path: string;
+  upstreams?: string[];
 }
 
 export interface GatewayInput {
   name?: string;
   version?: string;
   port?: number;
-  path?: string;
+  endpoints?: EndpointInput[];
   separator?: string;
   maxToolNameLength?: number;
   reconcileIntervalMs?: number;
@@ -33,67 +40,102 @@ export interface GatewayInput {
   upstreams: UpstreamInput[];
 }
 
-export type Endpoint =
+/** 如何连上一个上游 */
+export type Connection =
   | { kind: 'stdio'; params: StdioServerParameters }
   | { kind: 'http'; url: URL; init: RequestInit };
+
+export interface BreakerSpec {
+  readonly failures: number;
+  readonly resetMs: number;
+}
 
 export interface UpstreamSpec {
   readonly id: string;
   readonly alias: string;
-  readonly endpoint: Endpoint;
+  readonly connection: Connection;
   readonly timeout: number;
+  readonly breaker: BreakerSpec;
   readonly exposes: (toolName: string) => boolean;
+}
+
+export interface EndpointSpec {
+  readonly path: string;
+  readonly upstreams: readonly UpstreamSpec[];
 }
 
 export interface GatewaySpec {
   readonly name: string;
   readonly version: string;
   readonly port: number;
-  readonly path: string;
   readonly reconcileInterval: number;
-  readonly qualify: (alias: string, toolName: string) => string;
+  readonly qualify: (alias: string, name: string) => string;
   readonly allowsOrigin: (origin: string) => boolean;
   readonly upstreams: readonly UpstreamSpec[];
+  readonly endpoints: readonly EndpointSpec[];
 }
 
 const ALIAS = /^[a-z0-9-]{1,12}$/;
 
 /** 解析成完全确定的规格：缺失与冲突在此处失败，运行时不再判空。 */
 export function defineGateway(input: GatewayInput): GatewaySpec {
-  const upstreams = input.upstreams ?? [];
-  if (upstreams.length === 0) throw new Error('至少需要配置一个上游');
+  const inputs = input.upstreams ?? [];
+  if (inputs.length === 0) throw new Error('至少需要配置一个上游');
 
   assertUnique(
-    upstreams.map((upstream) => upstream.id),
+    inputs.map((upstream) => upstream.id),
     'upstream id',
   );
   assertUnique(
-    upstreams.map((upstream) => upstream.alias),
+    inputs.map((upstream) => upstream.alias),
     'alias',
   );
 
+  const upstreams = inputs.map(toUpstreamSpec);
   const { allowedOrigins } = input;
+
   return {
     name: input.name ?? 'openmcp',
     version: input.version ?? '0.0.1',
     port: input.port ?? 8080,
-    path: input.path ?? '/mcp',
     reconcileInterval: input.reconcileIntervalMs ?? 60_000,
+    // SEP-986 定稿的工具名上限是 64 字符，也是多数 LLM provider 对 function name 的上限
     qualify: toQualifier(input.separator ?? '__', input.maxToolNameLength ?? 64),
     allowsOrigin: allowedOrigins ? (origin) => allowedOrigins.includes(origin) : () => true,
-    upstreams: upstreams.map(toUpstreamSpec),
+    upstreams,
+    endpoints: toEndpointSpecs(input.endpoints ?? [{ path: '/mcp' }], upstreams),
   };
 }
 
-/** 超长则截断加摘要，同一输入永远得到同一结果 */
 const toQualifier =
   (separator: string, maxLength: number) =>
-  (alias: string, toolName: string): string => {
-    const qualified = `${alias}${separator}${toolName}`;
+  (alias: string, name: string): string => {
+    const qualified = `${alias}${separator}${name}`;
     if (qualified.length <= maxLength) return qualified;
     const digest = createHash('sha256').update(qualified).digest('hex').slice(0, 6);
     return `${qualified.slice(0, maxLength - digest.length - 1)}_${digest}`;
   };
+
+function toEndpointSpecs(
+  inputs: readonly EndpointInput[],
+  upstreams: readonly UpstreamSpec[],
+): readonly EndpointSpec[] {
+  assertUnique(
+    inputs.map((endpoint) => endpoint.path),
+    'endpoint path',
+  );
+  const byId = new Map(upstreams.map((upstream) => [upstream.id, upstream]));
+
+  return inputs.map(({ path, upstreams: ids }) => ({
+    path,
+    upstreams:
+      ids?.map((id) => {
+        const upstream = byId.get(id);
+        if (!upstream) throw new Error(`端点 ${path} 引用了不存在的上游: ${id}`);
+        return upstream;
+      }) ?? upstreams,
+  }));
+}
 
 function toUpstreamSpec(input: UpstreamInput): UpstreamSpec {
   if (!ALIAS.test(input.alias ?? '')) {
@@ -102,13 +144,14 @@ function toUpstreamSpec(input: UpstreamInput): UpstreamSpec {
   return {
     id: input.id,
     alias: input.alias,
-    endpoint: toEndpoint(input),
+    connection: toConnection(input),
     timeout: input.timeoutMs ?? 30_000,
+    breaker: { failures: input.breaker?.failures ?? 5, resetMs: input.breaker?.resetMs ?? 30_000 },
     exposes: toFilter(input.tools),
   };
 }
 
-function toEndpoint({ id, transport }: UpstreamInput): Endpoint {
+function toConnection({ id, transport }: UpstreamInput): Connection {
   switch (transport?.type) {
     case 'stdio':
       return {
@@ -122,18 +165,22 @@ function toEndpoint({ id, transport }: UpstreamInput): Endpoint {
         },
       };
     case 'http':
-      return { kind: 'http', url: new URL(transport.url), init: { headers: transport.headers ?? {} } };
+      return {
+        kind: 'http',
+        url: new URL(transport.url),
+        init: { headers: transport.headers ?? {} },
+      };
     default:
       throw new Error(`上游 ${id} 的 transport.type 必须是 stdio 或 http`);
   }
 }
 
-function toFilter(rules: UpstreamInput['tools']): (toolName: string) => boolean {
+function toFilter(rules: UpstreamInput['tools']): (name: string) => boolean {
   const include = rules?.include?.map(toPattern);
   const exclude = rules?.exclude?.map(toPattern);
-  return (toolName) => {
-    if (exclude?.some((pattern) => pattern.test(toolName))) return false;
-    return include?.some((pattern) => pattern.test(toolName)) ?? true;
+  return (name) => {
+    if (exclude?.some((pattern) => pattern.test(name))) return false;
+    return include?.some((pattern) => pattern.test(name)) ?? true;
   };
 }
 
