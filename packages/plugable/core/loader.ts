@@ -1,21 +1,29 @@
 /**
- * 插件加载器:`spec` → 动态 import → 形态检测。支持 {@link Plugin} 对象,或返回 Plugin 的工厂函数。
+ * 插件加载器:`spec` → 动态 import → 取 default 导出。default 是函数则视作工厂,用 `options`
+ * 调用一次(rollup / vite 插件包的通行形态)。
  */
 
 import type { Plugin } from "./plugin";
 
+export interface LoadOptions<O> {
+  /** 传给工厂函数的入参。 */
+  options?: O | undefined;
+  /** 解析相对 `spec` 的基准 URL,如 `import.meta.url`;文件型 spec 必填。 */
+  base?: string | undefined;
+}
+
 /**
- * 加载一个插件。
- *
  * @param spec npm 包名 / 相对路径 / `file:` URL
- * @param baseUrl 解析相对路径用的基准 URL(如 `import.meta.url`);文件型 spec 必填
+ * @throws {TypeError} default 导出不是插件(缺少 `setup`)
  */
-export async function loadPlugin(spec: string, baseUrl?: string): Promise<Plugin> {
-  const isFile = spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("file:");
-  const target = isFile && baseUrl ? new URL(spec, baseUrl).href : spec;
-  const mod = (await import(target)) as Record<string, unknown>;
-  const candidate = mod["default"] ?? mod["plugin"] ?? mod;
-  const resolved = typeof candidate === "function" ? (candidate as () => unknown)() : candidate;
-  if (resolved && typeof (resolved as Plugin).setup === "function") return resolved as Plugin;
-  throw new TypeError(`"${spec}" 不是合法插件(缺少 setup)`);
+export async function loadPlugin<O = unknown>(
+  spec: string,
+  load: LoadOptions<O> = {},
+): Promise<Plugin> {
+  const relative = spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("file:");
+  const target = relative && load.base ? new URL(spec, load.base).href : spec;
+  const exported = ((await import(target)) as { default?: unknown }).default;
+  const plugin = typeof exported === "function" ? (exported as (options?: O) => unknown)(load.options) : exported;
+  if (plugin && typeof (plugin as Plugin).setup === "function") return plugin as Plugin;
+  throw new TypeError(`"${spec}" 的 default 导出不是插件(缺少 setup)`);
 }

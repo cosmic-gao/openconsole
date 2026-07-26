@@ -1,12 +1,13 @@
 /**
  * 插件定义与上下文。
  *
- * 一个插件 = `{ name, pre?, post?, enforce?, apply?, setup(api) }`。一切通过 `setup(api)`
- * 命令式声明:用 `api.hooks.<name>.tap(...)` 注册回调,用 `expose` / `useExposed` 跨插件通信,
- * 用 `onDispose` / `signal` 管理生命周期。
+ * 一个插件 = `{ name, enforce?, before?, after?, apply?, setup(api, options) }`。一切通过
+ * `setup` 命令式声明 —— 注册什么、注册几个、按什么条件注册,全在插件自己手里。这是 esbuild
+ * 的形态,而不是一堆生命周期字段的对象。
  */
 
-import type { Hook } from "./hook";
+import type { Hook, HookMap } from "./hook";
+import type { Ordered } from "./order";
 
 export interface Logger {
   info(message: string): void;
@@ -14,57 +15,55 @@ export interface Logger {
   error(message: string): void;
 }
 
-/** Host 注入给插件的只读上下文;host 可经索引签名挂载任意资源。 */
-export interface HostContext {
+/** Host 注入给插件的只读上下文。要挂自己的资源就扩展它,并把扩展类型传给 {@link PluginManager}。 */
+export interface Host {
   readonly cwd: string;
   readonly mode?: string | undefined;
   readonly logger?: Logger | undefined;
-  readonly [key: string]: unknown;
 }
 
-/** 一组具名 hook(由 host 声明)。 */
-export type Hooks = Record<string, Hook<any, any>>;
+/** 一组具名 hook,由 host 声明。槽位可以是单个 {@link Hook},也可以是一组 {@link HookMap}。 */
+export type Hooks = Record<string, Hook<any, any> | HookMap<any>>;
 
-/** 给插件的"只可 tap"视图:插件能 `tap`,不能 `call`(call 是 host 的特权)。 */
+/** 单个槽位的只可注册视图。 */
+type View<S> = S extends HookMap<infer T>
+  ? { for(key: string): Pick<T, "tap"> }
+  : S extends Hook<any, any>
+    ? Pick<S, "tap">
+    : never;
+
+/** 给插件的只可注册视图 —— `call` 是 host 的特权。 */
 export type Tappable<H extends Hooks> = {
-  readonly [K in keyof H]: Pick<H[K], "tap">;
+  readonly [K in keyof H]: View<H[K]>;
 };
 
 /** `setup(api)` 拿到的把手。 */
-export interface PluginContext<H extends Hooks, C extends HostContext = HostContext> {
+export interface Context<H extends Hooks, C extends Host = Host> {
   readonly name: string;
-  readonly options: unknown;
-  readonly context: C;
-  /** 本插件的 hooks 视图;tap 自动归属本插件、随热重载 / 卸载清理。 */
+  readonly host: C;
+  /** tap 恒归属本插件:`name` 由管理器接管,写了也会被覆盖。 */
   readonly hooks: Tappable<H>;
-  /** 卸载 / 重载 / host 关停时 abort(透传给长生命周期资源)。 */
+  /** 卸载 / 重载 / host 关停时 abort。 */
   readonly signal: AbortSignal;
-  /** 注册清理;卸载时按注册逆序执行。 */
+  /** 卸载时按注册逆序执行。 */
   onDispose(fn: () => void | Promise<void>): void;
-  /** 暴露 / 获取跨插件共享值(靠 pre/post 保证时序)。 */
-  expose<T>(key: string, value: T): void;
-  useExposed<T = unknown>(key: string): T | undefined;
-  /** 是否已装配某插件。 */
-  hasPlugin(name: string): boolean;
+  /** 暴露跨插件共享值;卸载时自动撤下。 */
+  provide<T>(key: string, value: T): void;
+  /** 时序靠 `after` 保证 —— 没声明依赖就可能还没被 provide。 */
+  consume<T = unknown>(key: string): T | undefined;
+  has(name: string): boolean;
 }
 
-/** 插件定义。 */
-export interface Plugin<H extends Hooks = Hooks, C extends HostContext = HostContext, O = unknown> {
-  name: string;
-  version?: string | undefined;
-  /** 须先于本插件 setup 的插件名。 */
-  pre?: string[] | undefined;
-  /** 须后于本插件 setup 的插件名。 */
-  post?: string[] | undefined;
-  /** 粗粒度硬分相(先于 pre/post 应用)。 */
-  enforce?: "pre" | "post" | undefined;
-  /** 条件装配,返回 false 跳过。 */
-  apply?: ((context: C) => boolean) | undefined;
-  setup(api: PluginContext<H, C>, options: O): void | Promise<void>;
+export interface Plugin<H extends Hooks = Hooks, C extends Host = Host, O = unknown>
+  extends Ordered {
+  readonly name: string;
+  /** 返回 false 则整个插件跳过。 */
+  readonly apply?: ((host: C) => boolean) | undefined;
+  setup(api: Context<H, C>, options: O): void | Promise<void>;
 }
 
-/** 类型收窄恒等函数(便于推断 H / O)。 */
-export function definePlugin<H extends Hooks, C extends HostContext = HostContext, O = unknown>(
+/** 类型收窄恒等函数,便于推断 `H` / `O`。 */
+export function definePlugin<H extends Hooks, C extends Host = Host, O = unknown>(
   plugin: Plugin<H, C, O>,
 ): Plugin<H, C, O> {
   return plugin;
