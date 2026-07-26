@@ -18,21 +18,6 @@ export interface Reals extends Iterable<number> {
   readonly [index: number]: number;
 }
 
-export interface CompileOptions<N = unknown, E = unknown> {
-  /** 只保留满足谓词的节点。 */
-  node?: (node: NodeId, weight: N | undefined) => boolean;
-  /** 只保留满足谓词的边；两端节点也必须保留。 */
-  edge?: (edge: EdgeRecord<E>) => boolean;
-  /** 把这些分组各折叠成单节点：其后代不再单独出现，跨组边聚合到组上、组内边消失。 */
-  collapse?: Iterable<NodeId>;
-  /** 边权。省略则不编译权重，最短路类算法将无法运行。 */
-  weight?: (edge: EdgeRecord<E>) => number;
-  /** 视作无向：每条边在两端各出现一次。 */
-  undirected?: boolean;
-  /** 只编译出边方向，省掉一半内存与编译时间；{@link Snapshot.reverse} 与入向遍历将不可用。 */
-  outbound?: boolean;
-}
-
 /**
  * 一个方向的 CSR 邻接。三条数组绑在一个对象里，因此"有没有入向"是一次判断，
  * 而不是三个各自可空的字段。
@@ -42,8 +27,99 @@ export interface Adjacency {
   readonly offset: Ints;
   /** 槽 → 对端节点索引：出向里是目标，入向里是来源。 */
   readonly other: Ints;
-  /** 槽 → 边序号，用于查 {@link SnapshotData.weight} 与 {@link SnapshotData.edges}。 */
+  /** 槽 → 边序号，用于查 {@link Structure.weight}。 */
   readonly edge: Ints;
+}
+
+/**
+ * **算法的输入契约**：索引空间的邻接读取，五个只读字段，全是纯数据。
+ *
+ * 算法一律面向这个接口而不是 {@link Snapshot} 类，因此凡是能凑出这五个字段的东西都能
+ * 直接跑全套算法——SharedArrayBuffer 背书的邻接、WASM 里导出的 CSR、按规则生成而非
+ * 存储的图、别的库编译出的结果，都不必先塞进 `Graph` 再编译一遍。
+ *
+ * @example 手写一条 3 节点链，不经过 `Graph`
+ * ```ts
+ * const chain: Structure = {
+ *   order: 3,
+ *   size: 2,
+ *   outbound: { offset: Int32Array.of(0, 1, 2, 2), other: Int32Array.of(1, 2), edge: Int32Array.of(0, 1) },
+ *   inbound: { offset: Int32Array.of(0, 0, 1, 2), other: Int32Array.of(0, 1), edge: Int32Array.of(0, 1) },
+ *   weight: Float64Array.of(3, 4),
+ * };
+ * settle(toposort(chain)); // Int32Array [0, 1, 2]
+ * ```
+ */
+export interface Structure {
+  readonly order: number;
+  readonly size: number;
+  readonly outbound: Adjacency;
+  /** 没有入向邻接时为 `undefined`；与 `outbound` 同一个对象则表示按无向编译。 */
+  readonly inbound: Adjacency | undefined;
+  /** 边序号 → 权重；`undefined` 表示无权，全部边按 1 计。 */
+  readonly weight: Reals | undefined;
+}
+
+/** 边序号对应的代价；未编译权重时恒为 1。热循环里请把 `weight` 提到循环外直读。 */
+export const costOf = (structure: Structure, edge: number): number =>
+  structure.weight ? structure.weight[edge]! : 1;
+
+/** 入向与出向是同一份邻接（无向编译），把它当无向图看时无需再扫反向。 */
+export const merged = (structure: Structure): boolean =>
+  structure.inbound === structure.outbound;
+
+/**
+ * 方向翻转的视图，O(1)：底层数组全部共享，只是把出向与入向对调。
+ *
+ * @throws Error 没有入向邻接
+ */
+export function reversed(structure: Structure): Structure {
+  const inbound = structure.inbound;
+  if (!inbound) {
+    throw new Error(
+      "structure has no inbound adjacency; compile without `outbound`",
+    );
+  }
+  return {
+    order: structure.order,
+    size: structure.size,
+    outbound: inbound,
+    inbound: structure.outbound,
+    weight: structure.weight,
+  };
+}
+
+export const outDegree = (structure: Structure, u: number): number =>
+  structure.outbound.offset[u + 1]! - structure.outbound.offset[u]!;
+
+export const inDegree = (structure: Structure, u: number): number => {
+  const inbound = structure.inbound;
+  return inbound ? inbound.offset[u + 1]! - inbound.offset[u]! : 0;
+};
+
+export interface CompileOptions<N = unknown, E = unknown> {
+  /** 只保留满足谓词的节点。 */
+  node?: (node: NodeId, weight: N | undefined) => boolean;
+  /** 只保留满足谓词的边；两端节点也必须保留。 */
+  edge?: (edge: EdgeRecord<E>) => boolean;
+  /** 把这些分组各折叠成单节点：其后代不再单独出现，跨组边聚合到组上、组内边消失。 */
+  collapse?: Iterable<NodeId>;
+  /**
+   * 边权，只吃边自己的权重值。省略则不编译权重，最短路类算法将无法运行。
+   *
+   * @remarks 签名不给整条 {@link EdgeRecord}，是为了让增量重编译只依赖权重值——
+   *   结构没变时重算全部边权就是一遍纯下标扫描。要按端点算权就把它烘进 `E` 里。
+   */
+  weight?: (weight: E | undefined) => number;
+  /** 视作无向：每条边在两端各出现一次。 */
+  undirected?: boolean;
+  /** 只编译出边方向，省掉一半内存与编译时间；{@link Snapshot.reverse} 与入向遍历将不可用。 */
+  outbound?: boolean;
+  /**
+   * 上一份快照。结构自它编译以来没变过就地复用 CSR，只重算边权；完全没变则原样返回。
+   * 编译选项不一致或用了谓词 / 折叠时自动退回全量编译，因此传错不会出错，只是没有加速。
+   */
+  reuse?: Snapshot;
 }
 
 /** 快照的纯数据形态：只含 typed-array 与字符串数组，可结构化克隆或 transfer 给 Worker。 */
@@ -58,14 +134,37 @@ export interface SnapshotData {
   readonly weight?: Reals | undefined;
 }
 
+/** id → 索引表的惰性容器；`reverse` 与增量重编译共享同一个，避免重复建表。 */
+interface Lookup {
+  map?: ReadonlyMap<NodeId, number>;
+}
+
+/** 编译来源与选项指纹，用于判定能否增量重编译。 */
+interface Source {
+  readonly graph: { readonly revision: number; readonly shape: number };
+  /** 编译时的 `graph.shape`。 */
+  readonly shape: number;
+  /** 没用谓词也没折叠——只有这种编译的结构才由 `shape` 完全决定。 */
+  readonly plain: boolean;
+  readonly undirected: boolean;
+  readonly outbound: boolean;
+  /** 出入向已被 {@link Snapshot.reverse} 对调过；这样的快照不能再拿去复用。 */
+  readonly flipped: boolean;
+  /** CSR 边序号 → 图内边槽位。结构不变时槽位不动，据此可零哈希地重算边权。 */
+  readonly slots: Int32Array;
+}
+
 /**
- * 不可变的图快照：CSR 邻接，全部数据在 typed-array 里。
+ * 不可变的图快照：CSR 邻接，全部数据在 typed-array 里，实现 {@link Structure}。
  *
- * 算法只吃快照，不吃 {@link Graph}——输入不可变意味着长跑任务中断后恢复时不会读到半改的图，
- * 也意味着快照能整份搬到 Worker 里跑。过滤、折叠、无向化都在编译期一次完成，
+ * 算法只吃 `Structure`，不吃 {@link Graph}——输入不可变意味着长跑任务中断后恢复时不会
+ * 读到半改的图，也意味着快照能整份搬到 Worker 里跑。过滤、折叠、无向化都在编译期一次完成，
  * 因此运行期没有任何谓词回调或视图转发的开销。
+ *
+ * 这个类在 `Structure` 之上多出的只有**标签层**：索引 ↔ {@link NodeId} 的互查。
+ * 算法产出的是索引，需要名字时在边界上用 {@link Snapshot.names} 换。
  */
-export class Snapshot {
+export class Snapshot implements Structure {
   public readonly graph: GraphId;
   public readonly revision: number;
   public readonly labels: ReadonlyArray<NodeId>;
@@ -74,19 +173,11 @@ export class Snapshot {
   public readonly inbound: Adjacency | undefined;
   public readonly weight: Reals | undefined;
 
-  private readonly _index: ReadonlyMap<NodeId, number>;
-  /** 只留一个读版本号的窗口，免得快照顺带持有整张图的泛型。 */
-  private readonly _origin: { readonly revision: number } | undefined;
+  /** 建表是惰性的：只跑索引空间算法的消费者（尤其是 Worker 侧）一次哈希都不用付。 */
+  private readonly _lookup: Lookup;
+  private readonly _source: Source | undefined;
 
-  /**
-   * @param index 已建好的 id → 索引表。编译与 {@link Snapshot.reverse} 手上都有现成的，
-   *   传进来可省一次 O(V) 重建——否则"O(1) 翻转"会退化成按节点数计费。
-   */
-  private constructor(
-    data: SnapshotData,
-    origin?: { readonly revision: number },
-    index?: ReadonlyMap<NodeId, number>,
-  ) {
+  private constructor(data: SnapshotData, source?: Source, lookup?: Lookup) {
     this.graph = data.graph;
     this.revision = data.revision;
     this.labels = data.labels;
@@ -94,8 +185,8 @@ export class Snapshot {
     this.outbound = data.outbound;
     this.inbound = data.inbound;
     this.weight = data.weight;
-    this._index = index ?? locate(data.labels);
-    this._origin = origin;
+    this._lookup = lookup ?? {};
+    this._source = source;
   }
 
   public get order(): number {
@@ -107,7 +198,9 @@ export class Snapshot {
   }
 
   public indexOf(node: NodeId): number {
-    return this._index.get(node) ?? -1;
+    const lookup = this._lookup;
+    const map = (lookup.map ??= locate(this.labels));
+    return map.get(node) ?? -1;
   }
 
   /** 外部查询用：越界返回 `undefined`。 */
@@ -117,7 +210,7 @@ export class Snapshot {
 
   /**
    * 内部遍历用：索引来自 `0 .. order-1`，越界属于程序错误而非查询失败。
-   * 把这个不变量收在一处，算法里就不必到处写非空断言。
+   * 把这个不变量收在一处，调用点就不必到处写非空断言。
    */
   public label(index: number): NodeId {
     const found = this.labels[index];
@@ -127,24 +220,11 @@ export class Snapshot {
     return found;
   }
 
-  public outDegree(u: number): number {
-    return this.outbound.offset[u + 1]! - this.outbound.offset[u]!;
-  }
-
-  /** 没有入向邻接时恒为 0。 */
-  public inDegree(u: number): number {
-    const inbound = this.inbound;
-    return inbound ? inbound.offset[u + 1]! - inbound.offset[u]! : 0;
-  }
-
-  /** 边序号对应的权重；未编译权重时为 1，无权算法因此能复用同一套代码。 */
-  public costAt(edge: number): number {
-    return this.weight ? this.weight[edge]! : 1;
-  }
-
-  /** 入向与出向是同一份邻接（无向编译），把它当无向图看时无需再扫反向。 */
-  public get merged(): boolean {
-    return this.inbound === this.outbound;
+  /** 批量把索引换成名字——算法产出与人看的东西之间的那道边界。 */
+  public names(indices: Iterable<number>): NodeId[] {
+    const found: NodeId[] = [];
+    for (const index of indices) found.push(this.label(index));
+    return found;
   }
 
   /** 交给 `postMessage` 的纯数据；`Snapshot.from` 可在另一线程还原。 */
@@ -172,25 +252,27 @@ export class Snapshot {
         "snapshot has no inbound adjacency; compile without `outbound`",
       );
     }
+    const source = this._source;
     return new Snapshot(
       { ...this.data, outbound: inbound, inbound: this.outbound },
-      this._origin,
-      this._index,
+      source && { ...source, flipped: !source.flipped },
+      this._lookup,
     );
   }
 
   /** 源图自编译以来是否未再变更。跨线程还原的快照没有源图，恒为 `true`。 */
   public get current(): boolean {
     return (
-      this._origin === undefined || this._origin.revision === this.revision
+      this._source === undefined ||
+      this._source.graph.revision === this.revision
     );
   }
 
   /** @throws {@link Stale} 源图已变更 */
   public verify(): this {
-    const origin = this._origin;
-    if (origin && origin.revision !== this.revision) {
-      throw new Stale(this.revision, origin.revision);
+    const source = this._source;
+    if (source && source.graph.revision !== this.revision) {
+      throw new Stale(this.revision, source.graph.revision);
     }
     return this;
   }
@@ -203,48 +285,65 @@ export class Snapshot {
     graph: Graph<N, E>,
     options: CompileOptions<N, E> = {},
   ): Snapshot {
-    const represent = folding((node) => graph.parent(node), options.collapse);
-    const labels: NodeId[] = [];
-    const index = new Map<NodeId, number>();
+    const collapse = options.collapse ? [...options.collapse] : [];
+    const plain =
+      options.node === undefined &&
+      options.edge === undefined &&
+      collapse.length === 0;
+    const undirected = options.undirected === true;
+    const outward = options.outbound === true;
 
-    graph.forEachNode((id, weight) => {
-      if (represent(id) !== id) return;
+    const recycled = options.reuse?._recycle(
+      graph,
+      plain,
+      undirected,
+      outward,
+      options.weight,
+    );
+    if (recycled) return recycled;
+
+    const represent = folding(graph, collapse);
+    const place = new Int32Array(graph.bound).fill(-1);
+    const labels: NodeId[] = [];
+    graph.forEachNode((id, weight, slot) => {
+      if (represent(slot) !== slot) return;
       if (options.node?.(id, weight) === false) return;
-      index.set(id, labels.length);
+      place[slot] = labels.length;
       labels.push(id);
     });
 
-    const edges: EdgeId[] = [];
-    const tail: number[] = [];
-    const head: number[] = [];
-    const costs: number[] = [];
+    const capacity = graph.size;
+    const tail = new Int32Array(capacity);
+    const head = new Int32Array(capacity);
+    const slots = new Int32Array(capacity);
+    const keep = options.edge;
+    let count = 0;
 
-    graph.forEachEdge((record) => {
-      const source = represent(record.source);
-      const target = represent(record.target);
-      const u = index.get(source);
-      const v = index.get(target);
-      if (u === undefined || v === undefined) return;
+    graph.forEachLink((e, from, to) => {
+      const source = represent(from);
+      const target = represent(to);
+      const u = place[source]!;
+      const v = place[target]!;
+      if (u < 0 || v < 0) return;
       // 组内边随折叠一起消失；未被折叠的真自环保留。
-      if (u === v && (source !== record.source || target !== record.target)) {
-        return;
-      }
-      if (options.edge?.(record) === false) return;
-      tail.push(u);
-      head.push(v);
-      edges.push(record.id);
-      if (options.weight) costs.push(options.weight(record));
+      if (u === v && (source !== from || target !== to)) return;
+      if (keep !== undefined && keep(graph.edgeAt(e)!) === false) return;
+      tail[count] = u;
+      head[count] = v;
+      slots[count] = e;
+      count++;
     });
 
+    const edges: EdgeId[] = new Array(count);
+    for (let i = 0; i < count; i++) edges[i] = graph.edgeIdAt(slots[i]!)!;
+
     const order = labels.length;
-    const undirected = options.undirected === true;
-    const outbound = adjacency(order, tail, head, undirected);
-    const inbound =
-      options.outbound === true
-        ? undefined
-        : undirected
-          ? outbound
-          : adjacency(order, head, tail, false);
+    const outbound = adjacency(order, tail, head, count, undirected);
+    const inbound = outward
+      ? undefined
+      : undirected
+        ? outbound
+        : adjacency(order, head, tail, count, false);
 
     return new Snapshot(
       {
@@ -254,12 +353,80 @@ export class Snapshot {
         edges,
         outbound,
         inbound,
-        weight: options.weight ? Float64Array.from(costs) : undefined,
+        weight: measure(graph, slots, count, options.weight),
       },
-      graph,
-      index,
+      {
+        graph,
+        shape: graph.shape,
+        plain,
+        undirected,
+        outbound: outward,
+        flipped: false,
+        slots: slots.slice(0, count),
+      },
     );
   }
+
+  /**
+   * 增量重编译：结构没变就复用 CSR，只重算边权；连权重都没变则原样返回自己。
+   *
+   * @returns 不满足复用条件时返回 `undefined`，由调用方走全量编译
+   */
+  private _recycle<N, E>(
+    graph: Graph<N, E>,
+    plain: boolean,
+    undirected: boolean,
+    outward: boolean,
+    weight: ((weight: E | undefined) => number) | undefined,
+  ): Snapshot | undefined {
+    const source = this._source;
+    if (source === undefined) return undefined;
+    if (source.graph !== graph) return undefined;
+    // 翻转过的快照方向与编译选项对不上，复用它会静默给出反向结构。
+    if (source.flipped) return undefined;
+    // 带谓词或折叠时，结构不只由 shape 决定（谓词可能看权重），一律全量重来。
+    if (!source.plain || !plain) return undefined;
+    if (source.undirected !== undirected || source.outbound !== outward) {
+      return undefined;
+    }
+    if (source.shape !== graph.shape) return undefined;
+
+    const wanted = weight !== undefined;
+    if (
+      graph.revision === this.revision &&
+      wanted === (this.weight !== undefined)
+    ) {
+      return this;
+    }
+    const slots = source.slots;
+    return new Snapshot(
+      {
+        graph: this.graph,
+        revision: graph.revision,
+        labels: this.labels,
+        edges: this.edges,
+        outbound: this.outbound,
+        inbound: this.inbound,
+        weight: measure(graph, slots, slots.length, weight),
+      },
+      { ...source, shape: graph.shape },
+      this._lookup,
+    );
+  }
+}
+
+function measure<N, E>(
+  graph: Graph<N, E>,
+  slots: Int32Array,
+  count: number,
+  weight: ((weight: E | undefined) => number) | undefined,
+): Float64Array | undefined {
+  if (weight === undefined) return undefined;
+  const costs = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    costs[i] = weight(graph.edgeWeightAt(slots[i]!));
+  }
+  return costs;
 }
 
 function locate(labels: ReadonlyArray<NodeId>): ReadonlyMap<NodeId, number> {
@@ -268,63 +435,74 @@ function locate(labels: ReadonlyArray<NodeId>): ReadonlyMap<NodeId, number> {
   return index;
 }
 
-/** 按 `tail → head` 建 CSR；`both` 为真时每条边在两端各出现一次。 */
+/**
+ * 按 `tail → head` 建 CSR；`both` 为真时每条边在两端各出现一次。
+ *
+ * @remarks 计数与落位刻意写成裸循环而不是抽小函数：这两步是整个编译里最贵的单项，
+ *   一旦包成捕获四个数组的闭包就拿不到内联。
+ */
 function adjacency(
   order: number,
-  tail: ReadonlyArray<number>,
-  head: ReadonlyArray<number>,
+  tail: Int32Array,
+  head: Int32Array,
+  count: number,
   both: boolean,
 ): Adjacency {
   const offset = new Int32Array(order + 1);
-  const count = (u: number): void => {
-    offset[u + 1] = offset[u + 1]! + 1;
-  };
-  for (let e = 0; e < tail.length; e++) {
-    count(tail[e]!);
-    if (both && head[e] !== tail[e]) count(head[e]!);
+  for (let e = 0; e < count; e++) {
+    const t = tail[e]!;
+    offset[t + 1] = offset[t + 1]! + 1;
+    const h = head[e]!;
+    if (both && h !== t) offset[h + 1] = offset[h + 1]! + 1;
   }
   for (let u = 0; u < order; u++) offset[u + 1] = offset[u + 1]! + offset[u]!;
 
-  const total = offset[order]!;
-  const other = new Int32Array(total);
-  const edge = new Int32Array(total);
+  const other = new Int32Array(offset[order]!);
+  const edge = new Int32Array(offset[order]!);
   const cursor = Int32Array.from(offset.subarray(0, order));
-
-  const place = (from: number, to: number, e: number): void => {
-    const slot = cursor[from]!;
-    cursor[from] = slot + 1;
-    other[slot] = to;
+  for (let e = 0; e < count; e++) {
+    const t = tail[e]!;
+    const h = head[e]!;
+    let slot = cursor[t]!;
+    cursor[t] = slot + 1;
+    other[slot] = h;
     edge[slot] = e;
-  };
-  for (let e = 0; e < tail.length; e++) {
-    place(tail[e]!, head[e]!, e);
-    if (both && head[e] !== tail[e]) place(head[e]!, tail[e]!, e);
+    if (both && h !== t) {
+      slot = cursor[h]!;
+      cursor[h] = slot + 1;
+      other[slot] = t;
+      edge[slot] = e;
+    }
   }
   return { offset, other, edge };
 }
 
-/** 节点 → 代表节点：祖先中最外层的被折叠分组，没有则是自身。 */
-function folding(
-  parent: (node: NodeId) => NodeId | undefined,
-  groups: Iterable<NodeId> | undefined,
-): (node: NodeId) => NodeId {
-  if (!groups) return (node) => node;
-  const collapsed = new Set(groups);
-  if (collapsed.size === 0) return (node) => node;
+/** 节点槽位 → 代表节点槽位：祖先中最外层的被折叠分组，没有则是自身。 */
+function folding<N, E>(
+  graph: Graph<N, E>,
+  groups: ReadonlyArray<NodeId>,
+): (slot: number) => number {
+  if (groups.length === 0) return (slot) => slot;
+  const collapsed = new Set<number>();
+  for (const id of groups) {
+    const u = graph.indexOf(id);
+    if (u >= 0) collapsed.add(u);
+  }
+  if (collapsed.size === 0) return (slot) => slot;
 
-  const cache = new Map<NodeId, NodeId>();
-  return (node: NodeId): NodeId => {
-    const known = cache.get(node);
-    if (known !== undefined) return known;
-    let representative = node;
+  const cache = new Int32Array(graph.bound).fill(-1);
+  return (slot: number): number => {
+    const known = cache[slot]!;
+    if (known >= 0) return known;
+    let representative = slot;
     for (
-      let cursor = parent(node);
-      cursor !== undefined;
-      cursor = parent(cursor)
+      let cursor = graph.parentAt(slot);
+      cursor !== -1;
+      cursor = graph.parentAt(cursor)
     ) {
       if (collapsed.has(cursor)) representative = cursor;
     }
-    cache.set(node, representative);
+    cache[slot] = representative;
     return representative;
   };
 }

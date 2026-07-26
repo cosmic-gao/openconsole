@@ -1,9 +1,11 @@
 import type { Graph } from "../graph";
-import type { EdgeId, NodeId } from "../ident";
+import type { NodeId } from "../ident";
 import { Snapshot } from "../snapshot";
 import { settle } from "../task";
 import { scc } from "./component";
 import { topology } from "./order";
+
+const NONE = -1;
 
 /**
  * 增量维护的拓扑序（Pearce-Kelly）：订阅图事件就地重排，不整图重算。
@@ -11,49 +13,72 @@ import { topology } from "./order";
  * 造成环的边不触发重算，而是记入 {@link Ordering.conflicts} 并从拓扑约束中排除——
  * 剩下的子图始终是 DAG，顺序始终有效。因此"图里长期带环"这种编辑器常态不会把
  * 每次变更都退化成 O(V+E)。
+ *
+ * @remarks 全部内部状态按**整数槽位**存放：位次是一条 `Int32Array`，冲突边是一个数字
+ *   `Set`，区域搜索走 {@link Graph.forEachOutAt}。事件载荷自带 `slot`，因此除了建边时
+ *   取两端槽位的那两次查表，整条增量路径不碰字符串。`compact()` 重新编号时按 `compacted`
+ *   给的映射原地搬运，而不是整图重算。
  */
 export class Ordering<N = unknown, E = unknown> {
-  private readonly _rank = new Map<NodeId, number>();
-  private readonly _conflicts = new Set<EdgeId>();
+  /**
+   * 位次 + 1，`0` 表示该槽位不在跟踪范围内（从未登记，或 `dispose` 之后新增的）。
+   * 全体统一偏移不影响任何比较，却省掉一条并行的「是否有效」位图。
+   */
+  private _rank: Int32Array;
+  private readonly _conflicts = new Set<number>();
   private readonly _unsubscribe: Array<() => void> = [];
-  private _next = 0;
+  private _next = 1;
 
   public constructor(private readonly _graph: Graph<N, E>) {
+    this._rank = new Int32Array(0);
     this._reset();
     const signal = _graph.signal;
     this._unsubscribe.push(
-      signal.on("nodeAdded", ({ node }) => {
-        if (!this._rank.has(node)) this._rank.set(node, this._next++);
+      signal.on("nodeAdded", ({ slot }) => {
+        this._fit(slot);
+        this._rank[slot] = this._next++;
       }),
-      signal.on("nodeDropped", ({ node }) => {
-        this._rank.delete(node);
+      signal.on("edgeAdded", ({ slot, source, target }) => {
+        this._insert(slot, _graph.indexOf(source), _graph.indexOf(target));
       }),
-      signal.on("edgeAdded", ({ edge, source, target }) => {
-        this._insert(edge, source, target);
-      }),
-      signal.on("edgeDropped", ({ edge }) => {
+      signal.on("edgeDropped", ({ slot }) => {
         // 删边不可能破坏既有顺序，只需撤销它的冲突登记。
-        this._conflicts.delete(edge);
+        this._conflicts.delete(slot);
+      }),
+      signal.on("compacted", ({ nodes, edges }) => {
+        this._remap(nodes, edges);
       }),
     );
   }
 
-  /** 节点不存在返回 `undefined`。 */
+  /** 节点不存在或不在跟踪范围内时返回 `undefined`。 */
   public rank(node: NodeId): number | undefined {
-    return this._rank.get(node);
+    const at = this.rankAt(this._graph.indexOf(node));
+    return at === NONE ? undefined : at;
+  }
+
+  /** 按槽位取位次，零哈希；未跟踪返回 -1。 */
+  public rankAt(slot: number): number {
+    if (slot < 0) return NONE;
+    const stored = this._rank[slot] ?? 0;
+    return stored === 0 ? NONE : stored - 1;
   }
 
   /** 可直接用作 `sort` 比较器；任一节点缺失时视为相等。 */
   public compare(a: NodeId, b: NodeId): number {
-    const left = this._rank.get(a);
-    const right = this._rank.get(b);
+    const left = this.rank(a);
+    const right = this.rank(b);
     return left === undefined || right === undefined ? 0 : left - right;
   }
 
   public sorted(): NodeId[] {
-    return [...this._rank.entries()]
-      .sort((a, b) => a[1] - b[1])
-      .map(([node]) => node);
+    const listed: Array<{ id: NodeId; rank: number }> = [];
+    this._graph.forEachNode((id, _weight, slot) => {
+      listed.push({ id, rank: this._rank[slot] ?? 0 });
+    });
+    // 未跟踪的（rank 0）自然排在最前，与"尚未纳入约束"的语义一致。
+    listed.sort((a, b) => a.rank - b.rank);
+    return listed.map((entry) => entry.id);
   }
 
   /** 是否存在被排除的成环边。O(1)。 */
@@ -61,8 +86,8 @@ export class Ordering<N = unknown, E = unknown> {
     return this._conflicts.size > 0;
   }
 
-  /** 因成环而被排除在拓扑约束之外的边。 */
-  public get conflicts(): ReadonlySet<EdgeId> {
+  /** 因成环而被排除在拓扑约束之外的边槽位。 */
+  public get conflicts(): ReadonlySet<number> {
     return this._conflicts;
   }
 
@@ -72,10 +97,12 @@ export class Ordering<N = unknown, E = unknown> {
     const snapshot = Snapshot.of(this._graph);
     return settle(scc(snapshot))
       .groups()
-      .filter(
-        (members) =>
-          members.length > 1 || this._graph.adjacent(members[0]!, members[0]!),
-      );
+      .filter((members) => {
+        if (members.length > 1) return true;
+        const only = snapshot.label(members[0]!);
+        return this._graph.adjacent(only, only);
+      })
+      .map((members) => snapshot.names(members));
   }
 
   /** 丢弃增量状态并整图重算。 */
@@ -88,30 +115,63 @@ export class Ordering<N = unknown, E = unknown> {
     this._unsubscribe.length = 0;
   }
 
+  private _fit(slot: number): void {
+    if (slot < this._rank.length) return;
+    const grown = new Int32Array(Math.max(16, (slot + 1) * 2));
+    grown.set(this._rank);
+    this._rank = grown;
+  }
+
   private _reset(): void {
     const snapshot = Snapshot.of(this._graph);
     const result = settle(topology(snapshot));
-    this._rank.clear();
+    this._rank = new Int32Array(Math.max(16, this._graph.bound));
     this._conflicts.clear();
-    this._next = 0;
-    for (const node of result.order) this._rank.set(node, this._next++);
-    for (const node of result.cycle) this._rank.set(node, this._next++);
+    this._next = 1;
+
+    // 快照索引 → 图槽位：无谓词的编译按存储顺序逐个收下节点，因此第 i 个快照节点
+    // 就是第 i 个非空槽位，重走一遍即可对齐，不必逐个查 id。
+    const slotOf = new Int32Array(snapshot.order);
+    let at = 0;
+    this._graph.forEachNode((_id, _weight, slot) => {
+      slotOf[at++] = slot;
+    });
+    for (const u of result.order) this._rank[slotOf[u]!] = this._next++;
+    for (const u of result.cycle) this._rank[slotOf[u]!] = this._next++;
 
     // 环节点的相对顺序是任意的，把逆序的那些边挑出来排除，剩下的仍是合法拓扑序。
-    for (const node of result.cycle) {
-      const from = this._rank.get(node)!;
-      this._graph.forEachOut(node, (target, edge) => {
-        const to = this._rank.get(target);
-        if (to !== undefined && from >= to) this._conflicts.add(edge);
+    for (const u of result.cycle) {
+      const slot = slotOf[u]!;
+      const from = this._rank[slot]!;
+      this._graph.forEachOutAt(slot, (target, edge) => {
+        if (from >= this._rank[target]!) this._conflicts.add(edge);
       });
     }
   }
 
-  private _insert(edge: EdgeId, source: NodeId, target: NodeId): void {
-    const from = this._rank.get(source);
-    const to = this._rank.get(target);
-    if (from === undefined || to === undefined) return;
-    if (from < to) return;
+  private _remap(nodes: Int32Array, edges: Int32Array): void {
+    const moved = new Int32Array(Math.max(16, this._graph.bound));
+    for (let i = 0; i < nodes.length; i++) {
+      const to = nodes[i]!;
+      if (to >= 0) moved[to] = this._rank[i] ?? 0;
+    }
+    this._rank = moved;
+
+    const conflicts = [...this._conflicts];
+    this._conflicts.clear();
+    for (const edge of conflicts) {
+      const to = edges[edge];
+      if (to !== undefined && to >= 0) this._conflicts.add(to);
+    }
+  }
+
+  private _insert(edge: number, source: number, target: number): void {
+    if (source < 0 || target < 0) return;
+    this._fit(source);
+    this._fit(target);
+    const from = this._rank[source]!;
+    const to = this._rank[target]!;
+    if (from === 0 || to === 0 || from < to) return;
 
     const ahead = this._region(target, from, true, source);
     if (ahead === null) {
@@ -120,53 +180,53 @@ export class Ordering<N = unknown, E = unknown> {
     }
     const behind = this._region(source, to, false);
 
-    const byRank = (a: NodeId, b: NodeId): number =>
-      this._rank.get(a)! - this._rank.get(b)!;
+    const byRank = (a: number, b: number): number =>
+      this._rank[a]! - this._rank[b]!;
     behind.sort(byRank);
     ahead.sort(byRank);
 
     // 两区必然不相交：若有节点同属两侧，则 target →* 它 →* source，`_region` 撞上
     // stop 早已返回 null。因此位次只是在这批节点内部重排，不会漏发或重发。
     const positions = [...behind, ...ahead]
-      .map((node) => this._rank.get(node)!)
+      .map((slot) => this._rank[slot]!)
       .sort((a, b) => a - b);
     let cursor = 0;
-    for (const node of behind) this._rank.set(node, positions[cursor++]!);
-    for (const node of ahead) this._rank.set(node, positions[cursor++]!);
+    for (const slot of behind) this._rank[slot] = positions[cursor++]!;
+    for (const slot of ahead) this._rank[slot] = positions[cursor++]!;
   }
 
-  private _region(start: NodeId, bound: number, outward: boolean): NodeId[];
+  private _region(start: number, bound: number, outward: boolean): number[];
   private _region(
-    start: NodeId,
+    start: number,
     bound: number,
     outward: boolean,
-    stop: NodeId,
-  ): NodeId[] | null;
+    stop: number,
+  ): number[] | null;
   /**
-   * 收集受影响的区域：`outward` 为真时沿出边找 rank 不超过 `bound` 的后代，
-   * 否则沿入边找 rank 不低于 `bound` 的祖先。碰到 `stop` 说明成环，返回 `null`。
+   * 收集受影响的区域：`outward` 为真时沿出边找位次不超过 `bound` 的后代，
+   * 否则沿入边找位次不低于 `bound` 的祖先。碰到 `stop` 说明成环，返回 `null`。
    */
   private _region(
-    start: NodeId,
+    start: number,
     bound: number,
     outward: boolean,
-    stop?: NodeId,
-  ): NodeId[] | null {
-    const seen = new Set<NodeId>([start]);
-    const region: NodeId[] = [start];
-    const stack: NodeId[] = [start];
+    stop?: number,
+  ): number[] | null {
+    const seen = new Set<number>([start]);
+    const region: number[] = [start];
+    const stack: number[] = [start];
     let cyclic = false;
 
     // 闭包建在循环外：区域最大可达全图，每弹一个节点重建一次就是 O(V) 次分配。
-    const expand = (other: NodeId, edge: EdgeId): boolean | void => {
+    const expand = (other: number, edge: number): boolean | void => {
       if (this._conflicts.has(edge)) return;
       if (other === stop) {
         cyclic = true;
         return false;
       }
       if (seen.has(other)) return;
-      const rank = this._rank.get(other);
-      if (rank === undefined) return;
+      const rank = this._rank[other];
+      if (rank === undefined || rank === 0) return;
       if (outward ? rank > bound : rank < bound) return;
       seen.add(other);
       region.push(other);
@@ -174,9 +234,9 @@ export class Ordering<N = unknown, E = unknown> {
     };
 
     while (stack.length > 0) {
-      const node = stack.pop()!;
-      if (outward) this._graph.forEachOut(node, expand);
-      else this._graph.forEachIn(node, expand);
+      const slot = stack.pop()!;
+      if (outward) this._graph.forEachOutAt(slot, expand);
+      else this._graph.forEachInAt(slot, expand);
       if (cyclic) return null;
     }
     return region;

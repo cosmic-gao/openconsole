@@ -2,21 +2,26 @@ import { bench, describe } from "vitest";
 
 import {
   components,
+  dominators,
   nodeId,
+  pack,
   scc,
   settle,
   shortestPaths,
   Snapshot,
   toposort,
-  type EdgeRecord,
+  unpack,
 } from "../index";
 import { randomGraph } from "./random";
 
 const graph = randomGraph(2026, { order: 5000, density: 8, acyclic: true });
-const cost = (edge: EdgeRecord<number>): number => edge.weight ?? 1;
+const cost = (weight: number | undefined): number => weight ?? 1;
 const snapshot = Snapshot.of(graph, { weight: cost });
 const nodes = graph.nodes();
-const source = nodeId("n0");
+const source = snapshot.indexOf(nodeId("n0"));
+const bundle = pack(graph);
+const first = graph.edges()[0]!;
+let tick = 0;
 
 describe(`邻接遍历（V=${graph.order} E=${graph.size}）`, () => {
   bench("Graph.forEachOut 全图（零分配）", () => {
@@ -50,6 +55,11 @@ describe("快照编译", () => {
   bench("双向无权", () => {
     Snapshot.of(graph);
   });
+
+  bench("增量重编译（只动了权重）", () => {
+    graph.setEdgeWeight(first, (tick++ % 9) + 1);
+    Snapshot.of(graph, { weight: cost, reuse: snapshot });
+  });
 });
 
 describe("算法（同一份快照）", () => {
@@ -67,5 +77,19 @@ describe("算法（同一份快照）", () => {
 
   bench("shortestPaths", () => {
     settle(shortestPaths(snapshot, source));
+  });
+
+  bench("dominators", () => {
+    settle(dominators(snapshot, source));
+  });
+});
+
+describe("序列化", () => {
+  bench("pack", () => {
+    pack(graph);
+  });
+
+  bench("unpack", () => {
+    unpack(bundle);
   });
 });

@@ -1,27 +1,30 @@
-import type { NodeId } from "../ident";
-import type { Adjacency, Ints, Snapshot } from "../snapshot";
+import { merged, type Adjacency, type Ints, type Structure } from "../snapshot";
 import { Stepwise, transform, type Task } from "../task";
 
 const NONE = -1;
 
-/** 分量划分：`labels[u]` 是节点索引 `u` 所属分量的编号。 */
+/** 分量划分：`component[u]` 是节点索引 `u` 所属分量的编号。 */
 export class Partition {
   public constructor(
     public readonly count: number,
-    public readonly labels: Ints,
-    private readonly _snapshot: Snapshot,
+    public readonly component: Ints,
   ) {}
 
-  /** 未知节点返回 -1。 */
-  public of(node: NodeId): number {
-    const u = this._snapshot.indexOf(node);
-    return u < 0 ? NONE : this.labels[u]!;
-  }
-
-  public groups(): NodeId[][] {
-    const grouped: NodeId[][] = Array.from({ length: this.count }, () => []);
-    for (let u = 0; u < this.labels.length; u++) {
-      grouped[this.labels[u]!]!.push(this._snapshot.label(u));
+  /** 按分量编号分组的节点索引。 */
+  public groups(): Int32Array[] {
+    const width = new Int32Array(this.count);
+    for (let u = 0; u < this.component.length; u++) {
+      const c = this.component[u]!;
+      width[c] = width[c]! + 1;
+    }
+    const grouped: Int32Array[] = new Array(this.count);
+    for (let c = 0; c < this.count; c++) grouped[c] = new Int32Array(width[c]!);
+    const cursor = new Int32Array(this.count);
+    for (let u = 0; u < this.component.length; u++) {
+      const c = this.component[u]!;
+      const at = cursor[c]!;
+      cursor[c] = at + 1;
+      grouped[c]![at] = u;
     }
     return grouped;
   }
@@ -31,40 +34,40 @@ export class Partition {
 class Weak extends Stepwise<Partition> {
   private readonly _component: Int32Array;
   private readonly _stack: Int32Array;
-  /** 需要额外扫的反向邻接；无向快照两侧同源，留空即可。 */
+  /** 需要额外扫的反向邻接；无向结构两侧同源，留空即可。 */
   private readonly _inbound: Adjacency | undefined;
   private _top = 0;
   private _root = 0;
   private _count = 0;
   private _seen = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    this._component = new Int32Array(_snapshot.order).fill(NONE);
-    this._stack = new Int32Array(_snapshot.order);
-    this._inbound = _snapshot.merged ? undefined : _snapshot.inbound;
+    this._component = new Int32Array(_structure.order).fill(NONE);
+    this._stack = new Int32Array(_structure.order);
+    this._inbound = merged(_structure) ? undefined : _structure.inbound;
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0 ? 1 : this._seen / this._snapshot.order;
+    return this._structure.order === 0 ? 1 : this._seen / this._structure.order;
   }
 
   protected step(): boolean {
     if (this._top === 0) {
       while (
-        this._root < this._snapshot.order &&
+        this._root < this._structure.order &&
         this._component[this._root] !== NONE
       ) {
         this._root++;
       }
-      if (this._root >= this._snapshot.order) return false;
+      if (this._root >= this._structure.order) return false;
       this._claim(this._root, this._count++);
       return true;
     }
 
     const u = this._stack[--this._top]!;
     const label = this._component[u]!;
-    const { offset, other } = this._snapshot.outbound;
+    const { offset, other } = this._structure.outbound;
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       this._claim(other[k]!, label);
     }
@@ -86,7 +89,7 @@ class Weak extends Stepwise<Partition> {
 
   public result(): Partition {
     this.ensure();
-    return new Partition(this._count, this._component, this._snapshot);
+    return new Partition(this._count, this._component);
   }
 }
 
@@ -110,9 +113,9 @@ class Strong extends Stepwise<Partition> {
   private _count = 0;
   private _settledNodes = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    const n = _snapshot.order;
+    const n = _structure.order;
     this._rindex = new Int32Array(n);
     this._component = new Int32Array(n).fill(NONE);
     this._nodes = new Int32Array(n);
@@ -123,20 +126,20 @@ class Strong extends Stepwise<Partition> {
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0
+    return this._structure.order === 0
       ? 1
-      : this._settledNodes / this._snapshot.order;
+      : this._settledNodes / this._structure.order;
   }
 
   protected step(): boolean {
     if (this._depth === NONE) {
       while (
-        this._root < this._snapshot.order &&
+        this._root < this._structure.order &&
         this._rindex[this._root] !== 0
       ) {
         this._root++;
       }
-      if (this._root >= this._snapshot.order) return false;
+      if (this._root >= this._structure.order) return false;
       this._enter(this._root);
       return true;
     }
@@ -149,7 +152,7 @@ class Strong extends Stepwise<Partition> {
       if (low > 0 && low < this._rindex[u]!) this._rindex[u] = low;
     }
 
-    const { offset, other } = this._snapshot.outbound;
+    const { offset, other } = this._structure.outbound;
     const end = offset[u + 1]!;
     let cursor = this._cursors[this._depth]!;
     while (cursor < end) {
@@ -187,22 +190,22 @@ class Strong extends Stepwise<Partition> {
     this._depth++;
     this._nodes[this._depth] = u;
     this._marks[this._depth] = mark;
-    this._cursors[this._depth] = this._snapshot.outbound.offset[u]!;
+    this._cursors[this._depth] = this._structure.outbound.offset[u]!;
     this._pending[this._depth] = NONE;
     this._path[this._pathTop++] = u;
   }
 
   public result(): Partition {
     this.ensure();
-    return new Partition(this._count, this._component, this._snapshot);
+    return new Partition(this._count, this._component);
   }
 }
 
-export const components = (snapshot: Snapshot): Task<Partition> =>
-  new Weak(snapshot);
+export const components = (structure: Structure): Task<Partition> =>
+  new Weak(structure);
 
-export const scc = (snapshot: Snapshot): Task<Partition> =>
-  new Strong(snapshot);
+export const scc = (structure: Structure): Task<Partition> =>
+  new Strong(structure);
 
 export interface Condensed {
   readonly partition: Partition;
@@ -211,16 +214,16 @@ export interface Condensed {
 }
 
 /** 缩点：每个强连通分量收缩成一个节点，得到无环的凝聚图。 */
-export const condensation = (snapshot: Snapshot): Task<Condensed> =>
-  transform(scc(snapshot), (partition) => {
-    const { order } = snapshot;
-    const { offset, other } = snapshot.outbound;
+export const condensation = (structure: Structure): Task<Condensed> =>
+  transform(scc(structure), (partition) => {
+    const { order } = structure;
+    const { offset, other } = structure.outbound;
     const seen = new Set<number>();
     const edges: Array<readonly [number, number]> = [];
     for (let u = 0; u < order; u++) {
-      const from = partition.labels[u]!;
+      const from = partition.component[u]!;
       for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-        const to = partition.labels[other[k]!]!;
+        const to = partition.component[other[k]!]!;
         if (to === from) continue;
         const key = from * partition.count + to;
         if (seen.has(key)) continue;
@@ -231,10 +234,15 @@ export const condensation = (snapshot: Snapshot): Task<Condensed> =>
     return { partition, edges };
   });
 
-/** 枚举全部简单环（Johnson）。环的数量可能随规模爆炸，务必配合中断使用。 */
-class Cycles extends Stepwise<NodeId[][]> {
+/**
+ * 枚举全部简单环（Johnson）。环的数量可能随规模爆炸，务必配合中断使用。
+ *
+ * @remarks B 列表是 `Set`：Johnson 的 unblock 要反复判成员，用数组线性查找会把发布的
+ *   复杂度界打破。
+ */
+class Cycles extends Stepwise<number[][]> {
   private readonly _blocked: Uint8Array;
-  private readonly _noEntry: number[][];
+  private readonly _noEntry: Array<Set<number>>;
   private readonly _path: number[] = [];
   private readonly _frames: number[] = [];
   private readonly _cursors: number[] = [];
@@ -242,28 +250,33 @@ class Cycles extends Stepwise<NodeId[][]> {
   private readonly _cycles: number[][] = [];
   private _start = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    this._blocked = new Uint8Array(_snapshot.order);
-    this._noEntry = Array.from({ length: _snapshot.order }, () => []);
+    this._blocked = new Uint8Array(_structure.order);
+    this._noEntry = Array.from(
+      { length: _structure.order },
+      () => new Set<number>(),
+    );
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0 ? 1 : this._start / this._snapshot.order;
+    return this._structure.order === 0
+      ? 1
+      : this._start / this._structure.order;
   }
 
   protected step(): boolean {
     if (this._frames.length === 0) {
-      if (this._start >= this._snapshot.order) return false;
+      if (this._start >= this._structure.order) return false;
       this._blocked.fill(0);
-      for (const list of this._noEntry) list.length = 0;
+      for (const waiting of this._noEntry) waiting.clear();
       this._enter(this._start);
       return true;
     }
 
     const top = this._frames.length - 1;
     const u = this._frames[top]!;
-    const { offset, other } = this._snapshot.outbound;
+    const { offset, other } = this._structure.outbound;
     const end = offset[u + 1]!;
 
     if (this._cursors[top]! < end) {
@@ -283,9 +296,7 @@ class Cycles extends Stepwise<NodeId[][]> {
     } else {
       for (let k = offset[u]!; k < end; k++) {
         const v = other[k]!;
-        if (v >= this._start && !this._noEntry[v]!.includes(u)) {
-          this._noEntry[v]!.push(u);
-        }
+        if (v >= this._start) this._noEntry[v]!.add(u);
       }
     }
 
@@ -304,7 +315,7 @@ class Cycles extends Stepwise<NodeId[][]> {
     this._path.push(u);
     this._blocked[u] = 1;
     this._frames.push(u);
-    this._cursors.push(this._snapshot.outbound.offset[u]!);
+    this._cursors.push(this._structure.outbound.offset[u]!);
     this._found.push(false);
   }
 
@@ -317,17 +328,15 @@ class Cycles extends Stepwise<NodeId[][]> {
       for (const blocked of dependents) {
         if (this._blocked[blocked] === 1) waiting.push(blocked);
       }
-      dependents.length = 0;
+      dependents.clear();
     }
   }
 
-  public result(): NodeId[][] {
+  public result(): number[][] {
     this.ensure();
-    return this._cycles.map((cycle) =>
-      cycle.map((u) => this._snapshot.label(u)),
-    );
+    return this._cycles;
   }
 }
 
-export const simpleCycles = (snapshot: Snapshot): Task<NodeId[][]> =>
-  new Cycles(snapshot);
+export const simpleCycles = (structure: Structure): Task<number[][]> =>
+  new Cycles(structure);

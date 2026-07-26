@@ -1,17 +1,23 @@
 import { LazyQueue } from "@openconsole/queue";
 
-import type { EdgeId, NodeId } from "../ident";
-import type { Adjacency, Snapshot } from "../snapshot";
+import {
+  costOf,
+  merged,
+  type Adjacency,
+  type Reals,
+  type Structure,
+} from "../snapshot";
 import { Stepwise, type Task } from "../task";
 
 const NONE = -1;
 
-/** 最小生成森林里选中的一条边。 */
+/** 最小生成森林里选中的一条边，全部是索引。 */
 export interface Link {
-  readonly source: NodeId;
-  readonly target: NodeId;
+  readonly source: number;
+  readonly target: number;
   readonly weight: number;
-  readonly edge: EdgeId;
+  /** 边序号，用 `snapshot.edges[edge]` 换回 id。 */
+  readonly edge: number;
 }
 
 /**
@@ -23,37 +29,39 @@ class Prim extends Stepwise<Link[]> {
   private readonly _from: Int32Array;
   private readonly _slot: Int32Array;
   private readonly _inTree: Uint8Array;
-  /** 需要额外扫的反向邻接；无向快照两侧同源，留空即可。 */
+  /** 需要额外扫的反向邻接；无向结构两侧同源，留空即可。 */
   private readonly _inbound: Adjacency | undefined;
+  private readonly _weight: Reals | undefined;
   private readonly _queue = new LazyQueue();
   private readonly _links: Link[] = [];
   private _root = 0;
   private _seen = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    const n = _snapshot.order;
+    const n = _structure.order;
     this._reach = new Float64Array(n).fill(Infinity);
     this._from = new Int32Array(n).fill(NONE);
     this._slot = new Int32Array(n).fill(NONE);
     this._inTree = new Uint8Array(n);
-    this._inbound = _snapshot.merged ? undefined : _snapshot.inbound;
+    this._inbound = merged(_structure) ? undefined : _structure.inbound;
+    this._weight = _structure.weight;
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0 ? 1 : this._seen / this._snapshot.order;
+    return this._structure.order === 0 ? 1 : this._seen / this._structure.order;
   }
 
   protected step(): boolean {
     const u = this._queue.poll();
     if (u === NONE) {
       while (
-        this._root < this._snapshot.order &&
+        this._root < this._structure.order &&
         this._inTree[this._root] === 1
       ) {
         this._root++;
       }
-      if (this._root >= this._snapshot.order) return false;
+      if (this._root >= this._structure.order) return false;
       this._reach[this._root] = 0;
       this._queue.push(this._root, 0);
       return true;
@@ -64,14 +72,14 @@ class Prim extends Stepwise<Link[]> {
 
     if (this._from[u] !== NONE) {
       this._links.push({
-        source: this._snapshot.label(this._from[u]!),
-        target: this._snapshot.label(u),
+        source: this._from[u]!,
+        target: u,
         weight: this._reach[u]!,
-        edge: this._snapshot.edges[this._slot[u]!]!,
+        edge: this._slot[u]!,
       });
     }
 
-    const { offset, other, edge } = this._snapshot.outbound;
+    const { offset, other, edge } = this._structure.outbound;
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       this._offer(u, other[k]!, edge[k]!);
     }
@@ -86,7 +94,8 @@ class Prim extends Stepwise<Link[]> {
 
   private _offer(from: number, to: number, slot: number): void {
     if (this._inTree[to] === 1) return;
-    const cost = this._snapshot.costAt(slot);
+    const weight = this._weight;
+    const cost = weight === undefined ? 1 : weight[slot]!;
     if (cost >= this._reach[to]!) return;
     this._reach[to] = cost;
     this._from[to] = from;
@@ -106,29 +115,31 @@ class Kruskal extends Stepwise<Link[]> {
   private readonly _tail: Int32Array;
   private readonly _head: Int32Array;
   private readonly _parent: Int32Array;
+  private readonly _weight: Reals | undefined;
   private readonly _links: Link[] = [];
   private _cursor = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(structure: Structure) {
     super();
-    const size = _snapshot.size;
+    const size = structure.size;
     this._tail = new Int32Array(size).fill(NONE);
     this._head = new Int32Array(size);
-    this._parent = new Int32Array(_snapshot.order);
-    for (let u = 0; u < _snapshot.order; u++) this._parent[u] = u;
+    this._parent = new Int32Array(structure.order);
+    this._weight = structure.weight;
+    for (let u = 0; u < structure.order; u++) this._parent[u] = u;
 
-    const { offset, other, edge } = _snapshot.outbound;
-    for (let u = 0; u < _snapshot.order; u++) {
+    const { offset, other, edge } = structure.outbound;
+    for (let u = 0; u < structure.order; u++) {
       for (let k = offset[u]!; k < offset[u + 1]!; k++) {
         const e = edge[k]!;
-        // 无向快照里同一条边出现两次，只认第一次。
+        // 无向结构里同一条边出现两次，只认第一次。
         if (this._tail[e] !== NONE) continue;
         this._tail[e] = u;
         this._head[e] = other[k]!;
       }
     }
     this._sorted = Int32Array.from({ length: size }, (_, e) => e).sort(
-      (a, b) => _snapshot.costAt(a) - _snapshot.costAt(b),
+      (a, b) => costOf(structure, a) - costOf(structure, b),
     );
   }
 
@@ -144,11 +155,12 @@ class Kruskal extends Stepwise<Link[]> {
       const b = this._find(this._head[e]!);
       if (a !== b) {
         this._parent[a] = b;
+        const weight = this._weight;
         this._links.push({
-          source: this._snapshot.label(this._tail[e]!),
-          target: this._snapshot.label(this._head[e]!),
-          weight: this._snapshot.costAt(e),
-          edge: this._snapshot.edges[e]!,
+          source: this._tail[e]!,
+          target: this._head[e]!,
+          weight: weight === undefined ? 1 : weight[e]!,
+          edge: e,
         });
       }
     }
@@ -174,8 +186,8 @@ class Kruskal extends Stepwise<Link[]> {
 }
 
 /** 最小生成森林（Prim）。非连通图给出每个分量各自的最小生成树。 */
-export const prim = (snapshot: Snapshot): Task<Link[]> => new Prim(snapshot);
+export const prim = (structure: Structure): Task<Link[]> => new Prim(structure);
 
 /** 最小生成森林（Kruskal）。 */
-export const kruskal = (snapshot: Snapshot): Task<Link[]> =>
-  new Kruskal(snapshot);
+export const kruskal = (structure: Structure): Task<Link[]> =>
+  new Kruskal(structure);

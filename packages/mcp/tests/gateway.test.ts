@@ -222,14 +222,15 @@ describe('中间件', () => {
     calls = [];
     await client.callTool({ name: 'a__echo', arguments: { text: 'mw' } });
     await expect(client.callTool({ name: 'nope__tool', arguments: {} })).rejects.toThrow();
-    expect(calls.map((record) => record.tool)).toEqual(['a__echo']);
+    expect(calls.map((record) => record.target)).toEqual(['a__echo']);
   });
 
   it('审计记录 isError 与上游归属', async () => {
     calls = [];
     await client.callTool({ name: 'a__boom', arguments: { note: 'destructive' } });
     expect(calls[0]).toMatchObject({
-      tool: 'a__boom',
+      method: 'tools/call',
+      target: 'a__boom',
       upstreamId: 'alpha',
       readOnly: false,
       ok: false,
@@ -240,8 +241,21 @@ describe('中间件', () => {
   it('只读调用不留参数', async () => {
     calls = [];
     await client.callTool({ name: 'a__echo', arguments: { text: 'secret' } });
-    expect(calls[0]).toMatchObject({ tool: 'a__echo', readOnly: true, ok: true });
+    expect(calls[0]).toMatchObject({ target: 'a__echo', readOnly: true, ok: true });
     expect(calls[0]?.args).toBeUndefined();
+  });
+
+  it('读资源与取 prompt 同样受治理，不绕过链路', async () => {
+    calls = [];
+    await client.readResource({ uri: 'mock://alpha/config' });
+    await client.getPrompt({ name: 'b__greet' });
+
+    expect(calls).toMatchObject([
+      { method: 'resources/read', target: 'mock://alpha/config', upstreamId: 'alpha', ok: true },
+      { method: 'prompts/get', target: 'b__greet', upstreamId: 'beta', ok: true },
+    ]);
+    // 两者在协议上就没有写语义，不必靠 annotations 判定
+    expect(calls.every((record) => record.readOnly)).toBe(true);
   });
 });
 
@@ -276,7 +290,7 @@ describe('渐进式发现', () => {
       arguments: { name: 'a__echo', arguments: { text: 'via-meta' } },
     });
     expect(textOf(result)).toBe('alpha:via-meta');
-    expect(calls.map((record) => record.tool)).toEqual(['a__echo']);
+    expect(calls.map((record) => record.target)).toEqual(['a__echo']);
   });
 
   it('元工具的参数校验拒绝坏输入', async () => {
@@ -288,16 +302,18 @@ describe('渐进式发现', () => {
 });
 
 describe('工具可见性', () => {
-  it('按调用者裁剪列表', async () => {
-    const isolated = await createGateway(
-      soloConfig(PORT + 1),
-      { visibility: (tool) => !tool.name.endsWith('__boom') },
-    );
+  it('裁掉的工具既不列出，也不能被直接调用', async () => {
+    const isolated = await createGateway(soloConfig(PORT + 1), {
+      visibility: (item) => !item.name.endsWith('__boom'),
+    });
     const probe = await connect(`http://127.0.0.1:${PORT + 1}/mcp`);
     try {
       const names = (await probe.listTools()).tools.map((tool) => tool.name);
       expect(names).not.toContain('a__boom');
       expect(names).toContain('a__echo');
+
+      // 只裁列表不裁调用，裁剪就只是障眼法
+      await expect(probe.callTool({ name: 'a__boom', arguments: {} })).rejects.toThrow(/未知工具/);
     } finally {
       await probe.close().catch(() => {});
       await isolated.close();
@@ -368,4 +384,106 @@ describe('变更感知', () => {
     expect(versionOf('/mcp')).toBe(before + 1);
     expect(notifications).toBe(1);
   }, 30_000);
+});
+
+describe('重名处置', () => {
+  it('URI 撞车时加 alias 前缀保留，而非静默丢弃', async () => {
+    const twins = await createGateway({
+      port: PORT + 3,
+      reconcileIntervalMs: 3_600_000,
+      endpoints: [{ path: '/mcp' }],
+      upstreams: [
+        { id: 'one', alias: 'p', transport: stdio('twin'), timeoutMs: 10_000 },
+        { id: 'two', alias: 'q', transport: stdio('twin'), timeoutMs: 10_000 },
+      ],
+    });
+    const probe = await connect(`http://127.0.0.1:${PORT + 3}/mcp`);
+    try {
+      // 两个上游给出同一个 URI，两条都该留下来
+      const { resources } = await probe.listResources();
+      expect(resources.map((resource) => resource.uri)).toEqual([
+        'mock://twin/config',
+        'q+mock://twin/config',
+      ]);
+
+      // 改写过的那条依然可读：发给上游的是它自己认得的原始 URI
+      expect(textOf(await probe.readResource({ uri: 'q+mock://twin/config' }))).toContain('twin');
+      expect(twins.endpoints[0]?.collisions).toContain('mock://twin/config');
+    } finally {
+      await probe.close().catch(() => {});
+      await twins.close();
+    }
+  }, 60_000);
+});
+
+describe('热更新', () => {
+  it('增删上游即时生效，既有会话不断连', async () => {
+    const base = soloConfig(PORT + 4);
+    const hot = await createGateway(base);
+    const probe = await connect(`http://127.0.0.1:${PORT + 4}/mcp`);
+    let notifications = 0;
+    probe.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      notifications++;
+    });
+
+    try {
+      expect(await toolNames(probe)).not.toContain('b__echo');
+
+      await hot.apply({
+        ...base,
+        upstreams: [
+          ...base.upstreams,
+          { id: 'beta', alias: 'b', transport: stdio('beta'), timeoutMs: 10_000 },
+        ],
+      });
+      await settle(300);
+
+      // 同一个会话看到了新上游，没有重连
+      expect(await toolNames(probe)).toContain('b__echo');
+      expect(notifications).toBeGreaterThan(0);
+      expect(textOf(await probe.callTool({ name: 'b__echo', arguments: { text: 'hot' } }))).toBe(
+        'beta:hot',
+      );
+
+      await hot.apply(base);
+      await settle(300);
+      expect(await toolNames(probe)).not.toContain('b__echo');
+      expect(await toolNames(probe)).toContain('a__echo');
+    } finally {
+      await probe.close().catch(() => {});
+      await hot.close();
+    }
+  }, 60_000);
+
+  it('端点可增删，未受影响的挂载点照常服务', async () => {
+    const base = soloConfig(PORT + 5);
+    const hot = await createGateway(base);
+    const stable = await connect(`http://127.0.0.1:${PORT + 5}/mcp`);
+
+    try {
+      await hot.apply({ ...base, endpoints: [{ path: '/mcp' }, { path: '/mcp/extra' }] });
+      const extra = await connect(`http://127.0.0.1:${PORT + 5}/mcp/extra`);
+      expect(await toolNames(extra)).toContain('a__echo');
+      await extra.close().catch(() => {});
+
+      await hot.apply(base);
+      await expect(connect(`http://127.0.0.1:${PORT + 5}/mcp/extra`)).rejects.toThrow();
+      // 原挂载点上的会话全程不受影响
+      expect(await toolNames(stable)).toContain('a__echo');
+    } finally {
+      await stable.close().catch(() => {});
+      await hot.close();
+    }
+  }, 60_000);
+
+  it('port 无法热更新，明确拒绝而不是静默忽略', async () => {
+    const hot = await createGateway(soloConfig(PORT + 6));
+    try {
+      await expect(
+        hot.apply({ ...soloConfig(PORT + 6), port: PORT + 7 }),
+      ).rejects.toThrow(/port 不可热更新/);
+    } finally {
+      await hot.close();
+    }
+  }, 60_000);
 });

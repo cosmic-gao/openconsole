@@ -2,7 +2,7 @@
   "name": "@openconsole/graph",
   "version": "0.0.1",
   "private": true,
-  "description": "类型化端口、Trait 解耦、零成本视图与紧凑序列化的有向图核心模型",
+  "description": "类型化端口、Structure 契约、不可变 CSR 与可中断算法的有向图内核",
   "license": "MIT",
   "keywords": [
     "graph",
@@ -28,6 +28,14 @@
     ".": {
       "types": "./index.ts",
       "default": "./index.ts"
+    },
+    "./algorithm": {
+      "types": "./core/algorithm/index.ts",
+      "default": "./core/algorithm/index.ts"
+    },
+    "./serialize": {
+      "types": "./core/serialize/index.ts",
+      "default": "./core/serialize/index.ts"
     }
   },
   "scripts": {

@@ -18,7 +18,7 @@ const consistent = (
   ordering: Ordering<number, number>,
 ): void => {
   for (const edge of graph.edges()) {
-    if (ordering.conflicts.has(edge)) continue;
+    if (ordering.conflicts.has(graph.edgeIndexOf(edge))) continue;
     const record = graph.edge(edge)!;
     if (record.source === record.target) continue;
     expect(ordering.rank(record.source)!).toBeLessThan(
@@ -72,7 +72,7 @@ describe("增量拓扑序", () => {
 
     const back = graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]);
     expect(ordering.cyclic).toBe(true);
-    expect(ordering.conflicts).toContain(back);
+    expect(ordering.conflicts).toContain(graph.edgeIndexOf(back));
     consistent(graph, ordering);
     expect(ordering.cycles().flat().sort()).toEqual([
       nodeId("a"),
@@ -145,7 +145,7 @@ describe("增量拓扑序", () => {
     const full = settle(
       toposort(
         Snapshot.of(graph, {
-          edge: (edge) => !ordering.conflicts.has(edge.id),
+          edge: (edge) => !ordering.conflicts.has(graph.edgeIndexOf(edge.id)),
         }),
       ),
     );

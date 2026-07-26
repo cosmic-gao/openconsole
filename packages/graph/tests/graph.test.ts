@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   Capacity,
-  Cycle,
   Duplicate,
   Graph,
   graphId,
   Mismatch,
   Missing,
+  Nested,
   nodeId,
   Socket,
   Vertex,
@@ -141,6 +141,22 @@ describe("邻接查询", () => {
     expect(graph.adjacent(b, a)).toBe(false);
   });
 
+  it("删节点时自环与平行边各只处理一次，两侧邻接都摘干净", () => {
+    const graph = wired();
+    graph.connect([a, "out"], [a, "in"]); // 自环，同时挂在两条表上
+    graph.connect([b, "out"], [a, "in"]); // 反向入边
+    const dropped: EdgeId[] = [];
+    graph.signal.on("edgeDropped", ({ edge }) => dropped.push(edge));
+
+    expect(graph.dropNode(a)).toBe(true);
+    expect(new Set(dropped).size).toBe(dropped.length);
+    expect(dropped).toHaveLength(5);
+    expect(graph.size).toBe(0);
+    expect(graph.inDegree(b)).toBe(0);
+    expect(graph.outDegree(b)).toBe(0);
+    expect(graph.inDegree(c)).toBe(0);
+  });
+
   it("返回的邻接是数组，可以重复遍历", () => {
     const graph = wired();
     const neighbors = graph.outNeighbors(a);
@@ -228,8 +244,8 @@ describe("复合层级", () => {
 
     expect(graph.parent(b)).toBe(a);
     expect(graph.children(a)).toEqual([b]);
-    expect(() => graph.setParent(a, c)).toThrow(Cycle);
-    expect(() => graph.setParent(a, a)).toThrow(Cycle);
+    expect(() => graph.setParent(a, c)).toThrow(Nested);
+    expect(() => graph.setParent(a, a)).toThrow(Nested);
     expect(() => graph.setParent(a, nodeId("zz"))).toThrow(Missing);
 
     graph.unparent(b);
@@ -253,7 +269,10 @@ describe("事件与事务", () => {
   it("增删改与层级变更都派发事件", () => {
     const graph = blank();
     const seen: string[] = [];
-    graph.signal.watch((type) => seen.push(type));
+    // flushed 是事务边界信号，这里只关心变更本身。
+    graph.signal.watch((type) => {
+      if (type !== "flushed") seen.push(type);
+    });
 
     graph.addNode(vertex("a", "A"));
     graph.addNode(vertex("b"));
@@ -289,6 +308,7 @@ describe("事件与事务", () => {
 
     expect(dropped).toHaveBeenCalledWith({
       edge,
+      slot: 0,
       source: a,
       target: b,
       weight: 7,
@@ -305,7 +325,7 @@ describe("事件与事务", () => {
       graph.addNode(vertex("b"));
       expect(seen).toEqual([]);
     });
-    expect(seen).toEqual(["nodeAdded", "nodeAdded"]);
+    expect(seen).toEqual(["nodeAdded", "nodeAdded", "flushed"]);
 
     seen.length = 0;
     expect(() =>
@@ -314,7 +334,83 @@ describe("事件与事务", () => {
         throw new Error("boom");
       }),
     ).toThrow("boom");
-    expect(seen).toEqual(["nodeAdded"]);
+    expect(seen).toEqual(["nodeAdded", "flushed"]);
+  });
+
+  it("flushed 收在事务末尾，并报出这段事务的变更条数", () => {
+    const graph = blank();
+    const counts: number[] = [];
+    graph.signal.on("flushed", ({ changes }) => counts.push(changes));
+
+    graph.addNode(vertex("a"));
+    expect(counts).toEqual([1]);
+
+    graph.batch(() => {
+      graph.addNode(vertex("b"));
+      graph.connect([a, "out"], [b, "in"]);
+      graph.setWeight(b, "x");
+      expect(counts).toEqual([1]);
+    });
+    expect(counts).toEqual([1, 3]);
+  });
+
+  it("handler 里继续改图，事件仍按序排在同一段事务里", () => {
+    const graph = blank();
+    graph.addNode(vertex("a"));
+    graph.addNode(vertex("b"));
+
+    const seen: string[] = [];
+    let grown = false;
+    graph.signal.watch((type) => {
+      seen.push(type);
+      // 第一条事件的 handler 里插一个节点：它的事件必须接在本段事务后面，
+      // 而不是抢在剩余事件之前把 flushed 放掉。
+      if (type === "nodeUpdated" && !grown) {
+        grown = true;
+        graph.addNode(vertex("c"));
+      }
+    });
+
+    graph.batch(() => {
+      graph.setWeight(a, "x");
+      graph.setWeight(b, "y");
+    });
+
+    expect(seen).toEqual([
+      "nodeUpdated",
+      "nodeUpdated",
+      "nodeAdded",
+      "flushed",
+    ]);
+    expect(graph.hasNode(c)).toBe(true);
+  });
+
+  it("没有监听者时变更不构造任何载荷", () => {
+    const graph = blank();
+    graph.addNode(vertex("a"));
+    graph.addNode(vertex("b"));
+    // 纯粹的冒烟：无订阅者路径不能抛，也不能漏掉版本推进。
+    const before = graph.revision;
+    graph.connect([a, "out"], [b, "in"]);
+    expect(graph.revision).toBeGreaterThan(before);
+  });
+
+  it("compact 派发 compacted，带旧到新的索引映射", () => {
+    const graph = blank();
+    for (const name of ["a", "b", "c"]) graph.addNode(vertex(name));
+    const wasA = graph.indexOf(a);
+    const wasC = graph.indexOf(c);
+    graph.dropNode(a);
+
+    let mapping: Int32Array | undefined;
+    graph.signal.on("compacted", ({ nodes }) => {
+      mapping = nodes;
+    });
+    graph.compact();
+
+    expect(mapping).toBeDefined();
+    expect(mapping![wasA]).toBe(-1);
+    expect(mapping![wasC]).toBe(graph.indexOf(c));
   });
 
   it("clear 走删除原语，订阅者不会与图失同步", () => {
@@ -328,7 +424,12 @@ describe("事件与事务", () => {
 
     expect(graph.order).toBe(0);
     expect(graph.size).toBe(0);
-    expect(seen).toEqual(["edgeDropped", "nodeDropped", "nodeDropped"]);
+    expect(seen).toEqual([
+      "edgeDropped",
+      "nodeDropped",
+      "nodeDropped",
+      "flushed",
+    ]);
   });
 
   it("revision 随每次变更推进", () => {
@@ -339,6 +440,37 @@ describe("事件与事务", () => {
     const afterAdd = graph.revision;
     graph.setWeight(a, "x");
     expect(graph.revision).toBeGreaterThan(afterAdd);
+  });
+
+  it("shape 只跟结构走，改权重不动它", () => {
+    const graph = blank();
+    graph.addNode(vertex("a"));
+    graph.addNode(vertex("b"));
+    const edge = graph.connect([a, "out"], [b, "in"]);
+
+    const shape = graph.shape;
+    graph.setWeight(a, "x");
+    graph.setEdgeWeight(edge, 9);
+    expect(graph.shape).toBe(shape);
+    expect(graph.revision).toBeGreaterThan(shape);
+
+    graph.disconnect(edge);
+    expect(graph.shape).toBeGreaterThan(shape);
+  });
+
+  it("删高扇出节点是线性的，不在自身邻接表上反复线性查找", () => {
+    const graph = new Graph<number, number>(graphId("hub"));
+    graph.addNode(vertex("hub", 0));
+    for (let i = 0; i < 100_000; i++) {
+      graph.addNode(vertex(`n${i}`, i));
+      graph.connect([nodeId("hub"), "out"], [nodeId(`n${i}`), "in"]);
+    }
+
+    const started = performance.now();
+    graph.dropNode(nodeId("hub"));
+    // O(deg²) 时这一步是秒级；线性实现在任何机器上都远在此界之内。
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(graph.size).toBe(0);
   });
 });
 

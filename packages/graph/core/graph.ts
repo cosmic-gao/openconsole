@@ -1,6 +1,6 @@
 import { Signal } from "@openconsole/signal";
 
-import { Capacity, Cycle, Duplicate, Mismatch, Missing } from "./error";
+import { Capacity, Duplicate, Mismatch, Missing, Nested } from "./error";
 import type { Events } from "./event";
 import { edgeId, type EdgeId, type GraphId, type NodeId } from "./ident";
 import { gather, Slots } from "./slots";
@@ -44,7 +44,8 @@ export interface ConnectOptions<E> {
  * 有向图：节点与边都以整数索引寻址，属性存放在平行数组里，邻接是纯数组读取。
  *
  * 删除只在索引位上留空并进入自由表，已发出的索引永不改指；空位由 {@link Graph.compact}
- * 显式回收。算法不直接吃 `Graph`，而是吃它编译出的 {@link Snapshot}。
+ * 显式回收（回收会派发 `compacted`，带旧→新索引映射）。算法不直接吃 `Graph`，
+ * 而是吃它编译出的 {@link Snapshot}。
  */
 export class Graph<N = unknown, E = unknown> {
   public readonly signal = new Signal<Events<N, E>>();
@@ -66,15 +67,27 @@ export class Graph<N = unknown, E = unknown> {
   private readonly _edgeWeight: Array<E | undefined> = [];
 
   private _revision = 0;
+  private _shape = 0;
   private _sequence = 0;
   private _depth = 0;
-  private readonly _deferred: Array<() => void> = [];
+  private _changes = 0;
+  private _settling = false;
+  /** 待派发事件，`[类型, 载荷, 类型, 载荷, ...]` 交错存放，免去每条事件一个闭包。 */
+  private readonly _queue: unknown[] = [];
 
   public constructor(public readonly id: GraphId) {}
 
   /** 任意变更（结构或权重）都会推进；{@link Snapshot} 据此判断自己是否已过期。 */
   public get revision(): number {
     return this._revision;
+  }
+
+  /**
+   * 只有结构变更（增删节点与边、改端口、改层级、`compact`）才推进；改权重不动它。
+   * {@link Snapshot.of} 据此决定能否复用上一份快照的 CSR。
+   */
+  public get shape(): number {
+    return this._shape;
   }
 
   public get order(): number {
@@ -96,6 +109,15 @@ export class Graph<N = unknown, E = unknown> {
 
   public at(index: number): NodeId | undefined {
     return this._nodes.at(index);
+  }
+
+  /** 边 id → 边槽位；不存在返回 -1。 */
+  public edgeIndexOf(edge: EdgeId): number {
+    return this._edges.indexOf(edge);
+  }
+
+  public edgeIdAt(index: number): EdgeId | undefined {
+    return this._edges.at(index);
   }
 
   public nodes(): NodeId[] {
@@ -125,7 +147,10 @@ export class Graph<N = unknown, E = unknown> {
     this._in[u] = [];
     this._parent[u] = NONE;
     this._children[u] = undefined;
-    this._touch(() => this.signal.emit("nodeAdded", { node: spec.id }));
+    if (this._wants("nodeAdded", true)) {
+      this._queue.push("nodeAdded", { node: spec.id, slot: u });
+    }
+    this._commit();
     return spec.id;
   }
 
@@ -139,16 +164,32 @@ export class Graph<N = unknown, E = unknown> {
     return false;
   }
 
-  /** 级联删除关联边，并把子节点提升到被删节点的父层。 */
+  /**
+   * 级联删除关联边，并把子节点提升到被删节点的父层。
+   *
+   * @remarks 关联边先整批从对端摘掉，再一次性清空本节点的两条邻接表。逐条走
+   *   {@link Graph.disconnect} 的话，每条边都要在**正在收缩的自身列表**上做一次线性查找，
+   *   删一个高扇出节点就是 O(deg²)。
+   */
   public dropNode(node: NodeId): boolean {
     const u = this._nodes.indexOf(node);
     if (u < 0) return false;
 
     this.batch(() => {
-      for (const e of [...this._out[u]!, ...this._in[u]!]) {
-        const id = this._edges.at(e);
-        if (id !== undefined) this.disconnect(id);
+      const out = this._out[u]!;
+      const inbound = this._in[u]!;
+      // 自环同时挂在两侧，平行边可能重复；先去重再摘，保证每条边只处理一次。
+      const doomed = new Set<number>(out);
+      for (const e of inbound) doomed.add(e);
+      for (const e of doomed) {
+        const from = this._from[e]!;
+        const to = this._to[e]!;
+        if (from !== u) unlink(this._out[from]!, e);
+        if (to !== u) unlink(this._in[to]!, e);
+        this._release(e);
       }
+      out.length = 0;
+      inbound.length = 0;
 
       const grand = this._parent[u]!;
       for (const child of this._children[u] ?? []) {
@@ -162,7 +203,9 @@ export class Graph<N = unknown, E = unknown> {
       this._inputs[u] = {};
       this._outputs[u] = {};
       this._nodes.remove(node);
-      this._touch(() => this.signal.emit("nodeDropped", { node, weight }));
+      if (this._wants("nodeDropped", true)) {
+        this._queue.push("nodeDropped", { node, slot: u, weight });
+      }
     });
     return true;
   }
@@ -175,6 +218,18 @@ export class Graph<N = unknown, E = unknown> {
       weight: this._weight[u],
       inputs: this._inputs[u]!,
       outputs: this._outputs[u]!,
+    };
+  }
+
+  /** 按槽位取节点记录，跳过 id 查表；空位返回 `undefined`。 */
+  public nodeAt(slot: number): NodeRecord<N> | undefined {
+    const id = this._nodes.at(slot);
+    if (id === undefined) return undefined;
+    return {
+      id,
+      weight: this._weight[slot],
+      inputs: this._inputs[slot]!,
+      outputs: this._outputs[slot]!,
     };
   }
 
@@ -207,9 +262,9 @@ export class Graph<N = unknown, E = unknown> {
 
     this.batch(() => {
       for (const edge of stale) this.disconnect(edge);
-      this._touch(() =>
-        this.signal.emit("nodeReshaped", { node, inputs, outputs }),
-      );
+      if (this._wants("nodeReshaped", true)) {
+        this._queue.push("nodeReshaped", { node, slot: u, inputs, outputs });
+      }
     });
     return this;
   }
@@ -235,7 +290,10 @@ export class Graph<N = unknown, E = unknown> {
     const before = this._weight[u];
     const after = update(before);
     this._weight[u] = after;
-    this._touch(() => this.signal.emit("nodeUpdated", { node, before, after }));
+    if (this._wants("nodeUpdated", false)) {
+      this._queue.push("nodeUpdated", { node, slot: u, before, after });
+    }
+    this._commit();
     return this;
   }
 
@@ -298,49 +356,51 @@ export class Graph<N = unknown, E = unknown> {
     this._edgeWeight[e] = options.weight;
     this._out[u]!.push(e);
     this._in[v]!.push(e);
-    this._touch(() =>
-      this.signal.emit("edgeAdded", {
+    if (this._wants("edgeAdded", true)) {
+      this._queue.push("edgeAdded", {
         edge: id,
+        slot: e,
         source: sourceId,
         target: targetId,
-      }),
-    );
+      });
+    }
+    this._commit();
     return id;
   }
 
   public disconnect(edge: EdgeId): boolean {
     const e = this._edges.indexOf(edge);
     if (e < 0) return false;
-    const source = this._nodes.key(this._from[e]!);
-    const target = this._nodes.key(this._to[e]!);
-    const weight = this._edgeWeight[e];
-
     unlink(this._out[this._from[e]!]!, e);
     unlink(this._in[this._to[e]!]!, e);
-    this._edgeWeight[e] = undefined;
-    this._edges.remove(edge);
-    this._touch(() =>
-      this.signal.emit("edgeDropped", { edge, source, target, weight }),
-    );
+    this._release(e);
+    this._commit();
     return true;
   }
 
   public edge(edge: EdgeId): EdgeRecord<E> | undefined {
     const e = this._edges.indexOf(edge);
-    if (e < 0) return undefined;
-    return {
-      id: edge,
-      source: this._nodes.key(this._from[e]!),
-      target: this._nodes.key(this._to[e]!),
-      sourcePort: this._fromPort[e]!,
-      targetPort: this._toPort[e]!,
-      weight: this._edgeWeight[e],
-    };
+    return e < 0 ? undefined : this._record(e);
+  }
+
+  /** 按槽位取边记录，跳过 id 查表；空位返回 `undefined`。 */
+  public edgeAt(slot: number): EdgeRecord<E> | undefined {
+    return this._edges.at(slot) === undefined ? undefined : this._record(slot);
   }
 
   public edgeWeight(edge: EdgeId): E | undefined {
     const e = this._edges.indexOf(edge);
     return e < 0 ? undefined : this._edgeWeight[e];
+  }
+
+  /**
+   * 按槽位读边权，跳过 id 查表。
+   *
+   * @remarks 快照的增量重编译走这条路：结构没变时槽位不会移动，于是「重算全部边权」
+   *   是一遍纯整数下标的线性扫。
+   */
+  public edgeWeightAt(slot: number): E | undefined {
+    return this._edgeWeight[slot];
   }
 
   /** @throws {@link Missing} 边不存在 */
@@ -358,7 +418,10 @@ export class Graph<N = unknown, E = unknown> {
     const before = this._edgeWeight[e];
     const after = update(before);
     this._edgeWeight[e] = after;
-    this._touch(() => this.signal.emit("edgeUpdated", { edge, before, after }));
+    if (this._wants("edgeUpdated", false)) {
+      this._queue.push("edgeUpdated", { edge, slot: e, before, after });
+    }
+    this._commit();
     return this;
   }
 
@@ -397,31 +460,48 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 按存储顺序枚举全部节点，不经 id 查表。
+   * 按存储顺序枚举全部节点，不经 id 查表；`slot` 是节点索引。
    * 全图扫描（编译快照、打包、求差）走这条路，省掉每个节点一次字符串哈希。
    */
   public forEachNode(
-    visit: (node: NodeId, weight: N | undefined) => void,
+    visit: (node: NodeId, weight: N | undefined, slot: number) => void,
   ): void {
     for (let u = 0; u < this._nodes.bound; u++) {
       const id = this._nodes.at(u);
-      if (id !== undefined) visit(id, this._weight[u]);
+      if (id !== undefined) visit(id, this._weight[u], u);
     }
   }
 
-  /** 按存储顺序枚举全部边，不经 id 查表。 */
-  public forEachEdge(visit: (edge: EdgeRecord<E>) => void): void {
+  /** 按存储顺序枚举全部边，不经 id 查表；`slot` 是边索引。 */
+  public forEachEdge(visit: (edge: EdgeRecord<E>, slot: number) => void): void {
     for (let e = 0; e < this._edges.bound; e++) {
-      const id = this._edges.at(e);
+      if (this._edges.at(e) === undefined) continue;
+      visit(this._record(e), e);
+    }
+  }
+
+  /**
+   * 只给整数的边枚举：`(边槽位, 源节点槽位, 目标节点槽位)`。
+   *
+   * @remarks 全程不碰字符串、不分配对象。快照编译的主循环走这条路：换成
+   *   {@link Graph.forEachEdge} 的话，每条边要多付一次记录分配加两次 id 哈希。
+   */
+  public forEachLink(
+    visit: (edge: number, source: number, target: number) => void,
+  ): void {
+    for (let e = 0; e < this._edges.bound; e++) {
+      if (this._edges.at(e) === undefined) continue;
+      visit(e, this._from[e]!, this._to[e]!);
+    }
+  }
+
+  /** 枚举全部「子 → 父」关系，不经 id 查表。 */
+  public forEachParent(visit: (node: NodeId, parent: NodeId) => void): void {
+    for (let u = 0; u < this._nodes.bound; u++) {
+      const id = this._nodes.at(u);
       if (id === undefined) continue;
-      visit({
-        id,
-        source: this._nodes.key(this._from[e]!),
-        target: this._nodes.key(this._to[e]!),
-        sourcePort: this._fromPort[e]!,
-        targetPort: this._toPort[e]!,
-        weight: this._edgeWeight[e],
-      });
+      const p = this._parent[u]!;
+      if (p !== NONE) visit(id, this._nodes.key(p));
     }
   }
 
@@ -442,6 +522,22 @@ export class Graph<N = unknown, E = unknown> {
     visit: (source: NodeId, edge: EdgeId, port: string) => boolean | void,
   ): void {
     this._walk(node, false, visit);
+  }
+
+  /** 纯整数的出边枚举：`(目标槽位, 边槽位)`，`visit` 返回 `false` 提前停止。 */
+  public forEachOutAt(
+    slot: number,
+    visit: (target: number, edge: number) => boolean | void,
+  ): void {
+    this._crawl(slot, true, visit);
+  }
+
+  /** 纯整数的入边枚举：`(来源槽位, 边槽位)`。 */
+  public forEachInAt(
+    slot: number,
+    visit: (source: number, edge: number) => boolean | void,
+  ): void {
+    this._crawl(slot, false, visit);
   }
 
   /**
@@ -487,7 +583,7 @@ export class Graph<N = unknown, E = unknown> {
    * 归入分组。
    *
    * @throws {@link Missing} 节点或父节点不存在
-   * @throws {@link Cycle} 会形成层级环
+   * @throws {@link Nested} 会形成层级环
    */
   public setParent(node: NodeId, parent: NodeId): this {
     const u = this._nodes.indexOf(node);
@@ -495,15 +591,19 @@ export class Graph<N = unknown, E = unknown> {
     const p = this._nodes.indexOf(parent);
     if (p < 0) throw new Missing("node", parent, "setParent parent");
     for (let cursor = p; cursor !== NONE; cursor = this._parent[cursor]!) {
-      if (cursor === u) throw new Cycle([node, parent]);
+      if (cursor === u) throw new Nested(node, parent);
     }
     this._reparent(u, p);
+    this._commit();
     return this;
   }
 
   public unparent(node: NodeId): this {
     const u = this._nodes.indexOf(node);
-    if (u >= 0) this._reparent(u, NONE);
+    if (u >= 0) {
+      this._reparent(u, NONE);
+      this._commit();
+    }
     return this;
   }
 
@@ -514,20 +614,29 @@ export class Graph<N = unknown, E = unknown> {
     return p === NONE ? undefined : this._nodes.at(p);
   }
 
+  /** 按槽位取父节点槽位；无父或空位返回 -1。 */
+  public parentAt(slot: number): number {
+    const p = this._parent[slot];
+    return p === undefined ? NONE : p;
+  }
+
   public children(node: NodeId): NodeId[] {
     const u = this._nodes.indexOf(node);
     if (u < 0) return [];
     return (this._children[u] ?? []).map((child) => this._nodes.key(child));
   }
 
-  /** 事务：期间的事件缓冲到最外层结束时统一派发，抛错也会派发已积累的事件。 */
+  /**
+   * 事务：期间的事件缓冲到最外层结束时统一派发，随后放一次 `flushed`；抛错也照常派发
+   * 已积累的事件。
+   */
   public batch<T>(work: () => T): T {
     this._depth++;
     try {
       return work();
     } finally {
       this._depth--;
-      if (this._depth === 0) this._flush();
+      if (this._depth === 0) this._settle();
     }
   }
 
@@ -544,8 +653,8 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 回收删除留下的空位并重新稠密编号。会使此前取得的节点索引全部失效，
-   * 因此只在批量删除后、开始新一轮索引使用前调用。
+   * 回收删除留下的空位并重新稠密编号，并派发 `compacted`（带旧 → 新索引映射）。
+   * 此前取得的索引全部失效，订阅者必须据映射重映射自己的缓存。
    */
   public compact(): void {
     if (
@@ -584,7 +693,10 @@ export class Graph<N = unknown, E = unknown> {
       const children = this._children[u];
       if (children) remap(children, nodes);
     }
-    this._revision++;
+    if (this._wants("compacted", true)) {
+      this._queue.push("compacted", { nodes, edges });
+    }
+    this._commit();
   }
 
   /** 深拷贝，含层级。 */
@@ -641,6 +753,35 @@ export class Graph<N = unknown, E = unknown> {
     return into;
   }
 
+  private _record(e: number): EdgeRecord<E> {
+    return {
+      id: this._edges.key(e),
+      source: this._nodes.key(this._from[e]!),
+      target: this._nodes.key(this._to[e]!),
+      sourcePort: this._fromPort[e]!,
+      targetPort: this._toPort[e]!,
+      weight: this._edgeWeight[e],
+    };
+  }
+
+  /** 释放边槽位并登记事件；**不碰任何邻接表**，摘链由调用方负责。 */
+  private _release(e: number): void {
+    const edge = this._edges.key(e);
+    const listening = this._wants("edgeDropped", true);
+    const payload = listening
+      ? {
+          edge,
+          slot: e,
+          source: this._nodes.key(this._from[e]!),
+          target: this._nodes.key(this._to[e]!),
+          weight: this._edgeWeight[e],
+        }
+      : undefined;
+    this._edgeWeight[e] = undefined;
+    this._edges.remove(edge);
+    if (payload) this._queue.push("edgeDropped", payload);
+  }
+
   /** 某一侧的关联边下标；未知节点返回空。 */
   private _incident(node: NodeId, outward: boolean): number[] {
     const u = this._nodes.indexOf(node);
@@ -679,6 +820,20 @@ export class Graph<N = unknown, E = unknown> {
         visit(this._nodes.key(ends[e]!), this._edges.key(e), ports[e]!) ===
         false;
       if (stop) return;
+    }
+  }
+
+  private _crawl(
+    slot: number,
+    outward: boolean,
+    visit: (other: number, edge: number) => boolean | void,
+  ): void {
+    const list = (outward ? this._out : this._in)[slot];
+    if (list === undefined) return;
+    const ends = outward ? this._to : this._from;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i]!;
+      if (visit(ends[e]!, e) === false) return;
     }
   }
 
@@ -752,14 +907,14 @@ export class Graph<N = unknown, E = unknown> {
     if (parent !== NONE) {
       (this._children[parent] ??= []).push(u);
     }
-    const node = this._nodes.key(u);
-    this._touch(() =>
-      this.signal.emit("parentChanged", {
-        node,
+    if (this._wants("parentChanged", true)) {
+      this._queue.push("parentChanged", {
+        node: this._nodes.key(u),
+        slot: u,
         before: before === NONE ? undefined : this._nodes.at(before),
         after: parent === NONE ? undefined : this._nodes.at(parent),
-      }),
-    );
+      });
+    }
   }
 
   private _detach(u: number): void {
@@ -792,16 +947,66 @@ export class Graph<N = unknown, E = unknown> {
     }
   }
 
-  private _touch(emit: () => void): void {
+  /**
+   * 推进版本号，并回答「这个事件有人听吗」。
+   *
+   * @remarks 返回 `false` 时调用方连载荷对象都不构造，于是无人订阅的变更热路径零分配。
+   *   批量导入几万条变更时，这决定了事务里是空的还是堆着几万个载荷。
+   */
+  private _wants<K extends keyof Events<N, E>>(
+    type: K,
+    shape: boolean,
+  ): boolean {
     this._revision++;
-    if (this._depth > 0) this._deferred.push(emit);
-    else emit();
+    if (shape) this._shape++;
+    this._changes++;
+    // 一个订阅者都没有是批量导入的常态，先用两次属性读挡掉，别去查按键分桶的表。
+    const signal = this.signal;
+    if (!signal.has()) return false;
+    return signal.has(type) || signal.has("*");
   }
 
-  private _flush(): void {
-    if (this._deferred.length === 0) return;
-    const queued = this._deferred.splice(0, this._deferred.length);
-    for (const emit of queued) emit();
+  private _commit(): void {
+    if (this._depth === 0) this._settle();
+  }
+
+  /**
+   * 事务收尾：按序放出缓冲的事件，再放一次 `flushed`。
+   *
+   * @remarks handler 里继续改图是常态（比如布局据此插节点）。那些变更会照常排进同一个
+   *   队列，由这里接着收——重入的 `_settle` 直接返回，不另起一轮。否则内层会把外层的
+   *   计数抢走并提前放出 `flushed`，外层剩下的事件反而排在事务边界之后。
+   */
+  private _settle(): void {
+    if (this._settling) return;
+    this._settling = true;
+    try {
+      const queue = this._queue;
+      const signal = this.signal;
+      while (queue.length > 0 || this._changes > 0) {
+        while (queue.length > 0) {
+          // 先摘下来再派发：handler 改图时不会与本轮迭代抢同一个数组。
+          const queued = queue.splice(0, queue.length);
+          for (let i = 0; i < queued.length; i += 2) {
+            signal.emit(
+              queued[i] as keyof Events<N, E>,
+              queued[i + 1] as never,
+            );
+          }
+        }
+        const changes = this._changes;
+        this._changes = 0;
+        if (
+          changes > 0 &&
+          signal.has() &&
+          (signal.has("flushed") || signal.has("*"))
+        ) {
+          signal.emit("flushed", { changes });
+        }
+      }
+    } finally {
+      this._settling = false;
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import type { EdgeId, NodeId } from "./ident";
+import type { NodeId } from "./ident";
 
 export type Code =
   | "duplicate"
@@ -39,11 +39,28 @@ export class Missing extends GraphError {
   }
 }
 
+/**
+ * 算法在图里撞上了环。`nodes` 是**节点索引**——算法层不认识 id，需要可读名字时
+ * 用 `snapshot.names(error.nodes)` 换。
+ */
 export class Cycle extends GraphError {
-  public constructor(public readonly nodes: ReadonlyArray<NodeId>) {
+  public constructor(public readonly nodes: ReadonlyArray<number>) {
     super(
       "cycle",
-      `cycle through ${nodes.length} node(s): ${nodes.slice(0, 8).join(" -> ")}`,
+      `cycle through ${nodes.length} node(s): #${nodes.slice(0, 8).join(" -> #")}`,
+    );
+  }
+}
+
+/** 层级会成环：把节点挂到自己的后代下面。层级是编辑层概念，故用 id 而非索引。 */
+export class Nested extends GraphError {
+  public constructor(
+    public readonly node: NodeId,
+    public readonly parent: NodeId,
+  ) {
+    super(
+      "cycle",
+      `"${node}" cannot be nested under its descendant "${parent}"`,
     );
   }
 }
@@ -62,11 +79,15 @@ export class Capacity extends GraphError {
   }
 }
 
+/** `edge` 是边序号（{@link Snapshot.edges} 的下标），不是 {@link EdgeId}。 */
 export class Negative extends GraphError {
-  public constructor(cost: number, edge: EdgeId) {
+  public constructor(
+    public readonly cost: number,
+    public readonly edge: number,
+  ) {
     super(
       "negative",
-      `negative cost ${cost} on edge "${edge}"; use bellmanFord`,
+      `negative cost ${cost} on edge #${edge}; use bellmanFord`,
     );
   }
 }

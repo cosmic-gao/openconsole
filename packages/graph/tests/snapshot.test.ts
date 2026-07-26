@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  costOf,
   Graph,
   graphId,
+  inDegree,
+  merged,
   nodeId,
+  outDegree,
   scc,
   settle,
   Snapshot,
   Stale,
   toposort,
-  type EdgeRecord,
   type NodeId,
 } from "../index";
 import { randomGraph, vertex } from "./random";
 
-const cost = (edge: EdgeRecord<number>): number => edge.weight ?? 1;
+const cost = (weight: number | undefined): number => weight ?? 1;
 const outOf = (snapshot: Snapshot, node: NodeId): NodeId[] => {
   const u = snapshot.indexOf(node);
   const found: NodeId[] = [];
@@ -40,8 +43,8 @@ describe("编译", () => {
         graph.outNeighbors(node).slice().sort(),
       );
       const u = snapshot.indexOf(node);
-      expect(snapshot.outDegree(u)).toBe(graph.outDegree(node));
-      expect(snapshot.inDegree(u)).toBe(graph.inDegree(node));
+      expect(outDegree(snapshot, u)).toBe(graph.outDegree(node));
+      expect(inDegree(snapshot, u)).toBe(graph.inDegree(node));
     }
   });
 
@@ -69,7 +72,7 @@ describe("编译", () => {
       k < snapshot.outbound.offset[u + 1]!;
       k++
     ) {
-      weights.push(snapshot.costAt(snapshot.outbound.edge[k]!));
+      weights.push(costOf(snapshot, snapshot.outbound.edge[k]!));
     }
     expect(weights.sort()).toEqual([3, 7]);
   });
@@ -78,7 +81,7 @@ describe("编译", () => {
     const graph = randomGraph(23, { order: 10, density: 2 });
     const snapshot = Snapshot.of(graph);
     expect(snapshot.weight).toBeUndefined();
-    expect(snapshot.costAt(0)).toBe(1);
+    expect(costOf(snapshot, 0)).toBe(1);
   });
 });
 
@@ -144,7 +147,7 @@ describe("编译期视图", () => {
     const snapshot = Snapshot.of(graph, { undirected: true });
     expect(outOf(snapshot, nodeId("a"))).toEqual([nodeId("b")]);
     expect(outOf(snapshot, nodeId("b"))).toEqual([nodeId("a")]);
-    expect(snapshot.merged).toBe(true);
+    expect(merged(snapshot)).toBe(true);
   });
 
   it("outbound 省掉入向邻接，reverse 随之不可用", () => {

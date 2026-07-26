@@ -1,6 +1,5 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import type { CallContext, Middleware } from './handlers.js';
+import type { CallContext, Middleware, Outcome } from './handlers.js';
 import { isTransportFailure } from './upstream.js';
 
 export interface RetryOptions {
@@ -10,10 +9,10 @@ export interface RetryOptions {
   backoffMs?: number;
 }
 
-/** 只重试幂等工具的传输故障：非幂等操作重放会留下重复副作用 */
+/** 只重试可重放的传输故障：非幂等操作重放会留下重复副作用 */
 export function retry({ attempts = 2, backoffMs = 200 }: RetryOptions = {}): Middleware {
   return async (ctx, next) => {
-    if (!isReplayable(ctx.tool)) return next();
+    if (!isReplayable(ctx)) return next();
 
     for (let attempt = 0; ; attempt++) {
       try {
@@ -28,11 +27,11 @@ export function retry({ attempts = 2, backoffMs = 200 }: RetryOptions = {}): Mid
 
 export interface RateLimitOptions {
   perMinute: number;
-  /** 计数维度，默认按「调用方 + 工具」 */
+  /** 计数维度，默认按「调用方 + 方法 + 目标」 */
   keyOf?: (ctx: CallContext) => string;
 }
 
-export function rateLimit({ perMinute, keyOf = byCallerAndTool }: RateLimitOptions): Middleware {
+export function rateLimit({ perMinute, keyOf = byCallerAndTarget }: RateLimitOptions): Middleware {
   const hits = new Map<string, number[]>();
 
   return (ctx, next) => {
@@ -52,7 +51,9 @@ export function rateLimit({ perMinute, keyOf = byCallerAndTool }: RateLimitOptio
 }
 
 export interface AuditRecord {
-  readonly tool: string;
+  readonly method: CallContext['method'];
+  /** 工具与 prompt 是名字，资源是 URI */
+  readonly target: string;
   readonly upstreamId: string;
   readonly clientId: string | undefined;
   readonly readOnly: boolean;
@@ -65,9 +66,10 @@ export interface AuditRecord {
 export function audit(write: (record: AuditRecord) => void): Middleware {
   return async (ctx, next) => {
     const startedAt = Date.now();
-    const readOnly = ctx.tool.annotations?.readOnlyHint === true;
+    const readOnly = isReadOnly(ctx);
     const subject = {
-      tool: ctx.name,
+      method: ctx.method,
+      target: ctx.name,
       upstreamId: ctx.upstreamId,
       clientId: ctx.auth?.clientId,
       readOnly,
@@ -76,7 +78,7 @@ export function audit(write: (record: AuditRecord) => void): Middleware {
 
     try {
       const result = await next();
-      write({ ...subject, ok: result.isError !== true, durationMs: Date.now() - startedAt });
+      write({ ...subject, ok: succeeded(result), durationMs: Date.now() - startedAt });
       return result;
     } catch (error) {
       write({ ...subject, ok: false, durationMs: Date.now() - startedAt });
@@ -88,11 +90,18 @@ export function audit(write: (record: AuditRecord) => void): Middleware {
 const MINUTE = 60_000;
 const KEY_CEILING = 10_000;
 
-const isReplayable = (tool: Tool): boolean =>
-  tool.annotations?.readOnlyHint === true || tool.annotations?.idempotentHint === true;
+/** 取 prompt 与读资源在协议上就没有写语义，只有工具需要看 annotations */
+const isReadOnly = (ctx: CallContext): boolean =>
+  ctx.method !== 'tools/call' || ctx.tool?.annotations?.readOnlyHint === true;
 
-const byCallerAndTool = (ctx: CallContext): string =>
-  `${ctx.auth?.clientId ?? 'anonymous'}:${ctx.name}`;
+const isReplayable = (ctx: CallContext): boolean =>
+  isReadOnly(ctx) || ctx.tool?.annotations?.idempotentHint === true;
+
+/** 只有 CallToolResult 有 isError 通道，其余方法能返回就是成功 */
+const succeeded = (result: Outcome): boolean => !('isError' in result && result.isError === true);
+
+const byCallerAndTarget = (ctx: CallContext): string =>
+  `${ctx.auth?.clientId ?? 'anonymous'}:${ctx.method}:${ctx.name}`;
 
 /** 键空间随调用方增长，不清理就是一条内存泄漏 */
 function evictExpired(hits: Map<string, number[]>, now: number): void {

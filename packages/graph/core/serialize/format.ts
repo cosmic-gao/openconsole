@@ -160,21 +160,33 @@ export function pack<N, E>(
   const mapEdge = (id: EdgeId): EdgeId =>
     intern ? edgeId(edgeIds.map(id)) : id;
 
+  // 全图扫描一律走 forEach* 快路径：按存储顺序直读平行数组，省掉每个元素一次 id 查表。
   const n: Array<CompactNode<N>> = [];
-  for (const id of options.order ?? graph.nodes()) {
-    const record = graph.node(id);
-    if (!record) continue;
-    n.push([
-      mapNode(record.id),
-      record.weight,
-      tuples(record.inputs),
-      tuples(record.outputs),
-    ]);
+  if (options.order === undefined) {
+    graph.forEachNode((id, weight, slot) => {
+      const record = graph.nodeAt(slot)!;
+      n.push([
+        mapNode(id),
+        weight,
+        tuples(record.inputs),
+        tuples(record.outputs),
+      ]);
+    });
+  } else {
+    for (const id of options.order) {
+      const record = graph.node(id);
+      if (!record) continue;
+      n.push([
+        mapNode(record.id),
+        record.weight,
+        tuples(record.inputs),
+        tuples(record.outputs),
+      ]);
+    }
   }
 
   const e: Array<CompactEdge<E>> = [];
-  for (const id of graph.edges()) {
-    const record = graph.edge(id)!;
+  graph.forEachEdge((record) => {
     e.push([
       mapEdge(record.id),
       mapNode(record.source),
@@ -183,13 +195,12 @@ export function pack<N, E>(
       record.targetPort,
       record.weight,
     ]);
-  }
+  });
 
   const h: Array<readonly [NodeId, NodeId]> = [];
-  for (const id of graph.nodes()) {
-    const parent = graph.parent(id);
-    if (parent !== undefined) h.push([mapNode(id), mapNode(parent)]);
-  }
+  graph.forEachParent((node, parent) => {
+    h.push([mapNode(node), mapNode(parent)]);
+  });
 
   const compact: Compact<N, E> =
     h.length > 0

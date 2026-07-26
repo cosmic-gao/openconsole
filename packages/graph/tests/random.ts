@@ -2,6 +2,7 @@ import {
   Graph,
   graphId,
   nodeId,
+  Snapshot,
   Socket,
   Vertex,
   type EdgeId,
@@ -312,8 +313,12 @@ export const edgeKey = (graph: Graph<number, number>, edge: EdgeId): string => {
   return key(record.source, record.target);
 };
 
-export const groupKeys = (groups: NodeId[][]): string[] =>
-  groups.map((group) => [...group].sort().join(",")).sort();
+/** 索引空间的分组换回 id 再规范化，便于与朴素实现对拍。 */
+export const groupKeys = (
+  snapshot: Snapshot,
+  groups: Array<Iterable<number>>,
+): string[] =>
+  groups.map((group) => snapshot.names(group).sort().join(",")).sort();
 
 export const setKeys = (groups: Set<string>[]): string[] =>
   groups.map((group) => [...group].sort().join(",")).sort();

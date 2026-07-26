@@ -1,5 +1,4 @@
-import type { NodeId } from "../ident";
-import type { Snapshot } from "../snapshot";
+import type { Structure } from "../snapshot";
 
 /** 访问者的返回值：继续、剪掉该子树、整体中止。 */
 export type Control = "continue" | "prune" | "break";
@@ -8,24 +7,23 @@ const WHITE = 0;
 const GRAY = 1;
 const BLACK = 2;
 
-/** 深度优先，按发现顺序产出；多起点依次展开，已访问的不重复产出。 */
+/** 深度优先，按发现顺序产出节点索引；多起点依次展开，已访问的不重复产出。 */
 export function* dfs(
-  snapshot: Snapshot,
-  ...starts: NodeId[]
-): Generator<NodeId> {
-  const { offset, other } = snapshot.outbound;
-  const seen = new Uint8Array(snapshot.order);
+  structure: Structure,
+  ...starts: number[]
+): Generator<number> {
+  const { offset, other } = structure.outbound;
+  const seen = new Uint8Array(structure.order);
   const stack: number[] = [];
 
-  for (const start of starts) {
-    const s = snapshot.indexOf(start);
-    if (s < 0) continue;
+  for (const s of starts) {
+    if (s < 0 || s >= structure.order) continue;
     stack.push(s);
     while (stack.length > 0) {
       const u = stack.pop()!;
       if (seen[u] === 1) continue;
       seen[u] = 1;
-      yield snapshot.label(u);
+      yield u;
       // 逆序压栈，使出栈顺序与邻接顺序一致。
       for (let k = offset[u + 1]! - 1; k >= offset[u]!; k--) {
         if (seen[other[k]!] === 0) stack.push(other[k]!);
@@ -34,25 +32,24 @@ export function* dfs(
   }
 }
 
-/** 广度优先，按层级顺序产出。 */
+/** 广度优先，按层级顺序产出节点索引。 */
 export function* bfs(
-  snapshot: Snapshot,
-  ...starts: NodeId[]
-): Generator<NodeId> {
-  const { offset, other } = snapshot.outbound;
-  const seen = new Uint8Array(snapshot.order);
+  structure: Structure,
+  ...starts: number[]
+): Generator<number> {
+  const { offset, other } = structure.outbound;
+  const seen = new Uint8Array(structure.order);
   const queue: number[] = [];
 
-  for (const start of starts) {
-    const s = snapshot.indexOf(start);
-    if (s >= 0 && seen[s] === 0) {
+  for (const s of starts) {
+    if (s >= 0 && s < structure.order && seen[s] === 0) {
       seen[s] = 1;
       queue.push(s);
     }
   }
   for (let head = 0; head < queue.length; head++) {
     const u = queue[head]!;
-    yield snapshot.label(u);
+    yield u;
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       const v = other[k]!;
       if (seen[v] === 0) {
@@ -65,16 +62,15 @@ export function* bfs(
 
 /** 各节点到起点集的最短跳数；不可达为 -1。下标即节点索引。 */
 export function levels(
-  snapshot: Snapshot,
-  starts: Iterable<NodeId>,
+  structure: Structure,
+  starts: Iterable<number>,
 ): Int32Array {
-  const { offset, other } = snapshot.outbound;
-  const depth = new Int32Array(snapshot.order).fill(-1);
+  const { offset, other } = structure.outbound;
+  const depth = new Int32Array(structure.order).fill(-1);
   let frontier: number[] = [];
 
-  for (const start of starts) {
-    const s = snapshot.indexOf(start);
-    if (s >= 0 && depth[s] === -1) {
+  for (const s of starts) {
+    if (s >= 0 && s < structure.order && depth[s] === -1) {
       depth[s] = 0;
       frontier.push(s);
     }
@@ -95,26 +91,26 @@ export function levels(
   return depth;
 }
 
-/** 事件式深度优先遍历，可按边的分类做环检测。回调不分配对象。 */
+/** 事件式深度优先遍历，可按边的分类做环检测。回调收到的是节点索引，不分配对象。 */
 export interface Visitor {
-  discover?(node: NodeId): Control | void;
-  finish?(node: NodeId): Control | void;
+  discover?(node: number): Control | void;
+  finish?(node: number): Control | void;
   /** 通往未访问节点的树边。 */
-  tree?(from: NodeId, to: NodeId): Control | void;
+  tree?(from: number, to: number): Control | void;
   /** 指向 DFS 路径上祖先的回边——存在即成环。 */
-  back?(from: NodeId, to: NodeId): Control | void;
+  back?(from: number, to: number): Control | void;
   /** 指向已完成节点的横叉边或前向边。 */
-  cross?(from: NodeId, to: NodeId): Control | void;
+  cross?(from: number, to: number): Control | void;
 }
 
 /** `starts` 为 `null` 时扫描全图。 */
 export function visit(
-  snapshot: Snapshot,
-  starts: Iterable<NodeId> | null,
+  structure: Structure,
+  starts: Iterable<number> | null,
   visitor: Visitor,
 ): Control {
-  const { order, labels } = snapshot;
-  const { offset, other } = snapshot.outbound;
+  const { order } = structure;
+  const { offset, other } = structure.outbound;
   const color = new Uint8Array(order);
   const stack = new Int32Array(order);
   const cursor = new Int32Array(order);
@@ -122,11 +118,11 @@ export function visit(
 
   const enter = (u: number): Control => {
     color[u] = GRAY;
-    const control = visitor.discover?.(labels[u]!) ?? "continue";
+    const control = visitor.discover?.(u) ?? "continue";
     if (control === "break") return "break";
     if (control === "prune") {
       color[u] = BLACK;
-      return visitor.finish?.(labels[u]!) === "break" ? "break" : "prune";
+      return visitor.finish?.(u) === "break" ? "break" : "prune";
     }
     stack[depth] = u;
     cursor[depth] = offset[u]!;
@@ -134,9 +130,8 @@ export function visit(
     return "continue";
   };
 
-  for (const root of starts ?? labels) {
-    const r = snapshot.indexOf(root);
-    if (r < 0 || color[r] !== WHITE) continue;
+  for (const r of starts ?? everything(order)) {
+    if (r < 0 || r >= order || color[r] !== WHITE) continue;
     if (enter(r) === "break") return "break";
 
     while (depth > 0) {
@@ -146,7 +141,7 @@ export function visit(
       if (cursor[top]! >= offset[u + 1]!) {
         color[u] = BLACK;
         depth--;
-        if (visitor.finish?.(labels[u]!) === "break") return "break";
+        if (visitor.finish?.(u) === "break") return "break";
         continue;
       }
 
@@ -155,13 +150,13 @@ export function visit(
       const v = other[k]!;
       const shade = color[v]!;
       if (shade === WHITE) {
-        const control = visitor.tree?.(labels[u]!, labels[v]!) ?? "continue";
+        const control = visitor.tree?.(u, v) ?? "continue";
         if (control === "break") return "break";
         if (control === "prune") continue;
         if (enter(v) === "break") return "break";
       } else if (shade === GRAY) {
-        if (visitor.back?.(labels[u]!, labels[v]!) === "break") return "break";
-      } else if (visitor.cross?.(labels[u]!, labels[v]!) === "break") {
+        if (visitor.back?.(u, v) === "break") return "break";
+      } else if (visitor.cross?.(u, v) === "break") {
         return "break";
       }
     }
@@ -169,16 +164,21 @@ export function visit(
   return "continue";
 }
 
-/** 后序（DFS 完成序）。 */
+function* everything(order: number): Generator<number> {
+  for (let u = 0; u < order; u++) yield u;
+}
+
+/** 后序（DFS 完成序）的节点索引。 */
 export function postorder(
-  snapshot: Snapshot,
-  starts?: Iterable<NodeId>,
-): NodeId[] {
-  const finished: NodeId[] = [];
-  visit(snapshot, starts ?? null, {
+  structure: Structure,
+  starts?: Iterable<number>,
+): Int32Array {
+  const finished = new Int32Array(structure.order);
+  let at = 0;
+  visit(structure, starts ?? null, {
     finish(node) {
-      finished.push(node);
+      finished[at++] = node;
     },
   });
-  return finished;
+  return finished.subarray(0, at);
 }

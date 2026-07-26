@@ -13,11 +13,10 @@ import {
   shortestPaths,
   Snapshot,
   transform,
-  type EdgeRecord,
 } from "../index";
 import { randomGraph } from "./random";
 
-const cost = (edge: EdgeRecord<number>): number => edge.weight ?? 1;
+const cost = (weight: number | undefined): number => weight ?? 1;
 const sample = (): Snapshot =>
   Snapshot.of(randomGraph(42, { order: 120, density: 3 }), { weight: cost });
 
@@ -28,14 +27,14 @@ describe("分步推进", () => {
     while (stepped.advance(1));
 
     expect(stepped.result().count).toBe(settle(scc(snapshot)).count);
-    expect([...stepped.result().labels]).toEqual([
-      ...settle(scc(snapshot)).labels,
+    expect([...stepped.result().component]).toEqual([
+      ...settle(scc(snapshot)).component,
     ]);
   });
 
   it("任意预算切分都不改变结果", () => {
     const snapshot = sample();
-    const source = nodeId("n0");
+    const source = snapshot.indexOf(nodeId("n0"));
     const reference = settle(shortestPaths(snapshot, source));
 
     for (const budget of [1, 3, 17, 1000]) {
@@ -109,8 +108,9 @@ describe("分帧调度", () => {
       onProgress: (progress) => seen.push(progress),
     });
 
-    expect(result.from(nodeId("n0")).length).toBe(
-      settle(closure(snapshot)).from(nodeId("n0")).length,
+    const source = snapshot.indexOf(nodeId("n0"));
+    expect(result.from(source).length).toBe(
+      settle(closure(snapshot)).from(source).length,
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((value) => value >= 0 && value <= 1)).toBe(true);

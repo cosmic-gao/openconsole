@@ -262,7 +262,7 @@ describe("reshape", () => {
       graph.reshape(nodeId("branch"), { outputs: { true: exec(false) } });
       expect(order).toHaveLength(0);
     });
-    expect(order).toEqual(["edgeDropped", "nodeReshaped"]);
+    expect(order).toEqual(["edgeDropped", "nodeReshaped", "flushed"]);
   });
 
   it("节点不存在时抛 Missing", () => {

@@ -3,11 +3,19 @@ reconcileIntervalMs: 60000
 # 省略 allowedOrigins 即不校验 Origin；本地与生产都应显式配置
 # allowedOrigins: ['http://localhost:3000']
 
+# 对外名字撞车时改名保留（资源加 alias 前缀）；reject 则丢弃后来者
+duplicates: rename
+
 # 挂载点。省略 upstreams 表示挂载全部；分组挂载可按需裁剪客户端的上下文预算
 endpoints:
   - path: /mcp
   - path: /mcp/alpha
     upstreams: [alpha]
+    # 同一个上游在不同端点可以有不同呈现。键是加前缀后的对外名字
+    overrides:
+      a__echo:
+        name: echo
+        description: 回显文本（这个端点只有一个上游，前缀是多余的）
   # 工具上百时改用 progressive：只暴露 search_tools / describe_tool / call_tool
   - path: /mcp/lite
     discovery: progressive
@@ -38,3 +46,5 @@ upstreams:
     breaker:
       failures: 5
       resetMs: 30000
+    # 默认 keep：保留上次快照，让模型知道是「暂时不可用」而非「不存在」
+    onUnreachable: keep

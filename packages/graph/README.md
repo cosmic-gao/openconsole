@@ -1,16 +1,17 @@
 # @openconsole/graph
 
-类型化端口的有向图内核：整数索引存储、不可变快照、可中断的算法。
+类型化端口的有向图内核：整数索引存储、不可变 CSR、可中断的算法。
 
 ## 三层职责
 
-| 层               | 负责       | 形态                                              |
-| ---------------- | ---------- | ------------------------------------------------- |
-| {@link Graph}    | 编辑       | 整数索引 + 平行数组，邻接是纯数组读取，变更走事件 |
-| {@link Snapshot} | 计算的输入 | 不可变 CSR，全部数据在 typed-array 里             |
-| {@link Task}     | 调度       | 分步推进，可中断、可续跑、可分帧                  |
+| 层                | 负责       | 形态                                              |
+| ----------------- | ---------- | ------------------------------------------------- |
+| {@link Graph}     | 编辑       | 整数索引 + 平行数组，邻接是纯数组读取，变更走事件 |
+| {@link Snapshot}  | 计算的输入 | 不可变 CSR，全部数据在 typed-array 里             |
+| {@link Structure} | 算法的契约 | 五个只读字段，谁都能实现                          |
+| {@link Task}      | 调度       | 分步推进，可中断、可续跑、可分帧                  |
 
-算法只吃快照，不吃图。输入不可变带来三件事：长跑任务中断后恢复不会读到半改的图；快照能整份搬进
+算法只吃 `Structure`，不吃图。输入不可变带来三件事：长跑任务中断后恢复不会读到半改的图；快照能整份搬进
 Worker；过滤 / 折叠 / 无向化在编译期一次做完，运行期没有任何谓词回调或视图转发的开销。
 
 ## 快速开始
@@ -26,16 +27,57 @@ for (const name of ["a", "b", "c"]) {
 graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 3 });
 graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"], { weight: 4 });
 
-const snapshot = Snapshot.of(graph, { weight: (edge) => edge.weight ?? 1 });
+const snapshot = Snapshot.of(graph, { weight: (weight) => weight ?? 1 });
 
-settle(toposort(snapshot)); // [a, b, c]
-settle(shortestPath(snapshot, nodeId("a"), nodeId("c"))); // { distance: 7, path: [a, b, c] }
+// 算法在索引空间里进出，名字在边界上换。
+settle(toposort(snapshot)); // Int32Array [0, 1, 2]
+snapshot.names(settle(toposort(snapshot))); // [a, b, c]
+
+const route = settle(shortestPath(snapshot, snapshot.indexOf(nodeId("a")), snapshot.indexOf(nodeId("c"))));
+route; // { distance: 7, path: Int32Array [0, 1, 2] }
 ```
+
+**为什么算法收发的是索引而不是 id**：索引就是数组下标，结果可以直接落在 `Int32Array` 里；换成
+`NodeId` 就得为每个节点各付一次字符串哈希，还会在「索引 → 名字 → 查回索引」之间反复往返。
+边界上一次 `names()` / `indexOf()` 就够了。
+
+## Structure：算法的唯一契约
+
+```ts
+interface Structure {
+  readonly order: number;
+  readonly size: number;
+  readonly outbound: Adjacency; // { offset, other, edge }
+  readonly inbound: Adjacency | undefined;
+  readonly weight: Reals | undefined; // 省略即每条边按 1 计
+}
+```
+
+五个只读字段，全是纯数据。凡是能凑出这五样的东西都能跑全套算法——不必先塞进 `Graph` 再编译：
+
+```ts
+const chain: Structure = {
+  order: 3,
+  size: 2,
+  outbound: { offset: Int32Array.of(0, 1, 2, 2), other: Int32Array.of(1, 2), edge: Int32Array.of(0, 1) },
+  inbound: { offset: Int32Array.of(0, 0, 1, 2), other: Int32Array.of(0, 1), edge: Int32Array.of(0, 1) },
+  weight: Float64Array.of(3, 4),
+};
+settle(shortestPath(chain, 0, 2)); // { distance: 7, path: [0, 1, 2] }
+```
+
+`Adjacency` 的字段类型是只读接口 `Ints` / `Reals` 而非 `Int32Array` 本身，所以
+SharedArrayBuffer 背书的数组、WASM 导出的内存视图、按需生成的惰性代理都能直接顶上。
+`Snapshot` 只是这个接口的默认实现，额外提供索引 ↔ id 的标签层。
+
+配套的自由函数对任何实现都成立：`reversed(structure)`（O(1) 翻转，共享底层数组）、
+`merged(structure)`、`outDegree` / `inDegree`、`costOf`。
 
 ## Graph：编辑层
 
 节点与边都以整数索引寻址，属性存在平行数组里。删除只在索引位上留空并进入自由表，
-**已发出的索引永不改指**——外部持有的下标不会静默指向别的节点。空位由 `compact()` 显式回收。
+**已发出的索引永不改指**——外部持有的下标不会静默指向别的节点。空位由 `compact()` 显式回收，
+回收时派发 `compacted`（带旧 → 新映射），持有索引的订阅者据此重映射。
 
 ```ts
 graph.addNode(spec); // 返回 NodeId，重复抛 Duplicate
@@ -53,18 +95,32 @@ graph.outEdges(id);
 graph.between(a, b); // 全部平行边
 graph.outDegree(id);
 graph.forEachOut(id, (target, edge, port) => {}); // 零分配，返回 false 提前停止
-graph.forEachNode((id, weight) => {}); // 按存储顺序，不经 id 查表
-graph.forEachEdge((record) => {});
+graph.forEachNode((id, weight, slot) => {}); // 按存储顺序，不经 id 查表
+graph.forEachEdge((record, slot) => {});
+graph.forEachLink((edge, source, target) => {}); // 纯整数，连字符串都不碰
+graph.forEachOutAt(slot, (target, edge) => {}); // 索引空间的邻接遍历
 
 graph.linkedTo(id, "then"); // 某个输出端口的对端，零分配
 graph.linkedFrom(id, "value"); // 某个输入端口的来源
 graph.reshape(id, { outputs }); // 换端口集合，保住仍然合法的连线
 
-graph.setParent(child, group); // 复合层级，内建环检测
+graph.setParent(child, group); // 复合层级，内建环检测（抛 Nested）
 graph.batch(work); // 事务：事件推迟到最外层结束统一派发
 graph.compact(); // 回收空位并重新稠密编号
 graph.copy() / graph.subgraph(keep) / graph.union(other);
 ```
+
+### 三套访问口径
+
+同一份数据有三种取法，各有各的场合，不必猜哪个更快：
+
+| 口径                     | 例子                            | 用在       |
+| ------------------------ | ------------------------------- | ---------- |
+| 按 id（要哈希，给对象）  | `node(id)` / `edge(id)`         | 交互与查询 |
+| 按槽位（无哈希，给对象） | `nodeAt(slot)` / `edgeAt(slot)` | 全图扫描   |
+| 按槽位（无哈希，给整数） | `forEachLink` / `forEachOutAt`  | 编译与增量 |
+
+编译快照、打包、增量拓扑序全走第三种，因此这些路径上一次字符串哈希都不做。
 
 ### 节点与端口是声明，不是状态
 
@@ -80,7 +136,7 @@ graph.addNode(template); // 按值拷入，之后改模板不影响图
 `connect` 会校验端口存在、Socket 兼容（`Mismatch`）、单连接容量（`Capacity`）。
 
 节点上线后还能换端口——`reshape` 尽量保住现有连线，只断三类边：端口消失、Socket 不再兼容、
-超出收紧后的单连接容量（保留最早那条）。它断边而不抛错，因为这是编辑器动作；被断的边照常派发
+超出收紧后的单连接容量。它断边而不抛错，因为这是编辑器动作；被断的边照常派发
 `edgeDropped`，上层据此提示或计入撤销栈。
 
 ```ts
@@ -88,39 +144,53 @@ graph.reshape(node, { outputs: { "0": pin, "1": pin } }); // 加一路输出，"
 graph.reshape(node, { inputs: {}, outputs: {} }); // 断掉该节点全部连线，节点保留
 ```
 
-### 按端口查连接
+### 删高扇出节点是线性的
 
-端口是这个模型的一等概念，所以"某个引脚接到哪"是直读平行数组的一次线性扫，没有中间数组、
-没有边对象分配：
-
-```ts
-const next = graph.linkedTo(node, "then"); // 单连接引脚
-graph.forEachOut(node, (target, edge, port) => {
-  if (port === "main") consume(target); // 多连接引脚
-});
-```
+`dropNode` 先把关联边整批从**对端**摘掉，再一次性清空自己的两条邻接表。若逐条走
+`disconnect`，每条边都要在正在收缩的自身列表上做一次线性查找，删一个高扇出节点就是
+O(deg²)：3 万扇出要几百毫秒，10 万扇出到秒级。现在 10 万扇出也在几十毫秒内。
 
 ## Snapshot：计算的输入
 
 ```ts
 const snapshot = Snapshot.of(graph, {
-  weight: (edge) => edge.weight ?? 1, // 带权编译，省略则每条边按 1 计
+  weight: (weight) => weight ?? 1, // 带权编译，省略则每条边按 1 计
   node: (id, weight) => keep(id), // 节点过滤
-  edge: (edge) => (edge.weight ?? 0) > 5, // 边过滤
+  edge: (record) => (record.weight ?? 0) > 5, // 边过滤
   collapse: [groupId], // 把分组折叠成单节点
   undirected: true, // 每条边在两端各出现一次
   outbound: true, // 只编译出向，省一半内存与时间
+  reuse: previous, // 增量重编译，见下
 });
 
 snapshot.reverse(); // O(1)，与原快照共享底层数组
 snapshot.verify(); // 源图已变更则抛 Stale
+snapshot.names(indices); // 索引 → NodeId；边序号换 id 直接读 snapshot.edges[i]
 ```
 
 以前需要嵌套视图适配器（`reversed(new NodeFilter(g, p))`）的场景，现在是一次编译的几个选项。
 代价是编译要 O(V+E)，收益是运行期零开销、且不再有"视图上 `order` 是 O(V)"这类陷阱。
 
-出向与入向各是一个 `Adjacency`（`offset` / `other` / `edge` 三条数组绑在一起），
-所以"有没有入向"是一次判断而不是三个各自可空的字段。
+`weight` 回调只吃边自己的权重值，不给整条记录——这正是增量重编译能便宜的前提。要按端点算权，
+把它烘进 `E` 里。
+
+### 增量重编译
+
+编辑器改的多半是参数而不是连线。传上一份快照进去，结构没变就复用整套 CSR：
+
+```ts
+let snapshot = Snapshot.of(graph, { weight: cost });
+
+graph.setEdgeWeight(edge, 42);
+snapshot = Snapshot.of(graph, { weight: cost, reuse: snapshot });
+// labels / edges / outbound / inbound / 索引表全部原样共享，只有 weight 是新的
+```
+
+三档：`revision` 也没动 → 原样返回同一个对象；`shape`（结构版本号）没动 → 复用 CSR、只重算
+边权，走的是槽位直读，零哈希；结构变了 → 全量重编译。用了谓词或折叠时自动退回全量——那种编译
+的结构不只由 `shape` 决定。传错图的快照、传选项不一致的快照都只是没有加速，不会出错。
+
+实测 V=5000 / E=40000：全量 2.59ms，增量 0.36ms。
 
 ### 跨线程
 
@@ -132,6 +202,9 @@ worker.postMessage(snapshot.data);
 const snapshot = Snapshot.from(data);
 settle(scc(snapshot));
 ```
+
+id → 索引表是**惰性**的：只跑索引空间算法的一侧从不碰它，因此 Worker 还原一份 V=100 万的快照
+不必先付一遍百万次哈希。只在第一次调 `indexOf` / `names` 时建表，`reverse()` 与增量重编译共享同一份。
 
 ## Task：中断 / 分步 / 恢复
 
@@ -175,8 +248,11 @@ import { acyclic, ancestors, astar, bellmanFord, bfs, bidirectional, bottleneck,
 - **最短路**：`shortestPaths`（单源全树）/ `shortestPath`（单条）/ `astar` / `bidirectional` / `bellmanFord`（容许负权）/ `floydWarshall`（全源）
 - **生成森林**：`prim` / `kruskal`
 - **遍历**：`dfs` / `bfs`（生成器）/ `postorder` / `levels` / `visit`（事件式，带边分类）
-- **查询**：`degrees` / `sources` / `sinks` / `isolated` / `neighborhood` / `roots` / `subtree` / `ancestry`
+- **查询**：`degrees` / `sources` / `sinks` / `isolated` / `neighborhood`（切 CSR 视图，零分配）/ `roots` / `subtree` / `ancestry`
 - **增量**：`Ordering`（Pearce-Kelly 增量拓扑序）
+
+产出一律在索引空间：`toposort` 给 `Int32Array`，`ranks` 给按索引下标的 `Int32Array`，
+`dominators` 给 `idom[u]`（入口指向自身，不可达为 -1），`cuts` 给索引对与 `Int32Array`。
 
 ### 提前终止不泄漏未收敛的值
 
@@ -192,6 +268,12 @@ settle(shortestPaths(snapshot, source)); // 默认 sum：常规最短路
 settle(shortestPaths(snapshot, source, { combine: bottleneck })); // 最大边权最小的路线
 ```
 
+默认的加法语义在内层循环里走特化分支，不付那次间接调用。
+
+边权画像（是否全为非负整数、最大值——用来决定走桶队列还是惰性堆）按结构记在 `WeakMap` 上算一次。
+它是不可变结构的属性，只该算一次：不缓存的话，这一遍扫描在 V=5000 / E=40000 上要占单次
+Dijkstra 的 17%，多源场景更是白付一个 O(V·E)。
+
 ### 增量拓扑序
 
 `Ordering` 订阅图事件就地重排。成环的边不触发重算，而是记入 `conflicts` 并排除在拓扑约束外——
@@ -200,11 +282,15 @@ settle(shortestPaths(snapshot, source, { combine: bottleneck })); // 最大边�
 ```ts
 const ordering = new Ordering(graph);
 ordering.rank(node);
+ordering.rankAt(slot); // 零哈希
 ordering.sorted();
 ordering.cyclic; // O(1)
 ordering.cycles(); // 按需 O(V+E)
 ordering.dispose();
 ```
+
+内部状态全按整数槽位存：位次是一条 `Int32Array`，冲突边是数字 `Set`，区域搜索走 `forEachOutAt`。
+事件载荷自带 `slot`，`compact()` 后按 `compacted` 给的映射原地搬运而不是整图重算。
 
 ## 序列化
 
@@ -227,39 +313,66 @@ apply(graph, invert(changes)); // 撤销
 ## 事件
 
 ```ts
-graph.signal.on("nodeAdded", ({ node }) => {});
-graph.signal.on("edgeDropped", ({ edge, source, target, weight }) => {});
-graph.signal.on("nodeReshaped", ({ node, inputs, outputs }) => {});
-graph.signal.on("parentChanged", ({ node, before, after }) => {});
+graph.signal.on("nodeAdded", ({ node, slot }) => {});
+graph.signal.on("edgeDropped", ({ edge, slot, source, target, weight }) => {});
+graph.signal.on("compacted", ({ nodes, edges }) => {}); // 旧 → 新索引映射
+graph.signal.on("flushed", ({ changes }) => {}); // 事务边界
 graph.signal.watch((type, payload) => {});
 ```
 
-八类事件：`nodeAdded` / `nodeDropped` / `nodeUpdated` / `nodeReshaped` / `edgeAdded` /
-`edgeDropped` / `edgeUpdated` / `parentChanged`。载荷是值快照而非活对象，因此在事务里缓冲、
-稍后派发也不会读到已失效的状态。`clear()` 走删除原语，订阅者不会与图失同步。
+十类事件：`nodeAdded` / `nodeDropped` / `nodeUpdated` / `nodeReshaped` / `edgeAdded` /
+`edgeDropped` / `edgeUpdated` / `parentChanged` / `compacted` / `flushed`。
+
+- 载荷是值快照而非活对象，因此在事务里缓冲、稍后派发也不会读到已失效的状态。
+- 每条载荷都带 `slot`（图内整数索引），按索引维护增量状态的订阅者不必自己查表。
+- 派发落在**事务边界**：单次变更自成一段事务，`batch` 是一整段；两者都先按序放出变更事件，
+  再放一次 `flushed`。下游据此把一段编辑合并成一次重算，而不是每条变更都重算一遍。
+- 载荷只在变更发生时**确有监听者**才构造，因此无人订阅的变更热路径零分配。批量导入几万条
+  变更时，这决定了事务里是空的还是堆着几万个载荷对象。
+- `clear()` 走删除原语，订阅者不会与图失同步。
 
 ## 性能
 
-`pnpm --filter @openconsole/graph bench`，V=5000 / E=39992 的随机 DAG：
+`pnpm --filter @openconsole/graph bench`。V=5000 / E=39992 的随机 DAG，一台开发机上的
+量级参考（单位 ms）：
 
-| 操作                          | 均值    |
-| ----------------------------- | ------- |
-| 全图邻接遍历 — `outNeighbors` | 0.22 ms |
-| 全图邻接遍历 — `forEachOut`   | 0.27 ms |
-| 全图邻接遍历 — 快照 CSR 直读  | 0.04 ms |
-| `Snapshot.of` 双向带权        | 5.41 ms |
-| `Snapshot.of` 单向带权        | 4.82 ms |
-| `toposort`                    | 0.29 ms |
-| `components`                  | 0.33 ms |
-| `scc`                         | 0.40 ms |
-| `shortestPaths`               | 0.39 ms |
+| 操作                        | 耗时 |
+| --------------------------- | ---: |
+| 全图邻接遍历 — CSR 直读     | 0.04 |
+| 全图邻接遍历 — `forEachOut` | 0.50 |
+| `Snapshot.of` 双向带权      |  2.6 |
+| `Snapshot.of` 单向带权      |  1.9 |
+| **增量重编译（只动权重）**  | 0.36 |
+| `toposort`                  |  0.3 |
+| `shortestPaths`             |  0.3 |
+| `scc` / `components`        |  0.5 |
+| `dominators`                |  1.4 |
+| `pack`                      |  6.5 |
+| `unpack`                    |   35 |
 
-**编译一次约等于 15–20 次算法运行**，所以这套架构的适用形态是「批量编辑 → 编译一次 → 跑一批算法」。
-只跑单个算法且图频繁变动时，编译会占掉绝大部分时间——这是"算法只有一套实现"换来的确定性代价，
-用 `outbound: true` 可以省掉其中约 15%。
+**这些数字只用来看量级，不要拿来做闸门。** 同一台机器上同一份代码跑两轮，绝对值能差
+2–4 倍——后台扫描、降频、GC 压力都算数，分配密集的项（编译、序列化）比纯指针追逐的项
+（邻接遍历）敏感得多，连"整轮一起变慢"这种简化假设都不成立。
+
+由此得出的两条实践：编译一次约等于 8 次算法运行，所以适用形态是「批量编辑 → 编译一次 →
+跑一批算法」；只跑单个算法且图频繁变动时，用 `reuse` 走增量，代价降到不足一次算法运行。
 
 `forEachOut` 比 `outNeighbors` 略慢是因为它额外解析了边 id；它的价值是拿边 id 时不分配数组，
 不是比取邻居更快。
+
+`unpack` 是全包最慢的操作：成本在 4.5 万次 `addNode` / `connect` 的端口校验与槽位登记上，
+属于正确性开销。`pack` 的钱则花在每个节点的端口元组化（`Object.keys` + 排序 + 建对象）上。
+
+### 复杂度闸门
+
+真正进 CI 的不是耗时基线，而是 `tests/scaling.test.ts` 里的**同进程规模比**断言：规模翻 4 倍，
+耗时不许涨过 9 倍。这类比值不受整机快慢影响，因此不会误报，而它要挡的东西——某个 O(n) 悄悄
+变回 O(n²)——无论机器多快都会被抓住。目前钉住四条：
+
+- `dropNode` 随扇出线性，不随平方；
+- `Snapshot.of` 随边数线性；
+- 增量重编译只随改动量走，且必须快过全量；
+- 单源最短路的耗时不随图里**无关的**边数增长（边权画像被缓存的可观测后果）。
 
 ## 模块边界
 
@@ -269,21 +382,35 @@ core/
 ├── socket / vertex            Socket 类型系统、节点模板与端口声明（无状态）
 ├── slots                      稳定索引分配器，节点与边共用
 ├── graph                      编辑层：存储 + CRUD + 层级 + 事务 + 事件
-├── snapshot                   不可变 CSR + 编译期视图
+├── snapshot                   Structure 契约 + 不可变 CSR + 编译期视图 + 增量重编译
 ├── task                       Task / settle / schedule / 组合器
-├── algorithm/                 只吃快照，每个算法一套实现
+├── algorithm/                 只吃 Structure，每个算法一套实现
 └── serialize/                 紧凑格式与结构化差异
 ```
 
-依赖单向收敛：`algorithm/` 只认 `Snapshot` 与 `Task`；`serialize/` 是唯一同时依赖 `Graph`
-与格式定义的层；`slots` 谁都不认。
+依赖单向收敛：`algorithm/` 只认 `Structure` 与 `Task`，**运行期完全不依赖 `graph`**（只有
+`Ordering` 需要活图，且只作类型导入）；`serialize/` 是唯一同时依赖 `Graph` 与格式定义的层；
+`slots` 谁都不认。
+
+子路径导出据此切分，Worker 侧可以只引算法层，不把编辑层带进包里：
+
+```ts
+import { scc, settle } from "@openconsole/graph/algorithm";
+import { pack } from "@openconsole/graph/serialize";
+```
 
 ## 设计要点
 
-- **可变与不可变分家**：编辑走 `Graph`，计算走 `Snapshot`。算法因此只有一套实现，不存在
+- **可变与不可变分家**：编辑走 `Graph`，计算走 `Structure`。算法因此只有一套实现，不存在
   "通用版 + 编译版"两条需要同步维护的代码路径。
-- **视图是编译选项，不是运行期包装**：过滤 / 折叠 / 无向化一次做完，运行期零开销。
-- **删除后索引稳定**：自由表复用空位，已发出的下标永不改指；要回收空位就显式 `compact()`。
+- **算法对接口编程**：`Structure` 是五个只读字段，不是一个类。自定义存储、跨语言内存、
+  惰性生成的图都能直接跑算法，不必先物化成 `Graph`。
+- **索引是公开的一等公民**：算法在索引空间进出，事件载荷带槽位，图同时提供 id / 槽位 / 纯整数
+  三套访问口径。字符串哈希只在人机边界上付。
+- **视图是编译选项，不是运行期包装**：过滤 / 折叠 / 无向化一次做完，运行期零开销；结构没变时
+  连编译都能省掉大半。
+- **删除后索引稳定**：自由表复用空位，已发出的下标永不改指；要回收空位就显式 `compact()`，
+  并且会发事件告诉订阅者索引怎么变了。
 - **不可变在类型层面成立**：快照暴露的是只读的 `Ints` / `Reals`，不是可写的 typed-array。
 - **索引访问契约收在一处**：`at()` 供外部查询（越界返回 `undefined`），`label()` / `key()`
   供内部遍历（越界即程序错误），因此算法里没有一处非空断言。
@@ -303,8 +430,8 @@ pnpm --filter @openconsole/graph doc         # typedoc
 ```
 
 测试以 property-based 对拍为主：随机图上把 `scc` / `toposort` / `dijkstra` / `dominators` /
-`cuts` / `closure` 的结果与各自独立的朴素实现逐一比对，覆盖 Task 的中断续跑、快照的编译选项与
-跨线程还原、序列化往返与撤销。
+`cuts` / `closure` 的结果与各自独立的朴素实现逐一比对，覆盖 Task 的中断续跑、快照的编译选项、
+增量重编译的三档判定与跨线程还原、序列化往返与撤销，以及自定义 `Structure` 实现上的全套算法。
 
 ## License
 

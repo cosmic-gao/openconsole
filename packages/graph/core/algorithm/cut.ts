@@ -1,23 +1,23 @@
-import type { NodeId } from "../ident";
-import type { Snapshot } from "../snapshot";
+import { merged, type Structure } from "../snapshot";
 import { Stepwise, type Task } from "../task";
 
 const NONE = -1;
 
+/** 桥的两端节点索引。 */
 export interface Bridge {
-  readonly from: NodeId;
-  readonly to: NodeId;
+  readonly from: number;
+  readonly to: number;
 }
 
 export interface Cuts {
   /** 删去后连通分量会增加的边。 */
   readonly bridges: Bridge[];
-  /** 删去后连通分量会增加的节点。 */
-  readonly articulations: NodeId[];
+  /** 删去后连通分量会增加的节点索引。 */
+  readonly articulations: Int32Array;
 }
 
 /**
- * 桥与割点（Tarjan，无向视角）。有向快照会自动合并两个方向；
+ * 桥与割点（Tarjan，无向视角）。有向结构会自动合并两个方向；
  * 平行边靠边序号区分，因此两点间的重边不会被误判为桥。
  */
 class Cut extends Stepwise<Cuts> {
@@ -37,9 +37,9 @@ class Cut extends Stepwise<Cuts> {
   private _other = 0;
   private _edge = 0;
 
-  public constructor(private readonly _snapshot: Snapshot) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    const n = _snapshot.order;
+    const n = _structure.order;
     this._discovered = new Int32Array(n).fill(NONE);
     this._low = new Int32Array(n);
     this._cut = new Uint8Array(n);
@@ -48,22 +48,24 @@ class Cut extends Stepwise<Cuts> {
     this._cursors = new Int32Array(n);
     this._children = new Int32Array(n);
     this._pending = new Int32Array(n);
-    this._merged = _snapshot.merged;
+    this._merged = merged(_structure);
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0 ? 1 : this._clock / this._snapshot.order;
+    return this._structure.order === 0
+      ? 1
+      : this._clock / this._structure.order;
   }
 
   protected step(): boolean {
     if (this._depth === NONE) {
       while (
-        this._root < this._snapshot.order &&
+        this._root < this._structure.order &&
         this._discovered[this._root] !== NONE
       ) {
         this._root++;
       }
-      if (this._root >= this._snapshot.order) return false;
+      if (this._root >= this._structure.order) return false;
       this._enter(this._root, NONE);
       return true;
     }
@@ -74,10 +76,7 @@ class Cut extends Stepwise<Cuts> {
       this._pending[this._depth] = NONE;
       if (this._low[child]! < this._low[u]!) this._low[u] = this._low[child]!;
       if (this._low[child]! > this._discovered[u]!) {
-        this._bridges.push({
-          from: this._snapshot.label(u),
-          to: this._snapshot.label(child),
-        });
+        this._bridges.push({ from: u, to: child });
       }
       if (
         this._via[this._depth] !== NONE &&
@@ -111,8 +110,8 @@ class Cut extends Stepwise<Cuts> {
 
   /** 把关联边（出边在前、入边在后）按序号取到 `_other` / `_edge`。 */
   private _select(u: number, index: number): boolean {
-    const { offset, other, edge } = this._snapshot.outbound;
-    const inbound = this._snapshot.inbound;
+    const { offset, other, edge } = this._structure.outbound;
+    const inbound = this._structure.inbound;
     const outgoing = offset[u + 1]! - offset[u]!;
     if (index < outgoing) {
       const k = offset[u]! + index;
@@ -141,63 +140,74 @@ class Cut extends Stepwise<Cuts> {
 
   public result(): Cuts {
     this.ensure();
-    const articulations: NodeId[] = [];
-    for (let u = 0; u < this._snapshot.order; u++) {
-      if (this._cut[u] === 1) articulations.push(this._snapshot.label(u));
+    const articulations = new Int32Array(this._structure.order);
+    let at = 0;
+    for (let u = 0; u < this._structure.order; u++) {
+      if (this._cut[u] === 1) articulations[at++] = u;
     }
-    return { bridges: this._bridges, articulations };
+    return {
+      bridges: this._bridges,
+      articulations: articulations.subarray(0, at),
+    };
   }
 }
 
-export const cuts = (snapshot: Snapshot): Task<Cuts> => new Cut(snapshot);
+export const cuts = (structure: Structure): Task<Cuts> => new Cut(structure);
 
 /**
- * 支配树（Lengauer-Tarjan）。只覆盖从 `entry` 可达的节点，`entry` 的直接支配点是自身。
- * 三个阶段——DFS 编号、半支配点、最终 idom——共享一个游标，可在任意阶段中断。
+ * 支配树（Lengauer-Tarjan）。只覆盖从 `entry` 可达的节点，`entry` 的直接支配点是自身，
+ * 不可达节点为 -1。三个阶段——DFS 编号、半支配点、最终 idom——共享一个游标，
+ * 可在任意阶段中断。
+ *
+ * @remarks 半支配点的桶是一对 `Int32Array` 组成的侵入式单链表（每个节点同时只属于
+ *   一个桶），而不是 V 个数组——后者光构造就是 O(V) 次分配。
  */
-class Dominators extends Stepwise<Map<NodeId, NodeId>> {
+class Dominators extends Stepwise<Int32Array> {
   private readonly _order: Int32Array;
   private readonly _number: Int32Array;
   private readonly _parent: Int32Array;
   private readonly _semi: Int32Array;
   private readonly _ancestor: Int32Array;
   private readonly _label: Int32Array;
-  private readonly _bucket: number[][];
+  private readonly _bucketHead: Int32Array;
+  private readonly _bucketNext: Int32Array;
   private readonly _idom: Int32Array;
   private readonly _stack: Int32Array;
   private readonly _cursors: Int32Array;
+  private readonly _path: Int32Array;
   private _depth = 0;
   private _counted = 0;
   private _phase = 0;
   private _cursor = 0;
 
   public constructor(
-    private readonly _snapshot: Snapshot,
-    entry: NodeId,
+    private readonly _structure: Structure,
+    entry: number,
   ) {
     super();
-    const n = _snapshot.order;
+    const n = _structure.order;
     this._order = new Int32Array(n).fill(NONE);
     this._number = new Int32Array(n).fill(NONE);
     this._parent = new Int32Array(n).fill(NONE);
     this._semi = new Int32Array(n);
     this._ancestor = new Int32Array(n).fill(NONE);
     this._label = new Int32Array(n);
-    this._bucket = Array.from({ length: n }, () => []);
+    this._bucketHead = new Int32Array(n).fill(NONE);
+    this._bucketNext = new Int32Array(n).fill(NONE);
     this._idom = new Int32Array(n).fill(NONE);
     this._stack = new Int32Array(n);
     this._cursors = new Int32Array(n);
+    this._path = new Int32Array(n);
 
-    const root = _snapshot.indexOf(entry);
-    if (root < 0) {
+    if (entry < 0 || entry >= n) {
       this._phase = 3;
       return;
     }
-    this._number[root] = 0;
-    this._order[0] = root;
+    this._number[entry] = 0;
+    this._order[0] = entry;
     this._counted = 1;
-    this._stack[0] = root;
-    this._cursors[0] = _snapshot.outbound.offset[root]!;
+    this._stack[0] = entry;
+    this._cursors[0] = _structure.outbound.offset[entry]!;
     this._depth = 1;
   }
 
@@ -208,25 +218,25 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
   private _fraction(): number {
     if (this._counted === 0) return 0;
     return this._phase === 0
-      ? this._counted / this._snapshot.order
+      ? this._counted / this._structure.order
       : this._cursor / this._counted;
   }
 
   protected step(): boolean {
     switch (this._phase) {
       case 0:
-        return this._number1();
+        return this._enumerate();
       case 1:
         return this._semidominate();
       case 2:
-        return this._finish();
+        return this._converge();
       default:
         return false;
     }
   }
 
   /** 阶段 0：DFS 先序编号。 */
-  private _number1(): boolean {
+  private _enumerate(): boolean {
     if (this._depth === 0) {
       for (let i = 0; i < this._counted; i++) {
         this._semi[i] = i;
@@ -239,7 +249,7 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
 
     const top = this._depth - 1;
     const u = this._stack[top]!;
-    const { offset, other } = this._snapshot.outbound;
+    const { offset, other } = this._structure.outbound;
     if (this._cursors[top]! >= offset[u + 1]!) {
       this._depth--;
       return true;
@@ -267,28 +277,40 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
       return true;
     }
     const w = this._cursor--;
-    for (const u of this._predecessors(w)) {
-      const candidate = this._evaluate(u);
-      if (this._semi[candidate]! < this._semi[w]!) {
-        this._semi[w] = this._semi[candidate]!;
+
+    const node = this._order[w]!;
+    const inbound = this._structure.inbound;
+    if (inbound !== undefined) {
+      for (let k = inbound.offset[node]!; k < inbound.offset[node + 1]!; k++) {
+        const number = this._number[inbound.other[k]!]!;
+        if (number === NONE) continue;
+        const candidate = this._evaluate(number);
+        if (this._semi[candidate]! < this._semi[w]!) {
+          this._semi[w] = this._semi[candidate]!;
+        }
       }
     }
-    this._bucket[this._semi[w]!]!.push(w);
+
+    const bucket = this._semi[w]!;
+    this._bucketNext[w] = this._bucketHead[bucket]!;
+    this._bucketHead[bucket] = w;
     this._ancestor[w] = this._parent[w]!;
 
     const parent = this._parent[w]!;
-    const waiting = this._bucket[parent]!;
-    for (const v of waiting) {
+    for (let v = this._bucketHead[parent]!; v !== NONE; ) {
+      const next = this._bucketNext[v]!;
+      this._bucketNext[v] = NONE;
       const candidate = this._evaluate(v);
       this._idom[v] =
         this._semi[candidate]! < this._semi[v]! ? candidate : parent;
+      v = next;
     }
-    waiting.length = 0;
+    this._bucketHead[parent] = NONE;
     return true;
   }
 
   /** 阶段 2：把间接支配点收敛成直接支配点。 */
-  private _finish(): boolean {
+  private _converge(): boolean {
     if (this._cursor >= this._counted) {
       this._phase = 3;
       return false;
@@ -300,16 +322,6 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
     return true;
   }
 
-  private *_predecessors(w: number): Generator<number> {
-    const node = this._order[w]!;
-    const inbound = this._snapshot.inbound;
-    if (inbound === undefined) return;
-    for (let k = inbound.offset[node]!; k < inbound.offset[node + 1]!; k++) {
-      const number = this._number[inbound.other[k]!]!;
-      if (number !== NONE) yield number;
-    }
-  }
-
   private _evaluate(v: number): number {
     if (this._ancestor[v] === NONE) return v;
     this._compress(v);
@@ -317,14 +329,14 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
   }
 
   private _compress(v: number): void {
-    const path: number[] = [];
+    let depth = 0;
     let cursor = v;
     while (this._ancestor[this._ancestor[cursor]!] !== NONE) {
-      path.push(cursor);
+      this._path[depth++] = cursor;
       cursor = this._ancestor[cursor]!;
     }
-    for (let i = path.length - 1; i >= 0; i--) {
-      const w = path[i]!;
+    for (let i = depth - 1; i >= 0; i--) {
+      const w = this._path[i]!;
       const ancestor = this._ancestor[w]!;
       if (this._semi[this._label[ancestor]!]! < this._semi[this._label[w]!]!) {
         this._label[w] = this._label[ancestor]!;
@@ -333,25 +345,21 @@ class Dominators extends Stepwise<Map<NodeId, NodeId>> {
     }
   }
 
-  public result(): Map<NodeId, NodeId> {
+  /** `idom[u]` 是节点索引 `u` 的直接支配点；入口指向自身，不可达为 -1。 */
+  public result(): Int32Array {
     this.ensure();
-    const tree = new Map<NodeId, NodeId>();
+    const tree = new Int32Array(this._structure.order).fill(NONE);
     if (this._counted === 0) return tree;
-    tree.set(
-      this._snapshot.label(this._order[0]!),
-      this._snapshot.label(this._order[0]!),
-    );
+    const root = this._order[0]!;
+    tree[root] = root;
     for (let w = 1; w < this._counted; w++) {
-      tree.set(
-        this._snapshot.label(this._order[w]!),
-        this._snapshot.label(this._order[this._idom[w]!]!),
-      );
+      tree[this._order[w]!] = this._order[this._idom[w]!]!;
     }
     return tree;
   }
 }
 
 export const dominators = (
-  snapshot: Snapshot,
-  entry: NodeId,
-): Task<Map<NodeId, NodeId>> => new Dominators(snapshot, entry);
+  structure: Structure,
+  entry: number,
+): Task<Int32Array> => new Dominators(structure, entry);

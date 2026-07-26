@@ -1,71 +1,73 @@
 import type { Graph } from "../graph";
 import type { NodeId } from "../ident";
-import type { Snapshot } from "../snapshot";
+import { inDegree, outDegree, type Ints, type Structure } from "../snapshot";
 
-export interface Degree {
-  readonly inDegree: number;
-  readonly outDegree: number;
+/** 全图度数，下标即节点索引。 */
+export interface Degrees {
+  readonly inbound: Int32Array;
+  readonly outbound: Int32Array;
 }
 
-export function degrees(snapshot: Snapshot): Map<NodeId, Degree> {
-  const found = new Map<NodeId, Degree>();
-  for (let u = 0; u < snapshot.order; u++) {
-    found.set(snapshot.label(u), {
-      inDegree: snapshot.inDegree(u),
-      outDegree: snapshot.outDegree(u),
-    });
+export function degrees(structure: Structure): Degrees {
+  const inward = new Int32Array(structure.order);
+  const outward = new Int32Array(structure.order);
+  for (let u = 0; u < structure.order; u++) {
+    inward[u] = inDegree(structure, u);
+    outward[u] = outDegree(structure, u);
   }
-  return found;
+  return { inbound: inward, outbound: outward };
 }
 
-/** 入度为 0 的节点。 */
-export const sources = (snapshot: Snapshot): NodeId[] =>
-  select(snapshot, (u) => snapshot.inDegree(u) === 0);
+/** 入度为 0 的节点索引。 */
+export const sources = (structure: Structure): Int32Array =>
+  select(structure, (u) => inDegree(structure, u) === 0);
 
-/** 出度为 0 的节点。 */
-export const sinks = (snapshot: Snapshot): NodeId[] =>
-  select(snapshot, (u) => snapshot.outDegree(u) === 0);
+/** 出度为 0 的节点索引。 */
+export const sinks = (structure: Structure): Int32Array =>
+  select(structure, (u) => outDegree(structure, u) === 0);
 
-/** 入度与出度都为 0 的节点。 */
-export const isolated = (snapshot: Snapshot): NodeId[] =>
+/** 入度与出度都为 0 的节点索引。 */
+export const isolated = (structure: Structure): Int32Array =>
   select(
-    snapshot,
-    (u) => snapshot.inDegree(u) === 0 && snapshot.outDegree(u) === 0,
+    structure,
+    (u) => inDegree(structure, u) === 0 && outDegree(structure, u) === 0,
   );
 
-function select(snapshot: Snapshot, keep: (u: number) => boolean): NodeId[] {
-  const found: NodeId[] = [];
-  for (let u = 0; u < snapshot.order; u++) {
-    if (keep(u)) found.push(snapshot.label(u));
+function select(
+  structure: Structure,
+  keep: (u: number) => boolean,
+): Int32Array {
+  const found = new Int32Array(structure.order);
+  let at = 0;
+  for (let u = 0; u < structure.order; u++) {
+    if (keep(u)) found[at++] = u;
   }
-  return found;
+  return found.subarray(0, at);
 }
 
-export interface Around {
-  readonly predecessors: NodeId[];
-  readonly successors: NodeId[];
+const EMPTY: Ints = new Int32Array(0);
+
+/**
+ * 邻居查询：直接切 CSR，返回底层数组的**视图**——不复制、不给每个节点分配数组。
+ * 物化一份的话就是 V 个对象加 2V 个数组，而绝大多数调用只会看其中几个节点。
+ */
+export class Neighborhood {
+  public constructor(private readonly _structure: Structure) {}
+
+  public successors(u: number): Ints {
+    const { offset, other } = this._structure.outbound;
+    return other.subarray(offset[u]!, offset[u + 1]!);
+  }
+
+  public predecessors(u: number): Ints {
+    const inbound = this._structure.inbound;
+    if (!inbound) return EMPTY;
+    return inbound.other.subarray(inbound.offset[u]!, inbound.offset[u + 1]!);
+  }
 }
 
-/** 一次性快照全图每个节点的前驱与后继。 */
-export function neighborhood(snapshot: Snapshot): Map<NodeId, Around> {
-  const { offset, other } = snapshot.outbound;
-  const inbound = snapshot.inbound;
-  const found = new Map<NodeId, Around>();
-  for (let u = 0; u < snapshot.order; u++) {
-    const successors: NodeId[] = [];
-    for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-      successors.push(snapshot.label(other[k]!));
-    }
-    const predecessors: NodeId[] = [];
-    if (inbound) {
-      for (let k = inbound.offset[u]!; k < inbound.offset[u + 1]!; k++) {
-        predecessors.push(snapshot.label(inbound.other[k]!));
-      }
-    }
-    found.set(snapshot.label(u), { predecessors, successors });
-  }
-  return found;
-}
+export const neighborhood = (structure: Structure): Neighborhood =>
+  new Neighborhood(structure);
 
 /** 复合层级的顶层节点。层级只存在于可变图上，故这三个查询接受 {@link Graph}。 */
 export function roots(graph: Graph): NodeId[] {

@@ -11,28 +11,47 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  CallToolResult,
+  GetPromptResult,
+  Prompt,
+  ReadResourceResult,
+  Resource,
+  ResourceTemplate,
+  Tool,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { GatewaySpec } from './config.js';
 import type { Endpoint } from './endpoint.js';
+import type { Upstream } from './upstream.js';
 import { describeError, isTransportFailure } from './upstream.js';
 
+/**
+ * 会触达上游的三个方法，中间件的作用范围。
+ * 列举类方法不在其中：它们读的是本地快照，不产生上游调用，也就没有可治理的副作用。
+ */
+export type Method = 'tools/call' | 'prompts/get' | 'resources/read';
+
+export type Outcome = CallToolResult | GetPromptResult | ReadResourceResult;
+
+/** 可被裁剪的条目。四者都有 name，按名字过滤的中间件无需判别具体类型。 */
+export type Listed = Tool | Prompt | Resource | ResourceTemplate;
+
 export interface CallContext {
-  /** 带前缀的对外名字 */
+  readonly method: Method;
+  /** 对外标识：工具与 prompt 是名字，资源是 URI */
   readonly name: string;
-  readonly tool: Tool;
   readonly upstreamId: string;
+  /** 仅 tools/call 带定义 —— annotations 是工具独有的 */
+  readonly tool: Tool | undefined;
   readonly args: Record<string, unknown> | undefined;
   readonly auth: AuthInfo | undefined;
   readonly signal: AbortSignal;
 }
 
-export type Middleware = (
-  ctx: CallContext,
-  next: () => Promise<CallToolResult>,
-) => Promise<CallToolResult>;
+export type Middleware = (ctx: CallContext, next: () => Promise<Outcome>) => Promise<Outcome>;
 
-/** 按调用者裁剪可见工具。规范允许工具集随请求携带的授权变化。 */
-export type Visibility = (tool: Tool, auth: AuthInfo | undefined) => boolean;
+/** 按调用者裁剪可见条目。规范允许工具集随请求携带的授权变化。 */
+export type Visibility = (item: Listed, auth: AuthInfo | undefined) => boolean;
 
 export interface HandlerOptions {
   readonly middleware: readonly Middleware[];
@@ -44,11 +63,18 @@ interface RequestExtra {
   readonly signal: AbortSignal;
 }
 
-type InvokeTool = (
-  name: string,
-  args: Record<string, unknown> | undefined,
-  extra: RequestExtra,
-) => Promise<CallToolResult>;
+/** 已解析到具体上游的一次调用 */
+interface Call {
+  readonly method: Method;
+  readonly name: string;
+  readonly upstream: Upstream;
+  /** 上游侧的名字或 URI */
+  readonly target: string;
+  readonly tool: Tool | undefined;
+  readonly args: Record<string, unknown> | undefined;
+}
+
+type Invoke = (call: Call, extra: RequestExtra) => Promise<Outcome>;
 
 const PAGE_SIZE = 100;
 const SEARCH_LIMIT = 10;
@@ -72,85 +98,139 @@ export function createMcpServer(
 
   // 不走 registerTool：它的 schema 只接受 Zod，会把上游的原始 JSON Schema 降级成空对象
   const { server } = mcp;
-  const invoke = createInvoker(endpoint, options.middleware);
-  const visibleTools = (auth: AuthInfo | undefined): readonly Tool[] => {
-    const { tools } = endpoint.snapshot.catalog;
-    return options.visibility ? tools.filter((tool) => options.visibility?.(tool, auth)) : tools;
+  const invoke = createInvoker(options.middleware);
+  const { visibility } = options;
+
+  const admits = (item: Listed, auth: AuthInfo | undefined): boolean =>
+    visibility === undefined || visibility(item, auth);
+
+  const listable = <T extends Listed>(items: readonly T[], auth: AuthInfo | undefined): readonly T[] =>
+    visibility === undefined ? items : items.filter((item) => admits(item, auth));
+
+  /** 不可见等同不存在。只裁列表不裁调用，裁剪就只是障眼法。 */
+  const resolveTool = (name: string, auth: AuthInfo | undefined): Call => {
+    const entry = endpoint.snapshot.catalog.tool(name);
+    if (!entry || !admits(entry.definition, auth)) {
+      throw new McpError(ErrorCode.InvalidParams, `未知工具: ${name}`);
+    }
+    return {
+      method: 'tools/call',
+      name,
+      upstream: entry.route.upstream,
+      target: entry.route.name,
+      tool: entry.definition,
+      args: undefined,
+    };
   };
 
   if (endpoint.discovery === 'progressive') {
     server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: META_TOOLS }));
     server.setRequestHandler(CallToolRequestSchema, ({ params }, extra) =>
-      dispatchMeta(params.name, params.arguments, visibleTools(extra.authInfo), invoke, extra),
+      dispatchMeta(params.name, params.arguments, {
+        tools: listable(endpoint.snapshot.catalog.tools, extra.authInfo),
+        resolve: (name) => resolveTool(name, extra.authInfo),
+        invoke,
+        extra,
+      }),
     );
   } else {
     server.setRequestHandler(ListToolsRequestSchema, ({ params }, extra) => {
       const { items, nextCursor } = paginate(
-        visibleTools(extra.authInfo),
+        listable(endpoint.snapshot.catalog.tools, extra.authInfo),
         params?.cursor,
         endpoint.snapshot.version,
       );
       return { tools: items, ...(nextCursor && { nextCursor }) };
     });
-    server.setRequestHandler(CallToolRequestSchema, ({ params }, extra) =>
-      invoke(params.name, params.arguments, extra),
-    );
+    server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
+      const call = resolveTool(params.name, extra.authInfo);
+      return (await invoke({ ...call, args: params.arguments }, extra)) as CallToolResult;
+    });
   }
 
-  server.setRequestHandler(ListPromptsRequestSchema, ({ params }) => {
+  server.setRequestHandler(ListPromptsRequestSchema, ({ params }, extra) => {
     const { catalog, version } = endpoint.snapshot;
-    const { items, nextCursor } = paginate(catalog.prompts, params?.cursor, version);
+    const { items, nextCursor } = paginate(
+      listable(catalog.prompts, extra.authInfo),
+      params?.cursor,
+      version,
+    );
     return { prompts: items, ...(nextCursor && { nextCursor }) };
   });
 
-  server.setRequestHandler(GetPromptRequestSchema, async ({ params }) => {
+  server.setRequestHandler(GetPromptRequestSchema, async ({ params }, extra) => {
     const entry = endpoint.snapshot.catalog.prompt(params.name);
-    if (!entry) throw new McpError(ErrorCode.InvalidParams, `未知 prompt: ${params.name}`);
-    return entry.route.upstream.getPrompt(entry.route.name, params.arguments);
+    if (!entry || !admits(entry.definition, extra.authInfo)) {
+      throw new McpError(ErrorCode.InvalidParams, `未知 prompt: ${params.name}`);
+    }
+    const call: Call = {
+      method: 'prompts/get',
+      name: params.name,
+      upstream: entry.route.upstream,
+      target: entry.route.name,
+      tool: undefined,
+      args: params.arguments,
+    };
+    return (await invoke(call, extra)) as GetPromptResult;
   });
 
-  server.setRequestHandler(ListResourcesRequestSchema, ({ params }) => {
+  server.setRequestHandler(ListResourcesRequestSchema, ({ params }, extra) => {
     const { catalog, version } = endpoint.snapshot;
-    const { items, nextCursor } = paginate(catalog.resources, params?.cursor, version);
+    const { items, nextCursor } = paginate(
+      listable(catalog.resources, extra.authInfo),
+      params?.cursor,
+      version,
+    );
     return { resources: items, ...(nextCursor && { nextCursor }) };
   });
 
-  server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
-    resourceTemplates: endpoint.snapshot.catalog.resourceTemplates,
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, (_request, extra) => ({
+    resourceTemplates: listable(endpoint.snapshot.catalog.resourceTemplates, extra.authInfo),
   }));
 
-  // URI 未被改写，可直接原样交给上游
-  server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
-    const entry = endpoint.snapshot.catalog.resource(params.uri);
-    if (!entry) throw new McpError(ErrorCode.InvalidParams, `未知资源: ${params.uri}`);
-    return entry.route.upstream.readResource(params.uri);
+  server.setRequestHandler(ReadResourceRequestSchema, async ({ params }, extra) => {
+    const hit = endpoint.snapshot.catalog.resource(params.uri);
+    if (!hit || !admits(hit.definition, extra.authInfo)) {
+      throw new McpError(ErrorCode.InvalidParams, `未知资源: ${params.uri}`);
+    }
+    const call: Call = {
+      method: 'resources/read',
+      name: params.uri,
+      upstream: hit.route.upstream,
+      // 对外 URI 可能因撞车带了 alias 前缀，发给上游的必须是它自己认得的那个
+      target: hit.target,
+      tool: undefined,
+      args: undefined,
+    };
+    return (await invoke(call, extra)) as ReadResourceResult;
   });
 
   return mcp;
 }
 
-/** 唯一的工具执行路径。两种发现模式共用它，元工具因此无法绕过中间件。 */
-function createInvoker(endpoint: Endpoint, middleware: readonly Middleware[]): InvokeTool {
-  return async (name, args, extra) => {
-    const entry = endpoint.snapshot.catalog.tool(name);
-    if (!entry) throw new McpError(ErrorCode.InvalidParams, `未知工具: ${name}`);
-
-    const { upstream, name: upstreamName } = entry.route;
+/**
+ * 唯一的上游执行路径。三个方法与元工具共用它，中间件因此没有绕行的口子。
+ * 错误分三层落位，中间件看到的是真实异常而不是被吞掉的 isError。
+ */
+function createInvoker(middleware: readonly Middleware[]): Invoke {
+  return async (call, extra) => {
     const ctx: CallContext = {
-      name,
-      tool: entry.definition,
-      upstreamId: upstream.spec.id,
-      args,
+      method: call.method,
+      name: call.name,
+      upstreamId: call.upstream.spec.id,
+      tool: call.tool,
+      args: call.args,
       auth: extra.authInfo,
       signal: extra.signal,
     };
 
-    const forward = async (): Promise<CallToolResult> => {
+    const forward = async (): Promise<Outcome> => {
       try {
-        return await upstream.callTool(upstreamName, args, extra.signal);
+        return await send(call, extra.signal);
       } catch (error) {
-        // 上游的业务与参数错误交给模型自纠；传输故障向上抛，好让重试中间件有机会介入
-        if (isTransportFailure(error)) throw error;
+        // 只有工具调用有 isError 通道可以把业务错误交给模型自纠。
+        // prompts/get 与 resources/read 没有，错误只能保持协议错误原样上抛。
+        if (call.method !== 'tools/call' || isTransportFailure(error)) throw error;
         return { content: [{ type: 'text', text: describeError(error) }], isError: true };
       }
     };
@@ -158,14 +238,26 @@ function createInvoker(endpoint: Endpoint, middleware: readonly Middleware[]): I
     try {
       return await applyMiddleware(middleware, ctx, forward);
     } catch (error) {
-      // 中间件的显式拒绝保持协议错误；无从重试的传输故障转成模型读得懂的失败
+      // 中间件的显式拒绝保持协议错误 —— 限流与鉴权拒绝不该被模型当成「工具坏了」反复重试
       if (error instanceof McpError && !isTransportFailure(error)) throw error;
-      return {
-        content: [{ type: 'text', text: `上游 ${upstream.spec.id} 不可用: ${describeError(error)}` }],
-        isError: true,
-      };
+
+      const reason = `上游 ${call.upstream.spec.id} 不可用: ${describeError(error)}`;
+      if (call.method !== 'tools/call') throw new McpError(ErrorCode.InternalError, reason);
+      return { content: [{ type: 'text', text: reason }], isError: true };
     }
   };
+}
+
+function send(call: Call, signal: AbortSignal): Promise<Outcome> {
+  switch (call.method) {
+    case 'tools/call':
+      return call.upstream.callTool(call.target, call.args, signal);
+    case 'prompts/get':
+      // prompt 参数在协议上就是字符串字典，这里只是把统一的 args 还原回去
+      return call.upstream.getPrompt(call.target, call.args as Record<string, string>, signal);
+    case 'resources/read':
+      return call.upstream.readResource(call.target, signal);
+  }
 }
 
 const SEARCH = 'search_tools';
@@ -225,24 +317,36 @@ const META_TOOLS: readonly Tool[] = [
   },
 ];
 
+interface MetaScope {
+  readonly tools: readonly Tool[];
+  readonly resolve: (name: string) => Call;
+  readonly invoke: Invoke;
+  readonly extra: RequestExtra;
+}
+
 function dispatchMeta(
   name: string,
   args: Record<string, unknown> | undefined,
-  tools: readonly Tool[],
-  invoke: InvokeTool,
-  extra: RequestExtra,
+  scope: MetaScope,
 ): CallToolResult | Promise<CallToolResult> {
   switch (name) {
     case SEARCH:
-      return toTextResult(search(tools, requireString(args, 'query'), optionalInteger(args, 'limit')));
+      return toTextResult(
+        search(scope.tools, requireString(args, 'query'), optionalInteger(args, 'limit')),
+      );
     case DESCRIBE: {
       const target = requireString(args, 'name');
-      const tool = tools.find((candidate) => candidate.name === target);
+      const tool = scope.tools.find((candidate) => candidate.name === target);
       if (!tool) throw new McpError(ErrorCode.InvalidParams, `未知工具: ${target}`);
       return toTextResult(tool);
     }
-    case CALL:
-      return invoke(requireString(args, 'name'), optionalObject(args, 'arguments'), extra);
+    case CALL: {
+      const call = scope.resolve(requireString(args, 'name'));
+      return scope.invoke(
+        { ...call, args: optionalObject(args, 'arguments') },
+        scope.extra,
+      ) as Promise<CallToolResult>;
+    }
     default:
       throw new McpError(ErrorCode.InvalidParams, `未知工具: ${name}`);
   }
@@ -308,9 +412,9 @@ function optionalObject(
 function applyMiddleware(
   middleware: readonly Middleware[],
   ctx: CallContext,
-  invoke: () => Promise<CallToolResult>,
-): Promise<CallToolResult> {
-  const step = (index: number): Promise<CallToolResult> => {
+  invoke: () => Promise<Outcome>,
+): Promise<Outcome> {
+  const step = (index: number): Promise<Outcome> => {
     const current = middleware[index];
     return current ? current(ctx, () => step(index + 1)) : invoke();
   };

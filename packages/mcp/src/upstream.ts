@@ -45,7 +45,8 @@ export class Upstream {
   private opening: Promise<Client> | null = null;
   private probing: Promise<void> | null = null;
 
-  constructor(readonly spec: UpstreamSpec) {}
+  /** 可替换：热更新时若连接身份未变，只换 spec 不断连 */
+  constructor(public spec: UpstreamSpec) {}
 
   get status(): UpstreamStatus {
     return {
@@ -116,12 +117,18 @@ export class Upstream {
     });
   }
 
-  async getPrompt(name: string, args: Record<string, string> | undefined): Promise<GetPromptResult> {
-    return this.withBreaker((client) => client.getPrompt({ name, arguments: args }, this.options));
+  async getPrompt(
+    name: string,
+    args: Record<string, string> | undefined,
+    signal: AbortSignal,
+  ): Promise<GetPromptResult> {
+    return this.withBreaker((client) =>
+      client.getPrompt({ name, arguments: args }, { ...this.options, signal }),
+    );
   }
 
-  async readResource(uri: string): Promise<ReadResourceResult> {
-    return this.withBreaker((client) => client.readResource({ uri }, this.options));
+  async readResource(uri: string, signal: AbortSignal): Promise<ReadResourceResult> {
+    return this.withBreaker((client) => client.readResource({ uri }, { ...this.options, signal }));
   }
 
   async close(): Promise<void> {

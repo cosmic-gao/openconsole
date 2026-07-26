@@ -1,32 +1,32 @@
-import type { NodeId } from "../ident";
-import type { Ints, Snapshot } from "../snapshot";
+import { reversed, type Ints, type Structure } from "../snapshot";
 import { chain, Stepwise, type Task } from "../task";
 import { scc, type Partition } from "./component";
 import { dfs } from "./search";
 
 /** `source` 是否可达 `target`。双向 BFS，相遇即停。 */
 export function reachable(
-  snapshot: Snapshot,
-  source: NodeId,
-  target: NodeId,
+  structure: Structure,
+  source: number,
+  target: number,
 ): boolean {
-  const s = snapshot.indexOf(source);
-  const t = snapshot.indexOf(target);
-  if (s < 0 || t < 0) return false;
-  if (s === t) return true;
-  const { offset, other } = snapshot.outbound;
-  const inbound = snapshot.inbound;
+  const order = structure.order;
+  if (source < 0 || target < 0 || source >= order || target >= order) {
+    return false;
+  }
+  if (source === target) return true;
+  const { offset, other } = structure.outbound;
+  const inbound = structure.inbound;
   if (inbound === undefined) {
-    for (const node of dfs(snapshot, source)) if (node === target) return true;
+    for (const node of dfs(structure, source)) if (node === target) return true;
     return false;
   }
 
-  const forward = new Uint8Array(snapshot.order);
-  const backward = new Uint8Array(snapshot.order);
-  forward[s] = 1;
-  backward[t] = 1;
-  let ahead = [s];
-  let behind = [t];
+  const forward = new Uint8Array(order);
+  const backward = new Uint8Array(order);
+  forward[source] = 1;
+  backward[target] = 1;
+  let ahead = [source];
+  let behind = [target];
 
   while (ahead.length > 0 && behind.length > 0) {
     if (ahead.length <= behind.length) {
@@ -58,20 +58,26 @@ export function reachable(
   return false;
 }
 
-/** 沿出边可达的全部节点，不含自身。 */
-export function descendants(snapshot: Snapshot, node: NodeId): NodeId[] {
-  return beyond(dfs(snapshot, node), node);
+/** 沿出边可达的全部节点索引，不含自身。 */
+export function descendants(structure: Structure, node: number): Int32Array {
+  return beyond(structure, dfs(structure, node), node);
 }
 
-/** 沿入边可达的全部节点，不含自身。 */
-export function ancestors(snapshot: Snapshot, node: NodeId): NodeId[] {
-  return beyond(dfs(snapshot.reverse(), node), node);
+/** 沿入边可达的全部节点索引，不含自身。 */
+export function ancestors(structure: Structure, node: number): Int32Array {
+  const back = reversed(structure);
+  return beyond(structure, dfs(back, node), node);
 }
 
-function beyond(walk: Generator<NodeId>, origin: NodeId): NodeId[] {
-  const found: NodeId[] = [];
-  for (const node of walk) if (node !== origin) found.push(node);
-  return found;
+function beyond(
+  structure: Structure,
+  walk: Generator<number>,
+  origin: number,
+): Int32Array {
+  const found = new Int32Array(structure.order);
+  let at = 0;
+  for (const node of walk) if (node !== origin) found[at++] = node;
+  return found.subarray(0, at);
 }
 
 /**
@@ -79,39 +85,33 @@ function beyond(walk: Generator<NodeId>, origin: NodeId): NodeId[] {
  */
 export class Closure {
   public constructor(
-    private readonly _snapshot: Snapshot,
+    private readonly _order: number,
     private readonly _words: number,
     private readonly _component: Ints,
     private readonly _bits: Uint32Array,
   ) {}
 
-  /** 索引空间的可达判定。 */
+  /** `from` 是否可达 `to`。 */
   public linked(from: number, to: number): boolean {
     const row = this._component[from]! * this._words;
     return (this._bits[row + (to >>> 5)]! & (1 << (to & 31))) !== 0;
   }
 
-  public reaches(from: NodeId, to: NodeId): boolean {
-    const u = this._snapshot.indexOf(from);
-    const v = this._snapshot.indexOf(to);
-    return u >= 0 && v >= 0 && this.linked(u, v);
-  }
-
-  /** `node` 的可达集。环上节点（含自环）包含自身，无环节点不含自身。 */
-  public from(node: NodeId): NodeId[] {
-    const u = this._snapshot.indexOf(node);
-    if (u < 0) return [];
-    const row = this._component[u]! * this._words;
-    const found: NodeId[] = [];
+  /** `node` 的可达集。环上节点（含自环）包含自身，无环节点不含自身；越界给空。 */
+  public from(node: number): Int32Array {
+    if (node < 0 || node >= this._order) return new Int32Array(0);
+    const found = new Int32Array(this._order);
+    let at = 0;
+    const row = this._component[node]! * this._words;
     for (let w = 0; w < this._words; w++) {
       let word = this._bits[row + w]!;
       while (word !== 0) {
         const bit = 31 - Math.clz32(word & -word);
-        found.push(this._snapshot.label((w << 5) + bit));
+        found[at++] = (w << 5) + bit;
         word &= word - 1;
       }
     }
-    return found;
+    return found.subarray(0, at);
   }
 }
 
@@ -128,15 +128,15 @@ class Propagate extends Stepwise<Closure> {
   private _component = 0;
 
   public constructor(
-    private readonly _snapshot: Snapshot,
+    private readonly _structure: Structure,
     private readonly _partition: Partition,
   ) {
     super();
-    this._words = (_snapshot.order + 31) >>> 5;
+    this._words = (_structure.order + 31) >>> 5;
     this._bits = new Uint32Array(_partition.count * this._words);
     this._members = Array.from({ length: _partition.count }, () => []);
-    for (let u = 0; u < _snapshot.order; u++) {
-      this._members[_partition.labels[u]!]!.push(u);
+    for (let u = 0; u < _structure.order; u++) {
+      this._members[_partition.component[u]!]!.push(u);
     }
   }
 
@@ -151,8 +151,8 @@ class Propagate extends Stepwise<Closure> {
     const c = this._component++;
     const row = c * this._words;
     const members = this._members[c]!;
-    const labels = this._partition.labels;
-    const { offset, other } = this._snapshot.outbound;
+    const labels = this._partition.component;
+    const { offset, other } = this._structure.outbound;
     // 多成员分量必然互相可达；单成员则看是否有自环。
     let internal = members.length > 1;
 
@@ -184,57 +184,55 @@ class Propagate extends Stepwise<Closure> {
   public result(): Closure {
     this.ensure();
     return new Closure(
-      this._snapshot,
+      this._structure.order,
       this._words,
-      this._partition.labels,
+      this._partition.component,
       this._bits,
     );
   }
 }
 
-export const closure = (snapshot: Snapshot): Task<Closure> =>
-  chain(scc(snapshot), (partition) => new Propagate(snapshot, partition));
+export const closure = (structure: Structure): Task<Closure> =>
+  chain(scc(structure), (partition) => new Propagate(structure, partition));
 
 /** 传递归约：去掉能由其他路径间接抵达的边。只对 DAG 有唯一解。 */
-class Reduce extends Stepwise<Array<readonly [NodeId, NodeId]>> {
-  private readonly _kept: Array<readonly [NodeId, NodeId]> = [];
+class Reduce extends Stepwise<Array<readonly [number, number]>> {
+  private readonly _kept: Array<readonly [number, number]> = [];
   private _node = 0;
 
   public constructor(
-    private readonly _snapshot: Snapshot,
+    private readonly _structure: Structure,
     private readonly _closure: Closure,
   ) {
     super();
   }
 
   public get progress(): number {
-    return this._snapshot.order === 0 ? 1 : this._node / this._snapshot.order;
+    return this._structure.order === 0 ? 1 : this._node / this._structure.order;
   }
 
   protected step(): boolean {
-    if (this._node >= this._snapshot.order) return false;
+    if (this._node >= this._structure.order) return false;
     const u = this._node++;
-    const { offset, other } = this._snapshot.outbound;
+    const { offset, other } = this._structure.outbound;
     const targets = [...new Set(other.subarray(offset[u]!, offset[u + 1]!))];
 
     for (const v of targets) {
       const bypassed = targets.some(
         (rival) => rival !== v && this._closure.linked(rival, v),
       );
-      if (!bypassed) {
-        this._kept.push([this._snapshot.label(u), this._snapshot.label(v)]);
-      }
+      if (!bypassed) this._kept.push([u, v]);
     }
-    return this._node < this._snapshot.order;
+    return this._node < this._structure.order;
   }
 
-  public result(): Array<readonly [NodeId, NodeId]> {
+  public result(): Array<readonly [number, number]> {
     this.ensure();
     return this._kept;
   }
 }
 
 export const reduction = (
-  snapshot: Snapshot,
-): Task<Array<readonly [NodeId, NodeId]>> =>
-  chain(closure(snapshot), (closed) => new Reduce(snapshot, closed));
+  structure: Structure,
+): Task<Array<readonly [number, number]>> =>
+  chain(closure(structure), (closed) => new Reduce(structure, closed));
