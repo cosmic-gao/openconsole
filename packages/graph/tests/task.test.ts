@@ -114,6 +114,8 @@ describe("分帧调度", () => {
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((value) => value >= 0 && value <= 1)).toBe(true);
+    // 最后一帧必须报满，否则进度条永远差一口。
+    expect(seen[seen.length - 1]).toBe(1);
   });
 
   it("schedule 遇到已中断的 signal 立刻抛出", async () => {

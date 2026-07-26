@@ -157,6 +157,14 @@ describe("编译期视图", () => {
     expect(settle(toposort(snapshot))).toHaveLength(graph.order);
   });
 
+  it("reverse 是真 O(1)：翻转 2000 次不随节点数付费", () => {
+    const snapshot = Snapshot.of(randomGraph(32, { order: 4000, density: 2 }));
+    const start = performance.now();
+    for (let i = 0; i < 2000; i++) snapshot.reverse();
+    // 逐次重建索引表的话，2000 × 4000 次 Map.set 远超这个上限。
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+
   it("reverse 翻转方向且与原快照共享底层数组", () => {
     const graph = randomGraph(28, { order: 15, density: 2 });
     const snapshot = Snapshot.of(graph);
@@ -164,6 +172,9 @@ describe("编译期视图", () => {
 
     expect(flipped.outbound).toBe(snapshot.inbound);
     expect(flipped.inbound).toBe(snapshot.outbound);
+    for (const node of graph.nodes()) {
+      expect(flipped.indexOf(node)).toBe(snapshot.indexOf(node));
+    }
     for (const node of graph.nodes()) {
       expect(outOf(flipped, node)).toEqual(
         graph.inNeighbors(node).slice().sort(),

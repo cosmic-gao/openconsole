@@ -125,7 +125,8 @@ export class Ordering<N = unknown, E = unknown> {
     behind.sort(byRank);
     ahead.sort(byRank);
 
-    // 收回两个区域占用的所有位次，按"祖先区在前"重新发放。
+    // 两区必然不相交：若有节点同属两侧，则 target →* 它 →* source，`_region` 撞上
+    // stop 早已返回 null。因此位次只是在这批节点内部重排，不会漏发或重发。
     const positions = [...behind, ...ahead]
       .map((node) => this._rank.get(node)!)
       .sort((a, b) => a - b);
@@ -154,24 +155,26 @@ export class Ordering<N = unknown, E = unknown> {
     const seen = new Set<NodeId>([start]);
     const region: NodeId[] = [start];
     const stack: NodeId[] = [start];
+    let cyclic = false;
+
+    // 闭包建在循环外：区域最大可达全图，每弹一个节点重建一次就是 O(V) 次分配。
+    const expand = (other: NodeId, edge: EdgeId): boolean | void => {
+      if (this._conflicts.has(edge)) return;
+      if (other === stop) {
+        cyclic = true;
+        return false;
+      }
+      if (seen.has(other)) return;
+      const rank = this._rank.get(other);
+      if (rank === undefined) return;
+      if (outward ? rank > bound : rank < bound) return;
+      seen.add(other);
+      region.push(other);
+      stack.push(other);
+    };
 
     while (stack.length > 0) {
       const node = stack.pop()!;
-      let cyclic = false;
-      const expand = (other: NodeId, edge: EdgeId): boolean | void => {
-        if (this._conflicts.has(edge)) return;
-        if (other === stop) {
-          cyclic = true;
-          return false;
-        }
-        if (seen.has(other)) return;
-        const rank = this._rank.get(other);
-        if (rank === undefined) return;
-        if (outward ? rank > bound : rank < bound) return;
-        seen.add(other);
-        region.push(other);
-        stack.push(other);
-      };
       if (outward) this._graph.forEachOut(node, expand);
       else this._graph.forEachIn(node, expand);
       if (cyclic) return null;

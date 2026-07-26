@@ -72,7 +72,12 @@ export interface ScheduleOptions {
   onProgress?: (progress: number) => void;
 }
 
-/** 分帧推进，帧间让出事件循环，长跑算法不再冻结 UI。 */
+/**
+ * 分帧推进，帧间让出事件循环，长跑算法不再冻结 UI。
+ *
+ * @remarks 每帧让出都要经过一轮宏任务，浏览器对嵌套 `setTimeout` 有约 4ms 的下限，
+ *   因此 `budget` 定得过小会让让出成本盖过计算本身。
+ */
 export async function schedule<T>(
   task: Task<T>,
   options: ScheduleOptions = {},
@@ -80,8 +85,10 @@ export async function schedule<T>(
   const { budget = CHUNK, signal, onProgress } = options;
   for (;;) {
     if (signal?.aborted) throw new Interrupted(task.progress);
-    if (!task.advance(budget)) break;
+    const running = task.advance(budget);
+    // 报告放在推进之后、跳出之前，最后一帧才会报出 1——否则进度条永远差一口。
     onProgress?.(task.progress);
+    if (!running) break;
     await breathe();
   }
   return task.result();

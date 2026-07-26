@@ -182,7 +182,8 @@ export class Graph<N = unknown, E = unknown> {
    * 替换节点的端口集合，尽量保住现有连线。省略的一侧保持不变。
    *
    * 三类边会被断开并派发 `edgeDropped`：端口消失、Socket 不再兼容、超出新的单连接容量
-   * （保留最早那条）。断边而不是抛错，因为这是编辑器动作——上层靠事件决定是否提示与撤销。
+   * （保留其中一条，删边用 swap-pop 打乱过内部次序，不保证是最早建立的那条）。
+   * 断边而不是抛错，因为这是编辑器动作——上层靠事件决定是否提示与撤销。
    *
    * @throws {@link Missing} 节点不存在
    */
@@ -282,8 +283,12 @@ export class Graph<N = unknown, E = unknown> {
       throw new Capacity(targetId, targetName);
     }
 
-    const id = options.id ?? this._mint();
-    if (this._edges.has(id)) throw new Duplicate("edge", id);
+    let id = options.id;
+    if (id === undefined) id = this._mint();
+    else {
+      if (this._edges.has(id)) throw new Duplicate("edge", id);
+      this._reserve(id);
+    }
 
     const e = this._edges.add(id);
     this._from[e] = u;
@@ -440,7 +445,9 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   /**
-   * 某个输出端口连出的目标。多连接端口返回其中第一个，无连接返回 `undefined`。
+   * 某个输出端口连出的目标。无连接返回 `undefined`；端口上有多条边时返回其中一条
+   * （内部次序会被删边的 swap-pop 打乱，不保证是最早建立的），要全部就用
+   * {@link Graph.forEachOut} 按 `port` 过滤。
    *
    * @remarks 编排执行器的最内层查询——"这个引脚接到哪"。直读平行数组，无中间数组与对象。
    */
@@ -469,7 +476,11 @@ export class Graph<N = unknown, E = unknown> {
     const u = this._nodes.indexOf(source);
     const v = this._nodes.indexOf(target);
     if (u < 0 || v < 0) return false;
-    return this._out[u]!.some((e) => this._to[e] === v);
+    const list = this._out[u]!;
+    for (let i = 0; i < list.length; i++) {
+      if (this._to[list[i]!] === v) return true;
+    }
+    return false;
   }
 
   /**
@@ -727,7 +738,10 @@ export class Graph<N = unknown, E = unknown> {
   }
 
   private _occupied(list: number[], ports: string[], name: string): boolean {
-    return list.some((e) => ports[e] === name);
+    for (let i = 0; i < list.length; i++) {
+      if (ports[list[i]!] === name) return true;
+    }
+    return false;
   }
 
   private _reparent(u: number, parent: number): void {
@@ -762,6 +776,20 @@ export class Graph<N = unknown, E = unknown> {
       id = edgeId(`e${this._sequence++}`);
     } while (this._edges.has(id));
     return id;
+  }
+
+  /**
+   * 让自动编号跳过外部指定的 id。
+   *
+   * 拷贝、反序列化、撤销重做都会带着原有的 `e<n>` 建边；不在这里推进游标，
+   * 下一次自动分配就得从 `e0` 起把它们逐个撞过去——一次 O(E) 的空转。
+   */
+  private _reserve(id: EdgeId): void {
+    if (!id.startsWith("e")) return;
+    const seen = Number(id.slice(1));
+    if (Number.isInteger(seen) && seen >= this._sequence) {
+      this._sequence = seen + 1;
+    }
   }
 
   private _touch(emit: () => void): void {

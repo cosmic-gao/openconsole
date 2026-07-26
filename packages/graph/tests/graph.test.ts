@@ -368,6 +368,20 @@ describe("派生图", () => {
     }
   });
 
+  it("拷贝后自动编号接着原图走，不从头逐个撞已占用的 id", () => {
+    const graph = randomGraph(7, { order: 30, density: 2 });
+    const used = new Set(graph.edges());
+    const clone = graph.copy();
+    clone.addNode(vertex("fresh", 0));
+
+    const minted = clone.connect(
+      [nodeId("fresh"), "out"],
+      [nodeId("n0"), "in"],
+    );
+    expect(used.has(minted)).toBe(false);
+    expect(Number(minted.slice(1))).toBeGreaterThanOrEqual(used.size);
+  });
+
   it("union 合并两图，重复项以本图为准", () => {
     const left = blank();
     left.addNode(vertex("a", "left"));

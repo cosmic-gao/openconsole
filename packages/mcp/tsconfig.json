@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": ["@openconsole/tsconfig/node", "@openconsole/tsconfig/strict"],
+  "compilerOptions": {
+    "noEmit": true,
+    // SDK 的 Transport 把 onclose / sessionId 声明成 `prop?: T` 却返回 `T | undefined`，
+    // 三处 connect(transport) 无法通过此项。关掉一个选项优于在调用点撒断言。
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

@@ -74,13 +74,18 @@ export class Snapshot {
   public readonly inbound: Adjacency | undefined;
   public readonly weight: Reals | undefined;
 
-  private readonly _index: Map<NodeId, number>;
+  private readonly _index: ReadonlyMap<NodeId, number>;
   /** 只留一个读版本号的窗口，免得快照顺带持有整张图的泛型。 */
   private readonly _origin: { readonly revision: number } | undefined;
 
+  /**
+   * @param index 已建好的 id → 索引表。编译与 {@link Snapshot.reverse} 手上都有现成的，
+   *   传进来可省一次 O(V) 重建——否则"O(1) 翻转"会退化成按节点数计费。
+   */
   private constructor(
     data: SnapshotData,
     origin?: { readonly revision: number },
+    index?: ReadonlyMap<NodeId, number>,
   ) {
     this.graph = data.graph;
     this.revision = data.revision;
@@ -89,7 +94,7 @@ export class Snapshot {
     this.outbound = data.outbound;
     this.inbound = data.inbound;
     this.weight = data.weight;
-    this._index = new Map(data.labels.map((id, i) => [id, i]));
+    this._index = index ?? locate(data.labels);
     this._origin = origin;
   }
 
@@ -156,7 +161,7 @@ export class Snapshot {
   }
 
   /**
-   * 方向翻转，O(1)：与原快照共享全部底层数组，只是把出向与入向对调。
+   * 方向翻转，O(1)：底层数组与索引表全部共享，只是把出向与入向对调。
    *
    * @throws Error 编译时用了 `outbound` 因而没有入向邻接
    */
@@ -170,6 +175,7 @@ export class Snapshot {
     return new Snapshot(
       { ...this.data, outbound: inbound, inbound: this.outbound },
       this._origin,
+      this._index,
     );
   }
 
@@ -251,8 +257,15 @@ export class Snapshot {
         weight: options.weight ? Float64Array.from(costs) : undefined,
       },
       graph,
+      index,
     );
   }
+}
+
+function locate(labels: ReadonlyArray<NodeId>): ReadonlyMap<NodeId, number> {
+  const index = new Map<NodeId, number>();
+  for (let i = 0; i < labels.length; i++) index.set(labels[i]!, i);
+  return index;
 }
 
 /** 按 `tail → head` 建 CSR；`both` 为真时每条边在两端各出现一次。 */
