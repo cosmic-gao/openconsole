@@ -5,7 +5,7 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { GatewaySpec } from './config.js';
+import type { GatewaySpec, SessionLimits } from './config.js';
 import type { Endpoint } from './endpoint.js';
 import type { Reconciler } from './reconciler.js';
 
@@ -44,7 +44,7 @@ export function serve(
   const guard: RequestHandler[] = auth ? [requireBearerAuth(auth)] : [];
 
   const mounted = reconciler.endpoints.map((endpoint) => {
-    const pool = new SessionPool(() => createServer(endpoint));
+    const pool = new SessionPool(() => createServer(endpoint), spec.sessions);
     endpoint.onChange = () => pool.announceListChanged();
 
     app.post(endpoint.path, ...guard, (req, res) => void pool.dispatch(req, res));
@@ -78,13 +78,17 @@ export function serve(
 interface Session {
   readonly server: McpServer;
   readonly transport: StreamableHTTPServerTransport;
+  lastSeen: number;
 }
 
 /** 每个 MCP 会话独占一个 McpServer 实例（SDK 的要求），共享同一个 Endpoint 快照。 */
 class SessionPool {
   private readonly sessions = new Map<string, Session>();
 
-  constructor(private readonly createServer: () => McpServer) {}
+  constructor(
+    private readonly createServer: () => McpServer,
+    private readonly limits: SessionLimits,
+  ) {}
 
   get size(): number {
     return this.sessions.size;
@@ -96,6 +100,7 @@ class SessionPool {
 
     const session = this.sessions.get(id);
     if (!session) return expired(res);
+    session.lastSeen = Date.now();
     await session.transport.handleRequest(req, res, req.body);
   }
 
@@ -103,6 +108,7 @@ class SessionPool {
   async forward(req: Request, res: Response): Promise<void> {
     const session = this.sessions.get(req.header(SESSION_HEADER) ?? '');
     if (!session) return expired(res);
+    session.lastSeen = Date.now();
     await session.transport.handleRequest(req, res);
   }
 
@@ -115,6 +121,12 @@ class SessionPool {
   }
 
   private async establish(req: Request, res: Response): Promise<void> {
+    this.evictIdle();
+    if (this.sessions.size >= this.limits.max) {
+      res.status(503).json(rpcError(-32000, '会话数已达上限'));
+      return;
+    }
+
     const server = this.createServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
 
@@ -126,7 +138,19 @@ class SessionPool {
     await server.connect(transport);
     // sessionId 由 initialize 的处理过程产生，因此登记必须在 handleRequest 之后
     await transport.handleRequest(req, res, req.body);
-    if (transport.sessionId) this.sessions.set(transport.sessionId, { server, transport });
+    if (transport.sessionId) {
+      this.sessions.set(transport.sessionId, { server, transport, lastSeen: Date.now() });
+    }
+  }
+
+  /** 客户端可能既不发 DELETE 也不断开，靠 onclose 回收不住 */
+  private evictIdle(): void {
+    const deadline = Date.now() - this.limits.idleMs;
+    for (const [id, session] of this.sessions) {
+      if (session.lastSeen >= deadline) continue;
+      this.sessions.delete(id);
+      void session.server.close().catch(noop);
+    }
   }
 }
 

@@ -62,6 +62,12 @@ export class Catalog {
       }
     }
 
+    // 按字面前缀由长到短，读取时命中最具体的那个模板
+    templates.sort(
+      (left, right) =>
+        literalPrefix(right.route.name).length - literalPrefix(left.route.name).length,
+    );
+
     return new Catalog(
       sortByKey(tools),
       sortByKey(prompts),
@@ -100,7 +106,7 @@ export class Catalog {
     return this.promptIndex.get(name);
   }
 
-  /** 精确 URI 优先；未命中时回落到模板的字面前缀，避免逐个上游试探 */
+  /** 精确 URI 优先；未命中时回落到字面前缀最长的模板，避免逐个上游试探 */
   resource(uri: string): Entry<Resource> | Entry<ResourceTemplate> | undefined {
     return (
       this.resourceIndex.get(uri) ??
@@ -123,8 +129,17 @@ function fingerprint(catalog: Catalog): string {
       JSON.stringify([tool.description, tool.inputSchema, tool.outputSchema, tool.annotations]),
     );
   }
-  for (const prompt of catalog.prompts) hash.update(prompt.name);
-  for (const resource of catalog.resources) hash.update(resource.uri);
-  for (const template of catalog.resourceTemplates) hash.update(template.uriTemplate);
+  for (const prompt of catalog.prompts) {
+    hash.update(prompt.name);
+    hash.update(JSON.stringify([prompt.description, prompt.arguments]));
+  }
+  for (const resource of catalog.resources) {
+    hash.update(resource.uri);
+    hash.update(JSON.stringify([resource.name, resource.description, resource.mimeType]));
+  }
+  for (const template of catalog.resourceTemplates) {
+    hash.update(template.uriTemplate);
+    hash.update(JSON.stringify([template.name, template.description]));
+  }
   return hash.digest('hex');
 }

@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type {
   CallToolResult,
   GetPromptResult,
@@ -42,6 +43,7 @@ export class Upstream {
   private openUntil = 0;
   private client: Client | null = null;
   private opening: Promise<Client> | null = null;
+  private probing: Promise<void> | null = null;
 
   constructor(readonly spec: UpstreamSpec) {}
 
@@ -63,6 +65,13 @@ export class Upstream {
    * 探测不受熔断拦截，成功即清零失败计数 —— 它同时充当半开探测。
    */
   async probe(): Promise<void> {
+    this.probing ??= this.runProbe().finally(() => {
+      this.probing = null;
+    });
+    return this.probing;
+  }
+
+  private async runProbe(): Promise<void> {
     this.probedAt = Date.now();
     try {
       const client = await this.open();
@@ -88,7 +97,7 @@ export class Upstream {
       this.openUntil = 0;
     } catch (error) {
       this.state = 'unreachable';
-      this.failure = reasonOf(error);
+      this.failure = describeError(error);
       this.client = null;
     }
   }
@@ -98,7 +107,7 @@ export class Upstream {
     args: Record<string, unknown> | undefined,
     signal: AbortSignal,
   ): Promise<CallToolResult> {
-    return this.guard(async (client) => {
+    return this.withBreaker(async (client) => {
       const result = await client.callTool({ name, arguments: args }, undefined, {
         ...this.options,
         signal,
@@ -108,11 +117,11 @@ export class Upstream {
   }
 
   async getPrompt(name: string, args: Record<string, string> | undefined): Promise<GetPromptResult> {
-    return this.guard((client) => client.getPrompt({ name, arguments: args }, this.options));
+    return this.withBreaker((client) => client.getPrompt({ name, arguments: args }, this.options));
   }
 
   async readResource(uri: string): Promise<ReadResourceResult> {
-    return this.guard((client) => client.readResource({ uri }, this.options));
+    return this.withBreaker((client) => client.readResource({ uri }, this.options));
   }
 
   async close(): Promise<void> {
@@ -130,7 +139,7 @@ export class Upstream {
   }
 
   /** 连续失败达到阈值即开路，把慢上游的代价挡在调用方之外 */
-  private async guard<T>(operation: (client: Client) => Promise<T>): Promise<T> {
+  private async withBreaker<T>(operation: (client: Client) => Promise<T>): Promise<T> {
     if (this.breakerOpen) {
       throw new Error(`熔断中，${Math.ceil((this.openUntil - Date.now()) / 1000)} 秒后恢复`);
     }
@@ -139,7 +148,7 @@ export class Upstream {
       this.failures = 0;
       return result;
     } catch (error) {
-      if (++this.failures >= this.spec.breaker.failures) {
+      if (isTransportFailure(error) && ++this.failures >= this.spec.breaker.failures) {
         this.openUntil = Date.now() + this.spec.breaker.resetMs;
       }
       throw error;
@@ -190,8 +199,18 @@ export class Upstream {
   }
 }
 
-export const reasonOf = (error: unknown): string =>
+export const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+/**
+ * 只有传输层故障才该累计到熔断。
+ * InvalidParams 之类的协议错误说明上游活着并在正常应答，把它计入会让
+ * 客户端连续传错参数就把整个上游打下线。
+ */
+export const isTransportFailure = (error: unknown): boolean =>
+  !(error instanceof McpError) ||
+  error.code === ErrorCode.ConnectionClosed ||
+  error.code === ErrorCode.RequestTimeout;
 
 const transportFor = (connection: Connection): StdioClientTransport | StreamableHTTPClientTransport =>
   connection.kind === 'stdio'

@@ -8,6 +8,9 @@ endpoints:
   - path: /mcp
   - path: /mcp/alpha
     upstreams: [alpha]
+  # 工具上百时改用 progressive：只暴露 search_tools / describe_tool / call_tool
+  - path: /mcp/lite
+    discovery: progressive
 
 upstreams:
   # 两个上游指向同一个 mock server，工具名相同 —— 用于观察 alias 前缀如何消歧

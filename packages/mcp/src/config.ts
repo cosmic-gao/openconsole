@@ -22,10 +22,17 @@ export interface UpstreamInput {
   breaker?: { failures?: number; resetMs?: number };
 }
 
+/**
+ * full：直接列出全部工具。
+ * progressive：只暴露检索与调用的元工具，模型按需取 schema —— 工具上百时保住上下文预算。
+ */
+export type Discovery = 'full' | 'progressive';
+
 /** 一个对外挂载点。省略 upstreams 表示挂载全部。 */
 export interface EndpointInput {
   path: string;
   upstreams?: string[];
+  discovery?: Discovery;
 }
 
 export interface GatewayInput {
@@ -37,6 +44,7 @@ export interface GatewayInput {
   maxToolNameLength?: number;
   reconcileIntervalMs?: number;
   allowedOrigins?: string[];
+  sessions?: { max?: number; idleMs?: number };
   upstreams: UpstreamInput[];
 }
 
@@ -62,6 +70,13 @@ export interface UpstreamSpec {
 export interface EndpointSpec {
   readonly path: string;
   readonly upstreams: readonly UpstreamSpec[];
+  readonly discovery: Discovery;
+}
+
+/** 会话是内存驻留的，没有上限就等于给未认证流量开了一条内存耗尽路径 */
+export interface SessionLimits {
+  readonly max: number;
+  readonly idleMs: number;
 }
 
 export interface GatewaySpec {
@@ -71,6 +86,7 @@ export interface GatewaySpec {
   readonly reconcileInterval: number;
   readonly qualify: (alias: string, name: string) => string;
   readonly allowsOrigin: (origin: string) => boolean;
+  readonly sessions: SessionLimits;
   readonly upstreams: readonly UpstreamSpec[];
   readonly endpoints: readonly EndpointSpec[];
 }
@@ -102,6 +118,10 @@ export function defineGateway(input: GatewayInput): GatewaySpec {
     // SEP-986 定稿的工具名上限是 64 字符，也是多数 LLM provider 对 function name 的上限
     qualify: toQualifier(input.separator ?? '__', input.maxToolNameLength ?? 64),
     allowsOrigin: allowedOrigins ? (origin) => allowedOrigins.includes(origin) : () => true,
+    sessions: {
+      max: input.sessions?.max ?? 256,
+      idleMs: input.sessions?.idleMs ?? 30 * 60_000,
+    },
     upstreams,
     endpoints: toEndpointSpecs(input.endpoints ?? [{ path: '/mcp' }], upstreams),
   };
@@ -126,8 +146,9 @@ function toEndpointSpecs(
   );
   const byId = new Map(upstreams.map((upstream) => [upstream.id, upstream]));
 
-  return inputs.map(({ path, upstreams: ids }) => ({
+  return inputs.map(({ path, upstreams: ids, discovery }) => ({
     path,
+    discovery: discovery ?? 'full',
     upstreams:
       ids?.map((id) => {
         const upstream = byId.get(id);

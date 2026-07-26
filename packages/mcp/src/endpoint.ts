@@ -1,5 +1,5 @@
 import { Catalog } from './catalog.js';
-import type { EndpointSpec, GatewaySpec } from './config.js';
+import type { Discovery, EndpointSpec, GatewaySpec } from './config.js';
 import type { Upstream } from './upstream.js';
 
 export interface Snapshot {
@@ -19,17 +19,22 @@ export class Endpoint {
 
   constructor(
     readonly path: string,
+    readonly discovery: Discovery,
     private readonly upstreams: readonly Upstream[],
     private readonly qualify: GatewaySpec['qualify'],
   ) {}
 
-  static build(spec: EndpointSpec, pool: ReadonlyMap<string, Upstream>, qualify: GatewaySpec['qualify']): Endpoint {
+  static build(
+    spec: EndpointSpec,
+    pool: ReadonlyMap<string, Upstream>,
+    qualify: GatewaySpec['qualify'],
+  ): Endpoint {
     const upstreams = spec.upstreams.map((upstreamSpec) => {
       const upstream = pool.get(upstreamSpec.id);
       if (!upstream) throw new Error(`端点 ${spec.path} 缺少上游实例: ${upstreamSpec.id}`);
       return upstream;
     });
-    return new Endpoint(spec.path, upstreams, qualify);
+    return new Endpoint(spec.path, spec.discovery, upstreams, qualify);
   }
 
   refresh(): void {
@@ -43,14 +48,20 @@ export class Endpoint {
     this.onChange();
   }
 
-  /** 握手时交给模型：前缀解决了「哪一组」，这里补上「这组是什么」 */
+  /** 握手时交给模型：前缀解决了「哪一组」，这里补上「这组是什么」与如何取用 */
   get instructions(): string {
-    const lines = this.upstreams.map((upstream) => {
+    const sources = this.upstreams.map((upstream) => {
       const { alias, id } = upstream.spec;
       const detail =
         upstream.state === 'ready' ? `${upstream.tools.length} 个工具` : '当前不可达，其工具暂不可用';
       return `  ${this.qualify(alias, '*')} → ${id}（${detail}）`;
     });
-    return ['本网关聚合以下上游，工具名前缀标识来源：', ...lines].join('\n');
+
+    const workflow =
+      this.discovery === 'progressive'
+        ? ['', '工具未直接列出：先 search_tools 检索，再 describe_tool 取参数定义，最后 call_tool 执行。']
+        : [];
+
+    return ['本网关聚合以下上游，工具名前缀标识来源：', ...sources, ...workflow].join('\n');
   }
 }

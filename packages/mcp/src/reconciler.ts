@@ -2,7 +2,7 @@ import type { GatewaySpec } from './config.js';
 import { Endpoint } from './endpoint.js';
 import { Upstream, type UpstreamStatus } from './upstream.js';
 
-const DEBOUNCE = 500;
+const COALESCE_WINDOW = 500;
 
 /** 推送与轮询双通道驱动对账：通知会丢，上游可能没声明 listChanged 却在变，恶意上游更会故意不发。 */
 export class Reconciler {
@@ -51,13 +51,16 @@ export class Reconciler {
     return this.upstreams.map((upstream) => upstream.status);
   }
 
+  /** 合并窗口内的信号，但不因新信号顺延 —— 持续抖动的上游不该把对账饿死 */
   private markStale(id: string): void {
     this.stale.add(id);
-    if (this.pending) clearTimeout(this.pending);
+    if (this.pending) return;
+
     this.pending = setTimeout(() => {
+      this.pending = null;
       const ids = [...this.stale];
       this.stale.clear();
       void this.reconcile(ids);
-    }, DEBOUNCE);
+    }, COALESCE_WINDOW);
   }
 }
