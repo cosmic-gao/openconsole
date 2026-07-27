@@ -178,7 +178,7 @@ const snapshot = Snapshot.of(graph, {
 });
 
 snapshot.reverse(); // O(1)，与原快照共享底层数组
-snapshot.verify(); // 源图已变更则抛 Stale
+snapshot.verify(); // 源图已变更则抛 Stale；源图已被回收则无从判定，不报
 snapshot.names(indices); // 索引 → NodeId；边序号换 id 直接读 snapshot.edges[i]
 ```
 
@@ -204,6 +204,16 @@ snapshot = Snapshot.of(graph, { weight: cost, reuse: snapshot });
 三档：`revision` 也没动 → 原样返回同一个对象；`shape`（结构版本号）没动 → 复用 CSR、只重算
 边权，走槽位直读、零哈希；结构变了 → 全量重编译。用了谓词或折叠时自动退回全量。传错图的
 快照、传选项不一致的快照、传翻转过的快照，都只是没有加速，不会出错。
+
+### 对源图只持弱引用
+
+快照常常活得比源图久（缓存在算法层、挂在 UI 状态上）。若强引用源图，一份几百 KB 的快照会把
+整张图连同全部端口对象一起钉住，量级可能是它的几十倍。因此 `_source.graph` 是 `WeakRef`：
+
+- 源图还在 → `current` / `verify()` 照常判定陈旧；
+- 源图已被回收 → 无从判定，`current` 恒为 `true`、`verify()` 不抛。**陈旧只在证据确凿时才报**，
+  与跨线程还原的快照同一口径；
+- 增量重编译发现源图对不上（换了图，或已回收）→ 退回全量编译，不会出错。
 
 ### 跨线程
 
@@ -283,6 +293,20 @@ try {
 
 产出一律在索引空间：`toposort` 给 `Int32Array`，`ranks` 给按索引下标的 `Int32Array`，
 `dominators` 给 `idom[u]`（入口指向自身，不可达为 -1），`cuts` 给索引对与 `Int32Array`。
+
+### 稠密结构有内存上限
+
+`floydWarshall` 的矩阵是 `8·V²` 字节、`closure` 的位图是 `count × ⌈V/32⌉` 字——都随 V 平方增长：
+V=10000 的矩阵就是 763MB，V=100000 的位图是 1.2GB。两者分配前都过一道闸门，超限抛 `Oversized`
+并报出申请量，而不是静默吃掉内存：
+
+```ts
+settle(floydWarshall(snapshot)); // 默认上限 CEILING = 512MB
+settle(floydWarshall(snapshot, { limit: 2 * 1024 ** 3 })); // 确实要 2GB 就抬闸门
+settle(closure(snapshot, { limit })); // reduction 会把 limit 透传下去
+```
+
+`closure` 的位图行数是**分量数**，要等 `scc` 跑完才知道，因此它的闸门落在推进途中而不是构造时。
 
 ### 提前终止不泄漏未收敛的值
 
@@ -368,17 +392,18 @@ graph.signal.watch((type, payload) => {});
 
 全部继承 `GraphError`，`code` 用于分类捕获，`name` 取实际子类名。
 
-| 错误                    | code                    | 何时                                     |
-| ----------------------- | ----------------------- | ---------------------------------------- |
-| `Duplicate` / `Missing` | `duplicate` / `missing` | id 已存在 / 节点、边、端口不存在         |
-| `Mismatch` / `Capacity` | `socket` / `capacity`   | Socket 不兼容 / 单连接端口已占用         |
-| `Cycle` / `Nested`      | `cycle`                 | 算法撞上环 / 层级会成环                  |
-| `Oneway`                | `oneway`                | 算法需要入向邻接，但结构只编了出向       |
-| `Negative` / `Invalid`  | `negative` / `invalid`  | 负权（点名改用 `bellmanFord`）/ `NaN` 权 |
-| `Stale`                 | `stale`                 | 快照编译后源图又变了                     |
-| `Incomplete`            | `incomplete`            | 任务没跑完就取结果                       |
-| `Interrupted`           | `interrupted`           | 任务被 `AbortSignal` 中断（现场保留）    |
-| `Schema`                | `schema`                | 反序列化时格式版本不匹配                 |
+| 错误                    | code                    | 何时                                       |
+| ----------------------- | ----------------------- | ------------------------------------------ |
+| `Duplicate` / `Missing` | `duplicate` / `missing` | id 已存在 / 节点、边、端口不存在           |
+| `Mismatch` / `Capacity` | `socket` / `capacity`   | Socket 不兼容 / 单连接端口已占用           |
+| `Cycle` / `Nested`      | `cycle`                 | 算法撞上环 / 层级会成环                    |
+| `Oneway`                | `oneway`                | 算法需要入向邻接，但结构只编了出向         |
+| `Negative` / `Invalid`  | `negative` / `invalid`  | 负权（点名改用 `bellmanFord`）/ `NaN` 权   |
+| `Oversized`             | `oversized`             | 稠密结构（全源矩阵、可达位图）超过内存上限 |
+| `Stale`                 | `stale`                 | 快照编译后源图又变了                       |
+| `Incomplete`            | `incomplete`            | 任务没跑完就取结果                         |
+| `Interrupted`           | `interrupted`           | 任务被 `AbortSignal` 中断（现场保留）      |
+| `Schema`                | `schema`                | 反序列化时格式版本不匹配                   |
 
 这些位置恰是「给个看起来正常的答案」最容易骗过人的地方——`NaN` 尤其典型：它与任何值比较都是
 `false`，于是连通节点被报成不可达。
@@ -434,11 +459,37 @@ import { pack } from "@openconsole/graph/serialize";
 ## 开发
 
 ```bash
-pnpm --filter @openconsole/graph typecheck   # tsc --noEmit
-pnpm --filter @openconsole/graph doc         # typedoc，输出到 docs/（已 gitignore）
+pnpm --filter @openconsole/graph test              # 单元 + 集成
+pnpm --filter @openconsole/graph test:unit         # 只跑 tests/unit
+pnpm --filter @openconsole/graph test:integration  # 只跑 tests/integration
+pnpm --filter @openconsole/graph bench             # tests/bench
+pnpm --filter @openconsole/graph typecheck         # tsc --noEmit
+pnpm --filter @openconsole/graph doc               # typedoc，输出到 docs/（已 gitignore）
 ```
 
-本包不含测试与基准。历史上的测试套件在 git 历史里（`1d1affb`），需要时可取回。
+```
+tests/
+├── support.ts        构建器与断言助手
+├── naive.ts          各算法的独立参照实现，只用公开查询、照定义直写
+├── unit/             逐模块：图、事件、端口、快照、契约、任务、序列化、增量序、算法、上限
+├── integration/      跨层：编辑器全链路、计算侧端到端、复杂度闸门
+└── bench/            量级参考，不作闸门
+```
+
+**算法层靠差分对拍**：随机图上把 `scc` / `components` / `dominators` / `cuts` / `closure` /
+最短路的结果与 `naive.ts` 里各自独立的朴素实现逐一比对，8 个 seed 各跑一遍。那边是 Pearce /
+Tarjan / Lengauer-Tarjan 这类带巧思的迭代版本，这边是能一眼看懂的笨办法，任一侧出错都会暴露。
+
+**闸门只钉不受机器快慢影响的量**，且按判据的信噪比分三种：
+
+- **计数**（最可靠）——单步粒度数推进步数，「有没有为每个节点付固定重成本」数 `JSON.stringify`
+  调用次数。退化前后常常同阶、只是常数不同，耗时比与噪声完全重叠，唯有计数分得开。
+- **同机同轮的对照量**——删边路径拿**建图**当标尺：排干一张图理应比建它便宜得多。实测健康时
+  排干只占建图的 15%–60%，退化成平方则是 4.3–8.3 倍，两侧各有一个数量级余量。
+- **同进程的规模比**（翻 4 倍不许涨过 9 倍）——只用在编译与最短路这类比值确实稳定的地方。
+
+反面教材留在注释里：删边路径曾用规模比，但缓存与 GC 让线性操作的常数随数据量一起长，4 倍规模
+实测能涨到 9.1×，与平方的 16× 贴在一起，并行跑整个工作区时必然误报。
 
 ## License
 

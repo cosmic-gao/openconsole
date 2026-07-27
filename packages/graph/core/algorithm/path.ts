@@ -1,7 +1,14 @@
 import { BucketQueue, LazyQueue, type IndexQueue } from "@openconsole/queue";
 
 import { Cycle, Invalid, Negative } from "../error";
-import { reversed, type Reals, type Structure } from "../snapshot";
+import {
+  afford,
+  CEILING,
+  reversed,
+  type DenseOptions,
+  type Reals,
+  type Structure,
+} from "../snapshot";
 import { Stepwise, transform, type Task } from "../task";
 
 /**
@@ -591,9 +598,13 @@ class FloydWarshall extends Stepwise<Matrix> {
   private _through = 0;
   private _row = 0;
 
-  public constructor(private readonly _structure: Structure) {
+  public constructor(
+    private readonly _structure: Structure,
+    limit: number,
+  ) {
     super();
     const n = _structure.order;
+    afford(8 * n * n, limit, `floydWarshall on V=${n}`);
     this._cells = new Float64Array(n * n).fill(Infinity);
     for (let u = 0; u < n; u++) this._cells[u * n + u] = 0;
 
@@ -655,9 +666,12 @@ class FloydWarshall extends Stepwise<Matrix> {
 }
 
 /**
- * 全源最短路，容许负权。
+ * 全源最短路，容许负权。矩阵是 `8·V²` 字节，V=10000 就要 763MB，因此分配前先过规模闸门。
  *
  * @throws {@link Cycle} 存在负权环
+ * @throws {@link Oversized} 矩阵超过 `limit`（默认 {@link CEILING}）
  */
-export const floydWarshall = (structure: Structure): Task<Matrix> =>
-  new FloydWarshall(structure);
+export const floydWarshall = (
+  structure: Structure,
+  options: DenseOptions = {},
+): Task<Matrix> => new FloydWarshall(structure, options.limit ?? CEILING);

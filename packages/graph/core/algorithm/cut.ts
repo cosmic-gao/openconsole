@@ -1,9 +1,4 @@
-import {
-  inboundOf,
-  merged,
-  type Adjacency,
-  type Structure,
-} from "../snapshot";
+import { inboundOf, merged, type Adjacency, type Structure } from "../snapshot";
 import { Stepwise, type Task } from "../task";
 
 const NONE = -1;

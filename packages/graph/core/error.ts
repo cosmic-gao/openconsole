@@ -9,6 +9,7 @@ export type Code =
   | "capacity"
   | "negative"
   | "invalid"
+  | "oversized"
   | "schema"
   | "stale"
   | "incomplete"
@@ -126,6 +127,29 @@ export class Invalid extends GraphError {
     );
   }
 }
+
+/**
+ * 稠密结构（全源矩阵、可达位图）要的内存超过了上限。
+ *
+ * @remarks 这类分配是 O(V²)：`floydWarshall` 在 V=10000 上要 763MB、`closure` 的位图在
+ *   V=100000 上要 1.2GB。不拦住就是一次静默的巨额申请，轻则拖垮进程、重则被 OOM 杀掉，
+ *   而调用方往往只是没意识到自己的图有多大。抬 `limit` 即可放行。
+ */
+export class Oversized extends GraphError {
+  public constructor(
+    public readonly bytes: number,
+    public readonly limit: number,
+    what: string,
+  ) {
+    super(
+      "oversized",
+      `${what} needs ${megabytes(bytes)} of dense storage, over the ${megabytes(limit)} limit; raise \`limit\` if that is intended`,
+    );
+  }
+}
+
+const megabytes = (bytes: number): string =>
+  `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
 export class Schema extends GraphError {
   public constructor(got: unknown, expected: number) {

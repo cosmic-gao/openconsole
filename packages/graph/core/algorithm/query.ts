@@ -41,8 +41,7 @@ export function isolated(structure: Structure): Int32Array {
   return select(
     structure,
     (u) =>
-      offset[u + 1]! === offset[u]! &&
-      back.offset[u + 1]! === back.offset[u]!,
+      offset[u + 1]! === offset[u]! && back.offset[u + 1]! === back.offset[u]!,
   );
 }
 

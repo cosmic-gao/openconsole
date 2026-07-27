@@ -1,4 +1,4 @@
-import { Invalid, Oneway, Stale } from "./error";
+import { Invalid, Oneway, Oversized, Stale } from "./error";
 import type { EdgeRecord, Graph } from "./graph";
 import type { EdgeId, GraphId, NodeId } from "./ident";
 
@@ -95,6 +95,23 @@ export function reversed(structure: Structure): Structure {
   };
 }
 
+/** 稠密结构的默认内存上限：512MB。 */
+export const CEILING = 512 * 1024 * 1024;
+
+export interface DenseOptions {
+  /** O(V²) 分配的字节上限，默认 {@link CEILING}；超出抛 {@link Oversized}。 */
+  limit?: number;
+}
+
+/**
+ * 稠密分配前的规模闸门。
+ *
+ * @throws {@link Oversized} 超过 `limit`
+ */
+export function afford(bytes: number, limit: number, what: string): void {
+  if (bytes > limit) throw new Oversized(bytes, limit, what);
+}
+
 export const outDegree = (structure: Structure, u: number): number =>
   structure.outbound.offset[u + 1]! - structure.outbound.offset[u]!;
 
@@ -154,7 +171,14 @@ interface Lookup {
 
 /** 编译来源与选项指纹，用于判定能否增量重编译。 */
 interface Source {
-  readonly graph: { readonly revision: number; readonly shape: number };
+  /**
+   * 弱引用：快照可能活得比源图久（缓存在算法层、挂在 UI 状态上），强引用会把整张图连同
+   * 全部端口对象一起钉住——快照自身可能只有几百 KB，钉住的图却是它的几十倍。
+   */
+  readonly graph: WeakRef<{
+    readonly revision: number;
+    readonly shape: number;
+  }>;
   /** 编译时的 `graph.shape`。 */
   readonly shape: number;
   /** 没用谓词也没折叠——只有这种编译的结构才由 `shape` 完全决定。 */
@@ -280,19 +304,20 @@ export class Snapshot implements Structure {
     );
   }
 
-  /** 源图自编译以来是否未再变更。跨线程还原的快照没有源图，恒为 `true`。 */
+  /**
+   * 源图自编译以来是否未再变更。跨线程还原的快照没有源图，源图已被回收时也无从判定，
+   * 两种情况都恒为 `true`——陈旧只在**证据确凿**时才报。
+   */
   public get current(): boolean {
-    return (
-      this._source === undefined ||
-      this._source.graph.revision === this.revision
-    );
+    const source = this._source?.graph.deref();
+    return source === undefined || source.revision === this.revision;
   }
 
   /** @throws {@link Stale} 源图已变更 */
   public verify(): this {
-    const source = this._source;
-    if (source && source.graph.revision !== this.revision) {
-      throw new Stale(this.revision, source.graph.revision);
+    const source = this._source?.graph.deref();
+    if (source && source.revision !== this.revision) {
+      throw new Stale(this.revision, source.revision);
     }
     return this;
   }
@@ -378,7 +403,7 @@ export class Snapshot implements Structure {
         weight: measure(graph, slots, count, options.weight),
       },
       {
-        graph,
+        graph: new WeakRef(graph),
         shape: graph.shape,
         plain,
         undirected,
@@ -403,7 +428,8 @@ export class Snapshot implements Structure {
   ): Snapshot | undefined {
     const source = this._source;
     if (source === undefined) return undefined;
-    if (source.graph !== graph) return undefined;
+    // 源图已回收时 deref 给 undefined，同样不等于 graph，因此一并落到"不复用"。
+    if (source.graph.deref() !== graph) return undefined;
     // 翻转过的快照方向与编译选项对不上，复用它会静默给出反向结构。
     if (source.flipped) return undefined;
     // 带谓词或折叠时，结构不只由 shape 决定（谓词可能看权重），一律全量重来。

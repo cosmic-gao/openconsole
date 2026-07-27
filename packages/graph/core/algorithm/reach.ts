@@ -1,4 +1,11 @@
-import { reversed, type Ints, type Structure } from "../snapshot";
+import {
+  afford,
+  CEILING,
+  reversed,
+  type DenseOptions,
+  type Ints,
+  type Structure,
+} from "../snapshot";
 import { chain, Stepwise, type Task } from "../task";
 import { scc, type Partition } from "./component";
 import { dfs } from "./search";
@@ -130,9 +137,17 @@ class Propagate extends Stepwise<Closure> {
   public constructor(
     private readonly _structure: Structure,
     private readonly _partition: Partition,
+    limit: number,
   ) {
     super();
     this._words = (_structure.order + 31) >>> 5;
+    // 位图是 count × ⌈V/32⌉ 字：无环图上 count == order，于是这就是 O(V²/32)。
+    // 闸门只能设在这里——分量数要等 scc 跑完才知道。
+    afford(
+      _partition.count * this._words * 4,
+      limit,
+      `closure on V=${_structure.order} with ${_partition.count} component(s)`,
+    );
     this._bits = new Uint32Array(_partition.count * this._words);
     this._members = Array.from({ length: _partition.count }, () => []);
     for (let u = 0; u < _structure.order; u++) {
@@ -192,8 +207,21 @@ class Propagate extends Stepwise<Closure> {
   }
 }
 
-export const closure = (structure: Structure): Task<Closure> =>
-  chain(scc(structure), (partition) => new Propagate(structure, partition));
+/**
+ * 传递闭包，O(V + E·V/32)。
+ *
+ * @throws {@link Oversized} 位图超过 `limit`（默认 {@link CEILING}）——闸门在 scc 跑完、
+ *   分量数已知之后才生效，因此错误出现在推进途中而不是构造时。
+ */
+export const closure = (
+  structure: Structure,
+  options: DenseOptions = {},
+): Task<Closure> =>
+  chain(
+    scc(structure),
+    (partition) =>
+      new Propagate(structure, partition, options.limit ?? CEILING),
+  );
 
 /**
  * 传递归约：去掉能由其他路径间接抵达的边。只对 DAG 有唯一解。
@@ -265,5 +293,6 @@ class Reduce extends Stepwise<Array<readonly [number, number]>> {
 
 export const reduction = (
   structure: Structure,
+  options: DenseOptions = {},
 ): Task<Array<readonly [number, number]>> =>
-  chain(closure(structure), (closed) => new Reduce(structure, closed));
+  chain(closure(structure, options), (closed) => new Reduce(structure, closed));
