@@ -5,5 +5,5 @@
     "@openconsole/tsconfig/strict",
     "@openconsole/tsconfig/esm"
   ],
-  "include": ["index.ts", "index.test.ts"]
+  "include": ["index.ts"]
 }

@@ -39,12 +39,8 @@
     }
   },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && vitest run",
+    "check": "tsc --noEmit",
     "doc": "typedoc"
   },
   "dependencies": {

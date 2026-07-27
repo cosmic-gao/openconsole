@@ -3,6 +3,5 @@
   "entryPoints": ["index.ts"],
   "out": "docs",
   "readme": "README.md",
-  "excludeInternal": true,
-  "exclude": ["**/support/**"]
+  "excludeInternal": true
 }

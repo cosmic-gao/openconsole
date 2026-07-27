@@ -38,7 +38,7 @@ export interface Adjacency {
  * 直接跑全套算法——SharedArrayBuffer 背书的邻接、WASM 里导出的 CSR、按规则生成而非
  * 存储的图、别的库编译出的结果，都不必先塞进 `Graph` 再编译一遍。
  *
- * @example 手写一条 3 节点链，不经过 `Graph`
+ * @example 手写一条 3 节点链，不经过 Graph
  * ```ts
  * const chain: Structure = {
  *   order: 3,

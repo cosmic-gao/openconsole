@@ -33,7 +33,11 @@ export class Port<S extends Socket = Socket> {
 /** 按名称索引的端口集合。 */
 export type Ports = Readonly<Record<string, Port | undefined>>;
 
-type Declared<S extends Sockets> = { [K in keyof S]?: Port<S[K]> };
+/**
+ * 按 Socket 集合定型的端口声明，{@link Ports} 的带类型版本：端口名取自 `S` 的键，
+ * 每个端口的 Socket 类型也随之定死。{@link Vertex.inputs} / {@link Vertex.outputs} 即此形态。
+ */
+export type Declared<S extends Sockets> = { [K in keyof S]?: Port<S[K]> };
 
 /**
  * 节点模板：命名端口集合加权重。加入图时按值拷入，因此同一模板可用于多张图、
