@@ -8,6 +8,9 @@ import type { Ports } from "./vertex";
 
 const NONE = -1;
 
+/** "还没出错"的哨兵；`undefined` 本身可以是被抛出的值，不能拿它当标记。 */
+const INTACT = Symbol("intact");
+
 /** 加入图所需的节点描述。{@link Vertex} 与 {@link NodeRecord} 都满足它，故可直接互相搬运。 */
 export interface NodeSpec<W = unknown> {
   readonly id: NodeId;
@@ -48,7 +51,19 @@ export interface ConnectOptions<E> {
  * 而是吃它编译出的 {@link Snapshot}。
  */
 export class Graph<N = unknown, E = unknown> {
-  public readonly signal = new Signal<Events<N, E>>();
+  /**
+   * 变更事件总线。
+   *
+   * @remarks 装了 `rescue`：某个 handler 抛错时**其余 handler 与其余事件照常派发**，
+   *   错误留到本轮派发完再上抛。少了这层隔离，一个坏订阅者会连带掐掉同一事务里其他
+   *   订阅者的事件——那些事件已从队列里摘走，补不回来，按索引维护增量状态的订阅者
+   *   （{@link Ordering}、布局缓存）从此静默错位。
+   */
+  public readonly signal = new Signal<Events<N, E>>({
+    rescue: (error) => {
+      if (this._failure === INTACT) this._failure = error;
+    },
+  });
 
   private readonly _nodes = new Slots<NodeId>();
   private readonly _weight: Array<N | undefined> = [];
@@ -77,6 +92,8 @@ export class Graph<N = unknown, E = unknown> {
   private _depth = 0;
   private _changes = 0;
   private _settling = false;
+  /** 本轮派发里第一个 handler 抛出的错误，见 {@link Graph.signal}。 */
+  private _failure: unknown = INTACT;
   /** 待派发事件，`[类型, 载荷, 类型, 载荷, ...]` 交错存放，免去每条事件一个闭包。 */
   private readonly _queue: unknown[] = [];
 
@@ -988,6 +1005,9 @@ export class Graph<N = unknown, E = unknown> {
    * @remarks handler 里继续改图是常态（比如布局据此插节点）。那些变更会照常排进同一个
    *   队列，由这里接着收——重入的 `_settle` 直接返回，不另起一轮。否则内层会把外层的
    *   计数抢走并提前放出 `flushed`，外层剩下的事件反而排在事务边界之后。
+   *
+   *   handler 抛错不打断派发（`rescue` 兜住），但错误会在队列排空后上抛：订阅者之间
+   *   互不牵连，调用方也不会以为一切正常。
    */
   private _settle(): void {
     if (this._settling) return;
@@ -1018,6 +1038,11 @@ export class Graph<N = unknown, E = unknown> {
       }
     } finally {
       this._settling = false;
+    }
+    const failure = this._failure;
+    if (failure !== INTACT) {
+      this._failure = INTACT;
+      throw failure;
     }
   }
 }

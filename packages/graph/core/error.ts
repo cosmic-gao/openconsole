@@ -4,6 +4,7 @@ export type Code =
   | "duplicate"
   | "missing"
   | "cycle"
+  | "oneway"
   | "socket"
   | "capacity"
   | "negative"
@@ -62,6 +63,22 @@ export class Nested extends GraphError {
     super(
       "cycle",
       `"${node}" cannot be nested under its descendant "${parent}"`,
+    );
+  }
+}
+
+/**
+ * 算法需要入向邻接，但结构是按 `outbound` 只编了出向的。
+ *
+ * @remarks 单独立一类而不是当成"没有入边"处理，因为缺入向时每个算法都会退化成一个
+ *   看起来正常的答案：`sources` 把每个节点都算成源、`dominators` 退化成 DFS 树、
+ *   `components` 按可达性而非弱连通分组、`prim` 与 `cuts` 漏掉整个分支。
+ */
+export class Oneway extends GraphError {
+  public constructor(caller: string) {
+    super(
+      "oneway",
+      `${caller} needs inbound adjacency; recompile without the \`outbound\` option`,
     );
   }
 }

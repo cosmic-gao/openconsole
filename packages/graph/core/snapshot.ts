@@ -1,4 +1,4 @@
-import { Invalid, Stale } from "./error";
+import { Invalid, Oneway, Stale } from "./error";
 import type { EdgeRecord, Graph } from "./graph";
 import type { EdgeId, GraphId, NodeId } from "./ident";
 
@@ -69,21 +69,27 @@ export const merged = (structure: Structure): boolean =>
   structure.inbound === structure.outbound;
 
 /**
+ * 取入向邻接，缺失即报错——凡是真需要反向邻接的入口都先过这道关，别各自静默降级。
+ *
+ * @throws {@link Oneway} 结构只编了出向
+ */
+export function inboundOf(structure: Structure, caller: string): Adjacency {
+  const found = structure.inbound;
+  if (!found) throw new Oneway(caller);
+  return found;
+}
+
+/**
  * 方向翻转的视图，O(1)：底层数组全部共享，只是把出向与入向对调。
  *
- * @throws Error 没有入向邻接
+ * @throws {@link Oneway} 没有入向邻接
  */
 export function reversed(structure: Structure): Structure {
-  const inbound = structure.inbound;
-  if (!inbound) {
-    throw new Error(
-      "structure has no inbound adjacency; compile without `outbound`",
-    );
-  }
+  const back = inboundOf(structure, "reversed");
   return {
     order: structure.order,
     size: structure.size,
-    outbound: inbound,
+    outbound: back,
     inbound: structure.outbound,
     weight: structure.weight,
   };
@@ -92,6 +98,7 @@ export function reversed(structure: Structure): Structure {
 export const outDegree = (structure: Structure, u: number): number =>
   structure.outbound.offset[u + 1]! - structure.outbound.offset[u]!;
 
+/** 缺入向邻接时恒为 0；需要报错而非降级的场合用 {@link inboundOf}。 */
 export const inDegree = (structure: Structure, u: number): number => {
   const inbound = structure.inbound;
   return inbound ? inbound.offset[u + 1]! - inbound.offset[u]! : 0;
@@ -261,18 +268,13 @@ export class Snapshot implements Structure {
   /**
    * 方向翻转，O(1)：底层数组与索引表全部共享，只是把出向与入向对调。
    *
-   * @throws Error 编译时用了 `outbound` 因而没有入向邻接
+   * @throws {@link Oneway} 编译时用了 `outbound` 因而没有入向邻接
    */
   public reverse(): Snapshot {
-    const inbound = this.inbound;
-    if (!inbound) {
-      throw new Error(
-        "snapshot has no inbound adjacency; compile without `outbound`",
-      );
-    }
+    const back = inboundOf(this, "Snapshot.reverse");
     const source = this._source;
     return new Snapshot(
-      { ...this.data, outbound: inbound, inbound: this.outbound },
+      { ...this.data, outbound: back, inbound: this.outbound },
       source && { ...source, flipped: !source.flipped },
       this._lookup,
     );

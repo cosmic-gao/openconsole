@@ -137,7 +137,7 @@ class Dijkstra extends Stepwise<Tree> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._reached / this._structure.order;
@@ -253,7 +253,7 @@ class AStar extends Stepwise<Route | undefined> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._reached / this._structure.order;
@@ -365,7 +365,7 @@ class Bidirectional extends Stepwise<Route | undefined> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._reached / (2 * this._structure.order);
@@ -490,7 +490,7 @@ class BellmanFord extends Stepwise<Tree> {
     if (source >= 0 && source < _structure.order) this._distance[source] = 0;
   }
 
-  public get progress(): number {
+  protected measure(): number {
     const n = this._structure.order;
     return n === 0 ? 1 : (this._round * n + this._cursor) / (n * n);
   }
@@ -608,7 +608,7 @@ class FloydWarshall extends Stepwise<Matrix> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     const n = this._structure.order;
     return n === 0 ? 1 : (this._through * n + this._row) / (n * n);
   }

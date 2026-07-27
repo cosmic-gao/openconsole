@@ -22,7 +22,12 @@ export abstract class Task<T> {
   public abstract result(): T;
 }
 
-/** 只需实现单步推进的任务骨架，预算记账由基类负责。 */
+/**
+ * 只需实现单步推进的任务骨架，预算记账与进度归一由基类负责。
+ *
+ * @remarks 构造函数里只做 O(V) 级的状态分配。与算法同阶的准备工作（排序、建堆、扫全部边）
+ *   一律摆进 {@link Stepwise.step}，否则那部分既不受预算约束也中断不了。
+ */
 export abstract class Stepwise<T> extends Task<T> {
   #settled = false;
 
@@ -36,6 +41,20 @@ export abstract class Stepwise<T> extends Task<T> {
   public get settled(): boolean {
     return this.#settled;
   }
+
+  /**
+   * 完成度 0..1；跑完即为 1。
+   *
+   * @remarks 归一收在这里而不是交给各算法：{@link Stepwise.measure} 的估算多半是
+   *   "已处理节点数 / 总数"，而提前终止（摸到终点、提前收敛、图不连通）时那个比值到不了
+   *   分母——非连通图上的 Dijkstra 停在 0.5，进度条就永远差一口。
+   */
+  public get progress(): number {
+    return this.#settled ? 1 : this.measure();
+  }
+
+  /** 未跑完时的完成度估算，0..1；单调不减。 */
+  protected abstract measure(): number;
 
   /** 供 `result()` 开头调用。@throws {@link Incomplete} 尚未跑完 */
   protected ensure(): void {

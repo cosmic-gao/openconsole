@@ -35,7 +35,7 @@ class Kahn extends Stepwise<Topology> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0 ? 1 : this._head / this._structure.order;
   }
 

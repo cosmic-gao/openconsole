@@ -1,7 +1,7 @@
 import { LazyQueue } from "@openconsole/queue";
 
 import {
-  costOf,
+  inboundOf,
   merged,
   type Adjacency,
   type Reals,
@@ -44,11 +44,14 @@ class Prim extends Stepwise<Link[]> {
     this._from = new Int32Array(n).fill(NONE);
     this._slot = new Int32Array(n).fill(NONE);
     this._inTree = new Uint8Array(n);
-    this._inbound = merged(_structure) ? undefined : _structure.inbound;
+    // 生成树是无向概念：缺入向会漏掉整个分支（`0→2, 1→2` 上只给一条边）。
+    this._inbound = merged(_structure)
+      ? undefined
+      : inboundOf(_structure, "prim");
     this._weight = _structure.weight;
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0 ? 1 : this._seen / this._structure.order;
   }
 
@@ -109,62 +112,73 @@ class Prim extends Stepwise<Link[]> {
   }
 }
 
-/** Kruskal：边按权升序合并，并查集判环。 */
+/**
+ * Kruskal：边按权升序合并，并查集判环。
+ *
+ * @remarks 出队用惰性堆而不是先把边排一遍序。排序是 O(E log E)，也就是整个算法的主项，
+ *   摆在构造函数里就等于一半的工作既不受预算约束也中断不了（E=2 万时构造 12.5ms、
+ *   推进 14.2ms）。改成边扫邻接边入堆，两段都按节点 / 按边计步，复杂度不变而全程可停。
+ */
 class Kruskal extends Stepwise<Link[]> {
-  private readonly _sorted: Int32Array;
   private readonly _tail: Int32Array;
   private readonly _head: Int32Array;
   private readonly _parent: Int32Array;
   private readonly _weight: Reals | undefined;
+  private readonly _queue: LazyQueue;
   private readonly _links: Link[] = [];
-  private _cursor = 0;
+  /** 建堆游标，走完 `order` 个节点后转入出队阶段。 */
+  private _node = 0;
+  private _polled = 0;
 
-  public constructor(structure: Structure) {
+  public constructor(private readonly _structure: Structure) {
     super();
-    const size = structure.size;
-    this._tail = new Int32Array(size).fill(NONE);
-    this._head = new Int32Array(size);
-    this._parent = new Int32Array(structure.order);
-    this._weight = structure.weight;
-    for (let u = 0; u < structure.order; u++) this._parent[u] = u;
-
-    const { offset, other, edge } = structure.outbound;
-    for (let u = 0; u < structure.order; u++) {
-      for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-        const e = edge[k]!;
-        // 无向结构里同一条边出现两次，只认第一次。
-        if (this._tail[e] !== NONE) continue;
-        this._tail[e] = u;
-        this._head[e] = other[k]!;
-      }
-    }
-    this._sorted = Int32Array.from({ length: size }, (_, e) => e).sort(
-      (a, b) => costOf(structure, a) - costOf(structure, b),
-    );
+    this._tail = new Int32Array(_structure.size).fill(NONE);
+    this._head = new Int32Array(_structure.size);
+    this._parent = new Int32Array(_structure.order);
+    this._weight = _structure.weight;
+    this._queue = new LazyQueue(_structure.size);
+    for (let u = 0; u < _structure.order; u++) this._parent[u] = u;
   }
 
-  public get progress(): number {
-    return this._sorted.length === 0 ? 1 : this._cursor / this._sorted.length;
+  protected measure(): number {
+    const total = this._structure.order + this._structure.size;
+    return total === 0 ? 1 : (this._node + this._polled) / total;
   }
 
   protected step(): boolean {
-    if (this._cursor >= this._sorted.length) return false;
-    const e = this._sorted[this._cursor++]!;
-    if (this._tail[e] !== NONE) {
-      const a = this._find(this._tail[e]!);
-      const b = this._find(this._head[e]!);
-      if (a !== b) {
-        this._parent[a] = b;
-        const weight = this._weight;
-        this._links.push({
-          source: this._tail[e]!,
-          target: this._head[e]!,
-          weight: weight === undefined ? 1 : weight[e]!,
-          edge: e,
-        });
-      }
+    if (this._node < this._structure.order) {
+      this._collect(this._node++);
+      return true;
     }
-    return this._cursor < this._sorted.length;
+
+    const e = this._queue.poll();
+    if (e === NONE) return false;
+    this._polled++;
+    const a = this._find(this._tail[e]!);
+    const b = this._find(this._head[e]!);
+    if (a !== b) {
+      this._parent[a] = b;
+      this._links.push({
+        source: this._tail[e]!,
+        target: this._head[e]!,
+        weight: this._weight === undefined ? 1 : this._weight[e]!,
+        edge: e,
+      });
+    }
+    return true;
+  }
+
+  /** 记下一个节点出边的两端并入堆；无向结构里同一条边出现两次，只认第一次。 */
+  private _collect(u: number): void {
+    const { offset, other, edge } = this._structure.outbound;
+    const weight = this._weight;
+    for (let k = offset[u]!; k < offset[u + 1]!; k++) {
+      const e = edge[k]!;
+      if (this._tail[e] !== NONE) continue;
+      this._tail[e] = u;
+      this._head[e] = other[k]!;
+      this._queue.push(e, weight === undefined ? 1 : weight[e]!);
+    }
   }
 
   private _find(u: number): number {

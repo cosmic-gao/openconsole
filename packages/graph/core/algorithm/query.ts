@@ -1,6 +1,11 @@
 import type { Graph } from "../graph";
 import type { NodeId } from "../ident";
-import { inDegree, outDegree, type Ints, type Structure } from "../snapshot";
+import {
+  inboundOf,
+  type Adjacency,
+  type Ints,
+  type Structure,
+} from "../snapshot";
 
 /** 全图度数，下标即节点索引。 */
 export interface Degrees {
@@ -8,30 +13,44 @@ export interface Degrees {
   readonly outbound: Int32Array;
 }
 
+/** @throws {@link Oneway} 结构只编了出向 */
 export function degrees(structure: Structure): Degrees {
+  const back = inboundOf(structure, "degrees");
+  const { offset } = structure.outbound;
   const inward = new Int32Array(structure.order);
   const outward = new Int32Array(structure.order);
   for (let u = 0; u < structure.order; u++) {
-    inward[u] = inDegree(structure, u);
-    outward[u] = outDegree(structure, u);
+    inward[u] = back.offset[u + 1]! - back.offset[u]!;
+    outward[u] = offset[u + 1]! - offset[u]!;
   }
   return { inbound: inward, outbound: outward };
 }
 
-/** 入度为 0 的节点索引。 */
+/** 入度为 0 的节点索引。@throws {@link Oneway} 结构只编了出向 */
 export const sources = (structure: Structure): Int32Array =>
-  select(structure, (u) => inDegree(structure, u) === 0);
+  barren(structure, inboundOf(structure, "sources"));
 
 /** 出度为 0 的节点索引。 */
 export const sinks = (structure: Structure): Int32Array =>
-  select(structure, (u) => outDegree(structure, u) === 0);
+  barren(structure, structure.outbound);
 
-/** 入度与出度都为 0 的节点索引。 */
-export const isolated = (structure: Structure): Int32Array =>
-  select(
+/** 入度与出度都为 0 的节点索引。@throws {@link Oneway} 结构只编了出向 */
+export function isolated(structure: Structure): Int32Array {
+  const back = inboundOf(structure, "isolated");
+  const { offset } = structure.outbound;
+  return select(
     structure,
-    (u) => inDegree(structure, u) === 0 && outDegree(structure, u) === 0,
+    (u) =>
+      offset[u + 1]! === offset[u]! &&
+      back.offset[u + 1]! === back.offset[u]!,
   );
+}
+
+/** 在给定方向上没有任何关联边的节点索引。 */
+function barren(structure: Structure, side: Adjacency): Int32Array {
+  const { offset } = side;
+  return select(structure, (u) => offset[u + 1]! === offset[u]!);
+}
 
 function select(
   structure: Structure,
@@ -45,8 +64,6 @@ function select(
   return found.subarray(0, at);
 }
 
-const EMPTY: Ints = new Int32Array(0);
-
 /**
  * 邻居查询：直接切 CSR，返回底层数组的**视图**——不复制、不给每个节点分配数组。
  * 物化一份的话就是 V 个对象加 2V 个数组，而绝大多数调用只会看其中几个节点。
@@ -59,10 +76,10 @@ export class Neighborhood {
     return other.subarray(offset[u]!, offset[u + 1]!);
   }
 
+  /** @throws {@link Oneway} 结构只编了出向——给空数组就等于谎报"没有前驱" */
   public predecessors(u: number): Ints {
-    const inbound = this._structure.inbound;
-    if (!inbound) return EMPTY;
-    return inbound.other.subarray(inbound.offset[u]!, inbound.offset[u + 1]!);
+    const back = inboundOf(this._structure, "Neighborhood.predecessors");
+    return back.other.subarray(back.offset[u]!, back.offset[u + 1]!);
   }
 }
 

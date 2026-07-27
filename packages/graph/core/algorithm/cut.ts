@@ -1,4 +1,9 @@
-import { merged, type Structure } from "../snapshot";
+import {
+  inboundOf,
+  merged,
+  type Adjacency,
+  type Structure,
+} from "../snapshot";
 import { Stepwise, type Task } from "../task";
 
 const NONE = -1;
@@ -29,6 +34,7 @@ class Cut extends Stepwise<Cuts> {
   private readonly _cursors: Int32Array;
   private readonly _children: Int32Array;
   private readonly _pending: Int32Array;
+  private readonly _inbound: Adjacency;
   private readonly _merged: boolean;
   private readonly _bridges: Bridge[] = [];
   private _depth = NONE;
@@ -39,6 +45,7 @@ class Cut extends Stepwise<Cuts> {
 
   public constructor(private readonly _structure: Structure) {
     super();
+    this._inbound = inboundOf(_structure, "cuts");
     const n = _structure.order;
     this._discovered = new Int32Array(n).fill(NONE);
     this._low = new Int32Array(n);
@@ -51,7 +58,7 @@ class Cut extends Stepwise<Cuts> {
     this._merged = merged(_structure);
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._clock / this._structure.order;
@@ -111,7 +118,6 @@ class Cut extends Stepwise<Cuts> {
   /** 把关联边（出边在前、入边在后）按序号取到 `_other` / `_edge`。 */
   private _select(u: number, index: number): boolean {
     const { offset, other, edge } = this._structure.outbound;
-    const inbound = this._structure.inbound;
     const outgoing = offset[u + 1]! - offset[u]!;
     if (index < outgoing) {
       const k = offset[u]! + index;
@@ -119,12 +125,14 @@ class Cut extends Stepwise<Cuts> {
       this._edge = edge[k]!;
       return true;
     }
-    if (this._merged || inbound === undefined) return false;
+    // 无向编译时两侧同源，再扫一遍入向就是把每条边数两次。
+    if (this._merged) return false;
+    const back = this._inbound;
     const rest = index - outgoing;
-    if (rest >= inbound.offset[u + 1]! - inbound.offset[u]!) return false;
-    const slot = inbound.offset[u]! + rest;
-    this._other = inbound.other[slot]!;
-    this._edge = inbound.edge[slot]!;
+    if (rest >= back.offset[u + 1]! - back.offset[u]!) return false;
+    const slot = back.offset[u]! + rest;
+    this._other = back.other[slot]!;
+    this._edge = back.edge[slot]!;
     return true;
   }
 
@@ -175,6 +183,7 @@ class Dominators extends Stepwise<Int32Array> {
   private readonly _stack: Int32Array;
   private readonly _cursors: Int32Array;
   private readonly _path: Int32Array;
+  private readonly _inbound: Adjacency;
   private _depth = 0;
   private _counted = 0;
   private _phase = 0;
@@ -185,6 +194,8 @@ class Dominators extends Stepwise<Int32Array> {
     entry: number,
   ) {
     super();
+    // 半支配点是靠前驱求的：缺入向会让每个节点的 idom 退化成它的 DFS 父节点。
+    this._inbound = inboundOf(_structure, "dominators");
     const n = _structure.order;
     this._order = new Int32Array(n).fill(NONE);
     this._number = new Int32Array(n).fill(NONE);
@@ -211,15 +222,23 @@ class Dominators extends Stepwise<Int32Array> {
     this._depth = 1;
   }
 
-  public get progress(): number {
-    return this._phase >= 3 ? 1 : (this._phase + this._fraction()) / 3;
+  protected measure(): number {
+    return (this._phase + this._fraction()) / 3;
   }
 
+  /** 三个阶段各占三分之一；`_phase` 到 3 时分数为 0，整体正好是 1。 */
   private _fraction(): number {
-    if (this._counted === 0) return 0;
-    return this._phase === 0
-      ? this._counted / this._structure.order
-      : this._cursor / this._counted;
+    const counted = this._counted;
+    if (counted === 0) return 0;
+    switch (this._phase) {
+      case 0:
+        return counted / this._structure.order;
+      // 阶段 1 的游标是从 counted-1 倒着走到 0 的，直接相除会让进度往回跑。
+      case 1:
+        return 1 - this._cursor / counted;
+      default:
+        return this._cursor / counted;
+    }
   }
 
   protected step(): boolean {
@@ -279,15 +298,13 @@ class Dominators extends Stepwise<Int32Array> {
     const w = this._cursor--;
 
     const node = this._order[w]!;
-    const inbound = this._structure.inbound;
-    if (inbound !== undefined) {
-      for (let k = inbound.offset[node]!; k < inbound.offset[node + 1]!; k++) {
-        const number = this._number[inbound.other[k]!]!;
-        if (number === NONE) continue;
-        const candidate = this._evaluate(number);
-        if (this._semi[candidate]! < this._semi[w]!) {
-          this._semi[w] = this._semi[candidate]!;
-        }
+    const back = this._inbound;
+    for (let k = back.offset[node]!; k < back.offset[node + 1]!; k++) {
+      const number = this._number[back.other[k]!]!;
+      if (number === NONE) continue;
+      const candidate = this._evaluate(number);
+      if (this._semi[candidate]! < this._semi[w]!) {
+        this._semi[w] = this._semi[candidate]!;
       }
     }
 

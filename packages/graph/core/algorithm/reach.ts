@@ -140,7 +140,7 @@ class Propagate extends Stepwise<Closure> {
     }
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._partition.count === 0
       ? 1
       : this._component / this._partition.count;
@@ -195,10 +195,16 @@ class Propagate extends Stepwise<Closure> {
 export const closure = (structure: Structure): Task<Closure> =>
   chain(scc(structure), (partition) => new Propagate(structure, partition));
 
-/** 传递归约：去掉能由其他路径间接抵达的边。只对 DAG 有唯一解。 */
+/**
+ * 传递归约：去掉能由其他路径间接抵达的边。只对 DAG 有唯一解。
+ *
+ * @remarks 一步只判一条候选边，单步因此是 O(deg)，与 Dijkstra 同阶。整节点一步的话单步
+ *   就是 O(deg²)——扇出 4000 时一步要 155ms，`schedule` 的预算再小也让不出帧。
+ */
 class Reduce extends Stepwise<Array<readonly [number, number]>> {
   private readonly _kept: Array<readonly [number, number]> = [];
   private _node = 0;
+  private _slot = 0;
 
   public constructor(
     private readonly _structure: Structure,
@@ -207,23 +213,48 @@ class Reduce extends Stepwise<Array<readonly [number, number]>> {
     super();
   }
 
-  public get progress(): number {
-    return this._structure.order === 0 ? 1 : this._node / this._structure.order;
+  protected measure(): number {
+    const { order } = this._structure;
+    const total = order + this._structure.outbound.offset[order]!;
+    return total === 0 ? 1 : (this._node + this._slot) / total;
   }
 
   protected step(): boolean {
-    if (this._node >= this._structure.order) return false;
-    const u = this._node++;
-    const { offset, other } = this._structure.outbound;
-    const targets = [...new Set(other.subarray(offset[u]!, offset[u + 1]!))];
+    const { order } = this._structure;
+    if (this._node >= order) return false;
 
-    for (const v of targets) {
-      const bypassed = targets.some(
-        (rival) => rival !== v && this._closure.linked(rival, v),
-      );
-      if (!bypassed) this._kept.push([u, v]);
+    const { offset, other } = this._structure.outbound;
+    if (this._slot >= offset[this._node + 1]!) {
+      this._node++;
+      return this._node < order;
     }
-    return this._node < this._structure.order;
+
+    const u = this._node;
+    const slot = this._slot++;
+    const v = other[slot]!;
+    if (!this._repeated(u, slot, v) && !this._bypassed(u, v)) {
+      this._kept.push([u, v]);
+    }
+    return true;
+  }
+
+  /** 平行边只留一条：同一个 `v` 在本节点更早的槽位上已经判过。 */
+  private _repeated(u: number, slot: number, v: number): boolean {
+    const { offset, other } = this._structure.outbound;
+    for (let k = offset[u]!; k < slot; k++) {
+      if (other[k] === v) return true;
+    }
+    return false;
+  }
+
+  /** `v` 能否由 `u` 的另一个直接后继间接抵达。 */
+  private _bypassed(u: number, v: number): boolean {
+    const { offset, other } = this._structure.outbound;
+    for (let k = offset[u]!; k < offset[u + 1]!; k++) {
+      const rival = other[k]!;
+      if (rival !== v && this._closure.linked(rival, v)) return true;
+    }
+    return false;
   }
 
   public result(): Array<readonly [number, number]> {

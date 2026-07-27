@@ -1,4 +1,10 @@
-import { merged, type Adjacency, type Ints, type Structure } from "../snapshot";
+import {
+  inboundOf,
+  merged,
+  type Adjacency,
+  type Ints,
+  type Structure,
+} from "../snapshot";
 import { Stepwise, transform, type Task } from "../task";
 
 const NONE = -1;
@@ -45,10 +51,14 @@ class Weak extends Stepwise<Partition> {
     super();
     this._component = new Int32Array(_structure.order).fill(NONE);
     this._stack = new Int32Array(_structure.order);
-    this._inbound = merged(_structure) ? undefined : _structure.inbound;
+    // 弱连通要忽略方向：缺入向就只能沿出边走，得到的是按可达性的分组而非弱连通分量
+    // （`0→2, 1→2` 会报成两个分量）。
+    this._inbound = merged(_structure)
+      ? undefined
+      : inboundOf(_structure, "components");
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0 ? 1 : this._seen / this._structure.order;
   }
 
@@ -125,7 +135,7 @@ class Strong extends Stepwise<Partition> {
     this._path = new Int32Array(n);
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._settledNodes / this._structure.order;
@@ -259,7 +269,7 @@ class Cycles extends Stepwise<number[][]> {
     );
   }
 
-  public get progress(): number {
+  protected measure(): number {
     return this._structure.order === 0
       ? 1
       : this._start / this._structure.order;
