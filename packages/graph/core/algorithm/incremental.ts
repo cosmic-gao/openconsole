@@ -21,7 +21,7 @@ const NONE = -1;
  */
 export class Ordering<N = unknown, E = unknown> {
   /**
-   * 位次 + 1，`0` 表示该槽位不在跟踪范围内（从未登记，或 `dispose` 之后新增的）。
+   * 位次 + 1，`0` 表示该槽位不在跟踪范围内（从未登记、已删除，或 `dispose` 之后新增的）。
    * 全体统一偏移不影响任何比较，却省掉一条并行的「是否有效」位图。
    */
   private _rank: Int32Array;
@@ -37,6 +37,9 @@ export class Ordering<N = unknown, E = unknown> {
       signal.on("nodeAdded", ({ slot }) => {
         this._fit(slot);
         this._rank[slot] = this._next++;
+      }),
+      signal.on("nodeDropped", ({ slot }) => {
+        this._rank[slot] = 0;
       }),
       signal.on("edgeAdded", ({ slot, source, target }) => {
         this._insert(slot, _graph.indexOf(source), _graph.indexOf(target));

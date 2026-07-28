@@ -42,8 +42,8 @@ export interface PathOptions {
   combine?: Combine;
 }
 
-/** 桶队列上限：超过它桶数组与空桶扫描都不再划算。 */
-const BUCKETS = 1 << 16;
+/** 桶队列的最大边权上限：路径总长随它增长，空桶扫描是 O(总长) 的实打实开销。 */
+const BUCKETS = 1 << 8;
 
 /** 边权画像：是否全为非负整数，以及最大值。 */
 interface Profile {
@@ -105,7 +105,9 @@ function pick(structure: Structure, combine: Combine): IndexQueue {
   const { integral, max } = profileOf(structure);
   // 自定义 combine 可能把优先级推出桶窗口，只有内置两种才走桶队列。
   const bounded = combine === sum || combine === bottleneck;
-  return integral && bounded && max <= BUCKETS
+  // 空桶扫描要靠出入队的量摊薄，稀疏图摊不动，反而比堆慢。
+  const dense = structure.size >= 2 * structure.order;
+  return integral && bounded && dense && max <= BUCKETS
     ? new BucketQueue(structure.order, max)
     : new LazyQueue(structure.order);
 }
@@ -118,7 +120,9 @@ class Dijkstra extends Stepwise<Tree> {
   public readonly distance: Float64Array;
   public readonly parent: Int32Array;
   private readonly _closed: Uint8Array;
-  private readonly _queue: IndexQueue;
+  /** 首步才建：挑队列要先扫一遍边权画像，摆在构造函数里就成了不可中断的 O(E)。 */
+  private _queue: IndexQueue | undefined;
+  private readonly _source: number;
   private readonly _weight: Reals | undefined;
   /** 默认语义是加法；据此特化内层循环，省掉每条边一次的间接调用。 */
   private readonly _adding: boolean;
@@ -134,14 +138,9 @@ class Dijkstra extends Stepwise<Tree> {
     this.distance = new Float64Array(_structure.order).fill(Infinity);
     this.parent = new Int32Array(_structure.order).fill(-1);
     this._closed = new Uint8Array(_structure.order);
-    this._queue = pick(_structure, _combine);
+    this._source = source;
     this._weight = _structure.weight;
     this._adding = _combine === sum;
-
-    if (source >= 0 && source < _structure.order) {
-      this.distance[source] = 0;
-      this._queue.push(source, 0);
-    }
   }
 
   protected measure(): number {
@@ -150,8 +149,19 @@ class Dijkstra extends Stepwise<Tree> {
       : this._reached / this._structure.order;
   }
 
+  private _open(): IndexQueue {
+    const queue = pick(this._structure, this._combine);
+    const source = this._source;
+    if (source >= 0 && source < this._structure.order) {
+      this.distance[source] = 0;
+      queue.push(source, 0);
+    }
+    return queue;
+  }
+
   protected step(): boolean {
-    const u = this._queue.poll();
+    const queue = (this._queue ??= this._open());
+    const u = queue.poll();
     if (u === -1) return false;
     if (this._closed[u] === 1) return true;
     this._closed[u] = 1;
@@ -169,7 +179,7 @@ class Dijkstra extends Stepwise<Tree> {
       if (candidate < this.distance[v]!) {
         this.distance[v] = candidate;
         this.parent[v] = u;
-        this._queue.push(v, candidate);
+        queue.push(v, candidate);
       }
     }
     return true;
@@ -286,6 +296,7 @@ class AStar extends Stepwise<Route | undefined> {
       if (this._closed[v] === 1) continue;
       const e = edge[k]!;
       const cost = weight === undefined ? 1 : weight[e]!;
+      if (Number.isNaN(cost)) throw new Invalid(e);
       if (cost < 0) throw new Negative(cost, e);
       const candidate = this._adding ? base + cost : this._combine(base, cost);
       if (candidate >= this._score[v]!) continue;
@@ -409,6 +420,7 @@ class Bidirectional extends Stepwise<Route | undefined> {
       if (near.settled[v] === 1) continue;
       const e = edge[k]!;
       const cost = weight === undefined ? 1 : weight[e]!;
+      if (Number.isNaN(cost)) throw new Invalid(e);
       if (cost < 0) throw new Negative(cost, e);
       const candidate = base + cost;
       if (candidate < near.distance[v]!) {
@@ -485,6 +497,8 @@ class BellmanFord extends Stepwise<Tree> {
   private _cursor = 0;
   /** 本轮是否有过改善；一整轮无改善即收敛。 */
   private _changed = false;
+  /** 最后一个被松弛的节点，负环归因从它回溯。 */
+  private _last = -1;
 
   public constructor(
     private readonly _structure: Structure,
@@ -530,22 +544,22 @@ class BellmanFord extends Stepwise<Tree> {
     const weight = this._weight;
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       const v = other[k]!;
-      const candidate = base + (weight === undefined ? 1 : weight[edge[k]!]!);
+      const cost = weight === undefined ? 1 : weight[edge[k]!]!;
+      if (Number.isNaN(cost)) throw new Invalid(edge[k]!);
+      const candidate = base + cost;
       if (candidate < this._distance[v]!) {
         this._distance[v] = candidate;
         this._parent[v] = u;
         this._changed = true;
+        this._last = v;
       }
     }
     return true;
   }
 
-  /** 沿前驱链走 order 步必然落在环上，再绕一圈即得环成员。 */
+  /** 从最后被松弛的节点沿前驱链走 order 步必然落在环上，再绕一圈即得环成员。 */
   private _blame(): number[] {
-    let cursor = 0;
-    for (let u = 0; u < this._structure.order; u++) {
-      if (this._parent[u] !== -1) cursor = u;
-    }
+    let cursor = this._last;
     for (let i = 0; i < this._structure.order; i++) {
       const next = this._parent[cursor]!;
       if (next === -1) break;
@@ -592,9 +606,10 @@ export class Matrix {
   }
 }
 
-/** Floyd-Warshall：每步推进一个中转节点的一行。 */
+/** Floyd-Warshall：先逐行铺底（每步一个节点），再每步推进一个中转节点的一行。 */
 class FloydWarshall extends Stepwise<Matrix> {
   private readonly _cells: Float64Array;
+  private _primed = 0;
   private _through = 0;
   private _row = 0;
 
@@ -605,23 +620,30 @@ class FloydWarshall extends Stepwise<Matrix> {
     super();
     const n = _structure.order;
     afford(8 * n * n, limit, `floydWarshall on V=${n}`);
-    this._cells = new Float64Array(n * n).fill(Infinity);
-    for (let u = 0; u < n; u++) this._cells[u * n + u] = 0;
-
-    const { offset, other, edge } = _structure.outbound;
-    const weight = _structure.weight;
-    for (let u = 0; u < n; u++) {
-      for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-        const cell = u * n + other[k]!;
-        const cost = weight === undefined ? 1 : weight[edge[k]!]!;
-        if (cost < this._cells[cell]!) this._cells[cell] = cost;
-      }
-    }
+    this._cells = new Float64Array(n * n);
   }
 
   protected measure(): number {
     const n = this._structure.order;
-    return n === 0 ? 1 : (this._through * n + this._row) / (n * n);
+    return n === 0
+      ? 1
+      : (this._primed + this._through * n + this._row) / (n + n * n);
+  }
+
+  private _prime(u: number): void {
+    const n = this._structure.order;
+    const row = u * n;
+    this._cells.fill(Infinity, row, row + n);
+    this._cells[row + u] = 0;
+
+    const { offset, other, edge } = this._structure.outbound;
+    const weight = this._structure.weight;
+    for (let k = offset[u]!; k < offset[u + 1]!; k++) {
+      const cell = row + other[k]!;
+      const cost = weight === undefined ? 1 : weight[edge[k]!]!;
+      if (Number.isNaN(cost)) throw new Invalid(edge[k]!);
+      if (cost < this._cells[cell]!) this._cells[cell] = cost;
+    }
   }
 
   /**
@@ -629,9 +651,14 @@ class FloydWarshall extends Stepwise<Matrix> {
    *
    * @remarks 整个矩阵是 O(V³)，一步吃掉一个完整的中转节点就是 O(V²)——V=5000 时单步
    *   要几十毫秒，`schedule` 的一帧预算再小也让不出去。粒度必须细到与其他算法可比。
+   *   铺底同理：整块 fill 加播种是 O(V²+E)，拆成每步一行才进得了预算。
    */
   protected step(): boolean {
     const n = this._structure.order;
+    if (this._primed < n) {
+      this._prime(this._primed++);
+      return true;
+    }
     if (this._through >= n) return false;
 
     const k = this._through;

@@ -7,6 +7,7 @@ import {
   Graph,
   graphId,
   invert,
+  Missing,
   nodeId,
   pack,
   Port,
@@ -100,6 +101,24 @@ describe("紧凑格式", () => {
   it("版本不匹配抛 Schema", () => {
     const { compact } = pack(randomGraph(56, { order: 4 }));
     expect(() => unpack({ compact: { ...compact, v: 99 } })).toThrow(Schema);
+  });
+
+  it("自定义 socket 经 sockets 选项还原，缺表则明确报错", () => {
+    const exotic = new Socket("exotic");
+    const graph = new Graph<number, number>(graphId("custom"));
+    graph.addNode(
+      new Vertex<Sockets, Sockets, number>(nodeId("a"), 1).addOutput(
+        "out",
+        exotic,
+      ),
+    );
+    const bundle = pack(graph);
+
+    const restored = unpack<number, number>(bundle, { sockets: [exotic] });
+    expect(restored.node(nodeId("a"))!.outputs["out"]!.socket).toBe(exotic);
+
+    expect(() => unpack(bundle)).toThrow(Missing);
+    expect(() => unpack(bundle)).toThrow(/socket "exotic"/);
   });
 
   it("紧凑格式确实比展开 JSON 小", () => {

@@ -34,7 +34,7 @@ export class Duplicate extends GraphError {
 
 export class Missing extends GraphError {
   public constructor(
-    kind: "node" | "edge" | "port",
+    kind: "node" | "edge" | "port" | "socket",
     id: string,
     hint?: string,
   ) {
@@ -152,11 +152,8 @@ const megabytes = (bytes: number): string =>
   `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
 export class Schema extends GraphError {
-  public constructor(got: unknown, expected: number) {
-    super(
-      "schema",
-      `unsupported schema version ${String(got)} (expected ${expected})`,
-    );
+  public constructor(detail: string) {
+    super("schema", detail);
   }
 }
 

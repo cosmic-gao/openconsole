@@ -203,6 +203,30 @@ describe("订阅者相互隔离", () => {
     graph.addNode(vertex("good"));
     expect(seen).toEqual([nodeId("good")]);
   });
+
+  it("多个订阅者抛错时聚合成 AggregateError，一个不丢", () => {
+    const graph = blank();
+    graph.signal.on("nodeAdded", () => {
+      throw new Error("first");
+    });
+    graph.signal.on("nodeAdded", () => {
+      throw new Error("second");
+    });
+
+    let caught: unknown;
+    try {
+      graph.addNode(vertex("a"));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AggregateError);
+    const { errors } = caught as AggregateError;
+    expect(errors.map((error) => (error as Error).message)).toEqual([
+      "first",
+      "second",
+    ]);
+  });
 });
 
 describe("版本号", () => {

@@ -86,6 +86,36 @@ export function randomGraph(
   return graph;
 }
 
+/**
+ * 无标度图（Barabási–Albert 偏好连接）：新节点以一半概率均匀选边、一半概率按度数选边。
+ * 低直径、重尾度分布——社交网络形状，前沿会在几层内膨胀到覆盖大半个图。
+ */
+export function scaleFree(
+  seed: number,
+  order = 20,
+  degree = 2,
+): Graph<number, number> {
+  const rng = new Rng(seed);
+  const graph = new Graph<number, number>(graphId(`scale-${seed}`));
+  for (let i = 0; i < order; i++) graph.addNode(vertex(`n${i}`, i));
+
+  const ends: number[] = [];
+  for (let i = 1; i < order; i++) {
+    const stubs = Math.min(degree, i);
+    for (let k = 0; k < stubs; k++) {
+      const j =
+        ends.length === 0 || rng.int(2) === 0
+          ? rng.int(i)
+          : ends[rng.int(ends.length)]!;
+      graph.connect([nodeId(`n${i}`), "out"], [nodeId(`n${j}`), "in"], {
+        weight: rng.int(9) + 1,
+      });
+      ends.push(i, j);
+    }
+  }
+  return graph;
+}
+
 /** 一个中心节点扇出 `fan` 条边；用来把删边路径的复杂度逼出来。 */
 export function hub(fan: number): Graph<number, number> {
   const graph = new Graph<number, number>(graphId("hub"));

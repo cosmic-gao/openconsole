@@ -19,7 +19,9 @@ import {
   generations,
   Graph,
   graphId,
+  Invalid,
   kruskal,
+  levels,
   nodeId,
   prim,
   reachable,
@@ -32,6 +34,8 @@ import {
   Snapshot,
   topology,
   toposort,
+  type Structure,
+  type Task,
 } from "../../index";
 import * as naive from "../naive";
 import {
@@ -39,6 +43,7 @@ import {
   edgeKey,
   groupKeys,
   randomGraph,
+  scaleFree,
   segments,
   setKeys,
   undirectedKey,
@@ -120,6 +125,50 @@ describe("拓扑序", () => {
     const snapshot = Snapshot.of(randomGraph(3, { order: 10, density: 4 }));
     expect(settle(acyclic(snapshot))).toBe(false);
     expect(() => settle(toposort(snapshot))).toThrow(Cycle);
+  });
+});
+
+describe("最短跳数", () => {
+  const alike = (
+    snapshot: Snapshot,
+    depth: Int32Array,
+    expected: Map<string, number>,
+  ): void => {
+    for (let u = 0; u < snapshot.order; u++) {
+      expect(depth[u]).toBe(expected.get(snapshot.at(u)!) ?? -1);
+    }
+  };
+
+  it.each(SEEDS)("seed %i：有向层级与朴素 BFS 一致", (seed) => {
+    const graph = randomGraph(seed, { order: 40, density: 3 });
+    const snapshot = Snapshot.of(graph);
+    const depth = levels(snapshot, [snapshot.indexOf(nodeId("n0"))]);
+    alike(snapshot, depth, naive.hops(graph, [nodeId("n0")]));
+  });
+
+  it.each(SEEDS)(
+    "seed %i：无标度无向图与朴素 BFS 一致（前沿膨胀，覆盖反向扫描）",
+    (seed) => {
+      const graph = scaleFree(seed, 400, 6);
+      const snapshot = Snapshot.of(graph, { undirected: true });
+      const depth = levels(snapshot, [snapshot.indexOf(nodeId("n0"))]);
+      alike(snapshot, depth, naive.hops(graph, [nodeId("n0")], true));
+    },
+  );
+
+  it.each(SEEDS)("seed %i：只编出向与双向编译给出相同层级", (seed) => {
+    const graph = randomGraph(seed, { order: 40, density: 3 });
+    const full = Snapshot.of(graph);
+    const half = Snapshot.of(graph, { outbound: true });
+    expect([...levels(half, [0])]).toEqual([...levels(full, [0])]);
+  });
+
+  it.each(SEEDS)("seed %i：多起点取到最近起点的跳数", (seed) => {
+    const graph = scaleFree(seed, 200, 4);
+    const snapshot = Snapshot.of(graph, { undirected: true });
+    const starts = [nodeId("n0"), nodeId("n199")];
+    const depth = levels(snapshot, starts.map((s) => snapshot.indexOf(s)));
+    alike(snapshot, depth, naive.hops(graph, starts, true));
   });
 });
 
@@ -437,5 +486,119 @@ describe("最小生成森林", () => {
       seen.add(ends);
     }
     expect(seen.size).toBe(links.length);
+  });
+});
+
+describe("负环归因", () => {
+  it("报出的环成员真实成环，不受高编号旁支干扰", () => {
+    const graph = new Graph<null, number>(graphId("blame"));
+    for (const name of ["a", "b", "c", "d", "e", "s"]) {
+      graph.addNode(vertex<null>(name, null));
+    }
+    graph.connect([nodeId("s"), "out"], [nodeId("a"), "in"], { weight: 1 });
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 1 });
+    graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"], { weight: -4 });
+    graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"], { weight: 1 });
+    graph.connect([nodeId("s"), "out"], [nodeId("d"), "in"], { weight: 10 });
+    graph.connect([nodeId("d"), "out"], [nodeId("e"), "in"], { weight: 10 });
+
+    const snapshot = Snapshot.of(graph, { weight: cost });
+    let caught: Cycle | undefined;
+    try {
+      settle(bellmanFord(snapshot, snapshot.indexOf(nodeId("s"))));
+    } catch (error) {
+      caught = error as Cycle;
+    }
+
+    expect(caught).toBeInstanceOf(Cycle);
+    const members = caught!.nodes;
+    expect(members.length).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i < members.length; i++) {
+      expect(
+        graph.adjacent(
+          snapshot.label(members[i]!),
+          snapshot.label(members[(i + 1) % members.length]!),
+        ),
+      ).toBe(true);
+    }
+    expect(new Set(snapshot.names(members))).toEqual(
+      new Set([nodeId("a"), nodeId("b"), nodeId("c")]),
+    );
+  });
+});
+
+describe("NaN 权重防线", () => {
+  const tainted: Structure = {
+    order: 3,
+    size: 2,
+    outbound: {
+      offset: Int32Array.of(0, 1, 2, 2),
+      other: Int32Array.of(1, 2),
+      edge: Int32Array.of(0, 1),
+    },
+    inbound: {
+      offset: Int32Array.of(0, 0, 1, 2),
+      other: Int32Array.of(0, 1),
+      edge: Int32Array.of(0, 1),
+    },
+    weight: Float64Array.of(3, NaN),
+  };
+
+  const guarded = [
+    ["astar", () => astar(tainted, 0, 2)],
+    ["bidirectional", () => bidirectional(tainted, 0, 2)],
+    ["bellmanFord", () => bellmanFord(tainted, 0)],
+    ["floydWarshall", () => floydWarshall(tainted)],
+    ["prim", () => prim(tainted)],
+    ["kruskal", () => kruskal(tainted)],
+  ] as const;
+
+  it.each(guarded)("%s 抛 Invalid 而不是静默不可达", (_label, run) => {
+    expect(() => settle(run() as Task<unknown>)).toThrow(Invalid);
+  });
+});
+
+describe("简单环的分量限域", () => {
+  const rings = <N, E>(graph: Graph<N, E>): string[] => {
+    const snapshot = Snapshot.of(graph);
+    return settle(simpleCycles(snapshot))
+      .map((cycle) => snapshot.names(cycle).sort().join(","))
+      .sort();
+  };
+
+  it("多个分量各自出环，DAG 部分一个不多", () => {
+    const graph = new Graph<null, number>(graphId("scoped"));
+    for (const name of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
+      graph.addNode(vertex<null>(name, null));
+    }
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("a"), "in"]);
+    graph.connect([nodeId("c"), "out"], [nodeId("d"), "in"]);
+    graph.connect([nodeId("d"), "out"], [nodeId("e"), "in"]);
+    graph.connect([nodeId("e"), "out"], [nodeId("c"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"]);
+    graph.connect([nodeId("e"), "out"], [nodeId("f"), "in"]);
+    graph.connect([nodeId("f"), "out"], [nodeId("g"), "in"]);
+    graph.connect([nodeId("h"), "out"], [nodeId("h"), "in"]);
+
+    expect(rings(graph)).toEqual(["a,b", "c,d,e", "h"]);
+  });
+
+  it("纯 DAG 上一个环也不报", () => {
+    const graph = randomGraph(61, { order: 300, density: 3, acyclic: true });
+    expect(rings(graph)).toEqual([]);
+  });
+
+  it("同分量内的嵌套环一个不漏", () => {
+    const graph = new Graph<null, number>(graphId("nested"));
+    for (const name of ["a", "b", "c"]) {
+      graph.addNode(vertex<null>(name, null));
+    }
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("a"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"]);
+    graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]);
+
+    expect(rings(graph)).toEqual(["a,b", "a,b,c"]);
   });
 });

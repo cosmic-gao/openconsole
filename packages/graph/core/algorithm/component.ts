@@ -5,7 +5,7 @@ import {
   type Ints,
   type Structure,
 } from "../snapshot";
-import { Stepwise, transform, type Task } from "../task";
+import { chain, Stepwise, transform, type Task } from "../task";
 
 const NONE = -1;
 
@@ -247,10 +247,13 @@ export const condensation = (structure: Structure): Task<Condensed> =>
 /**
  * 枚举全部简单环（Johnson）。环的数量可能随规模爆炸，务必配合中断使用。
  *
- * @remarks B 列表是 `Set`：Johnson 的 unblock 要反复判成员，用数组线性查找会把发布的
- *   复杂度界打破。
+ * @remarks 搜索限制在起点所属的强连通分量内——环不可能跨分量，DAG 上因此只剩
+ *   一遍 O(V+E) 的跳过。B 列表是 `Set`：Johnson 的 unblock 要反复判成员，
+ *   用数组线性查找会把发布的复杂度界打破。
  */
 class Cycles extends Stepwise<number[][]> {
+  private readonly _component: Ints;
+  private readonly _groups: Int32Array[];
   private readonly _blocked: Uint8Array;
   private readonly _noEntry: Array<Set<number>>;
   private readonly _path: number[] = [];
@@ -260,8 +263,13 @@ class Cycles extends Stepwise<number[][]> {
   private readonly _cycles: number[][] = [];
   private _start = 0;
 
-  public constructor(private readonly _structure: Structure) {
+  public constructor(
+    private readonly _structure: Structure,
+    partition: Partition,
+  ) {
     super();
+    this._component = partition.component;
+    this._groups = partition.groups();
     this._blocked = new Uint8Array(_structure.order);
     this._noEntry = Array.from(
       { length: _structure.order },
@@ -278,8 +286,14 @@ class Cycles extends Stepwise<number[][]> {
   protected step(): boolean {
     if (this._frames.length === 0) {
       if (this._start >= this._structure.order) return false;
-      this._blocked.fill(0);
-      for (const waiting of this._noEntry) waiting.clear();
+      if (!this._cyclic(this._start)) {
+        this._start++;
+        return true;
+      }
+      for (const member of this._groups[this._component[this._start]!]!) {
+        this._blocked[member] = 0;
+        this._noEntry[member]!.clear();
+      }
       this._enter(this._start);
       return true;
     }
@@ -292,6 +306,7 @@ class Cycles extends Stepwise<number[][]> {
     if (this._cursors[top]! < end) {
       const v = other[this._cursors[top]!++]!;
       if (v < this._start) return true;
+      if (this._component[v] !== this._component[u]) return true;
       if (v === this._start) {
         this._cycles.push([...this._path]);
         this._found[top] = true;
@@ -306,7 +321,9 @@ class Cycles extends Stepwise<number[][]> {
     } else {
       for (let k = offset[u]!; k < end; k++) {
         const v = other[k]!;
-        if (v >= this._start) this._noEntry[v]!.add(u);
+        if (v >= this._start && this._component[v] === this._component[u]) {
+          this._noEntry[v]!.add(u);
+        }
       }
     }
 
@@ -319,6 +336,15 @@ class Cycles extends Stepwise<number[][]> {
     }
     if (this._frames.length === 0) this._start++;
     return true;
+  }
+
+  private _cyclic(start: number): boolean {
+    if (this._groups[this._component[start]!]!.length > 1) return true;
+    const { offset, other } = this._structure.outbound;
+    for (let k = offset[start]!; k < offset[start + 1]!; k++) {
+      if (other[k] === start) return true;
+    }
+    return false;
   }
 
   private _enter(u: number): void {
@@ -349,4 +375,4 @@ class Cycles extends Stepwise<number[][]> {
 }
 
 export const simpleCycles = (structure: Structure): Task<number[][]> =>
-  new Cycles(structure);
+  chain(scc(structure), (partition) => new Cycles(structure, partition));

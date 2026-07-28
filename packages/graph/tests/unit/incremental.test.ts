@@ -110,6 +110,21 @@ describe("增量拓扑序", () => {
     ordering.dispose();
   });
 
+  it("删除节点后按槽位查询也拿不到残留位次", () => {
+    const graph = dag(66, 10);
+    const ordering = new Ordering(graph);
+    const slot = graph.indexOf(nodeId("n3"));
+    expect(ordering.rankAt(slot)).toBeGreaterThanOrEqual(0);
+
+    graph.dropNode(nodeId("n3"));
+    expect(ordering.rankAt(slot)).toBe(-1);
+
+    graph.addNode(vertex("reborn", 0));
+    expect(graph.indexOf(nodeId("reborn"))).toBe(slot);
+    expect(ordering.rankAt(slot)).toBeGreaterThanOrEqual(0);
+    ordering.dispose();
+  });
+
   it("事务里的批量变更在末尾一次消化", () => {
     const graph = dag(64, 15);
     const ordering = new Ordering(graph);

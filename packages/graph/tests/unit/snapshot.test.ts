@@ -11,6 +11,7 @@ import {
   Oneway,
   outDegree,
   scc,
+  Schema,
   settle,
   shortestPath,
   Snapshot,
@@ -277,6 +278,24 @@ describe("增量重编译", () => {
     expect(next.order).toBe(base.order + 1);
   });
 
+  it("weight 回调引用变了就重算权重，不再原样返回", () => {
+    const graph = build();
+    const base = weighted(graph);
+
+    const doubled = Snapshot.of(graph, {
+      weight: (weight) => (weight ?? 1) * 2,
+      reuse: base,
+    });
+    expect(doubled).not.toBe(base);
+    expect(doubled.outbound).toBe(base.outbound);
+    expect([...doubled.weight!]).toEqual([...base.weight!].map((w) => w * 2));
+
+    expect(Snapshot.of(graph, { weight: cost, reuse: doubled })).not.toBe(
+      doubled,
+    );
+    expect(Snapshot.of(graph, { weight: cost, reuse: base })).toBe(base);
+  });
+
   it("带谓词、换选项、传别的图、传翻转过的快照，都只是没有加速", () => {
     const graph = build();
     const base = weighted(graph);
@@ -308,6 +327,192 @@ describe("增量重编译", () => {
       reuse: base.reverse(),
     });
     expect([...flipped.outbound.other]).toEqual([...base.outbound.other]);
+  });
+});
+
+describe("平行边合并", () => {
+  const parallel = (): Graph<null, number> => {
+    const graph = new Graph<null, number>(graphId("merge"));
+    graph.addNode(vertex<null>("a", null));
+    graph.addNode(vertex<null>("b", null));
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 3 });
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 7 });
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 5 });
+    return graph;
+  };
+
+  it("同向平行边折成一条，权重按 merge 聚合", () => {
+    const graph = parallel();
+    const least = Snapshot.of(graph, { weight: cost, merge: Math.min });
+    expect(least.size).toBe(1);
+    expect([...least.weight!]).toEqual([3]);
+
+    const total = Snapshot.of(graph, {
+      weight: cost,
+      merge: (a, b) => a + b,
+    });
+    expect([...total.weight!]).toEqual([15]);
+  });
+
+  it("边 id 取首条，标签层与合并后的边一一对应", () => {
+    const graph = parallel();
+    const snapshot = Snapshot.of(graph, { weight: cost, merge: Math.min });
+    expect(snapshot.edges).toHaveLength(1);
+    expect(snapshot.edges[0]).toBe(graph.edges()[0]);
+  });
+
+  it("不带权重时只去重，不碰 merge 回调", () => {
+    const snapshot = Snapshot.of(parallel(), {
+      merge: () => {
+        throw new Error("unreachable");
+      },
+    });
+    expect(snapshot.size).toBe(1);
+    expect(snapshot.weight).toBeUndefined();
+  });
+
+  it("无向合并把两个方向折成一条", () => {
+    const graph = new Graph<null, number>(graphId("both"));
+    graph.addNode(vertex<null>("a", null));
+    graph.addNode(vertex<null>("b", null));
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 4 });
+    graph.connect([nodeId("b"), "out"], [nodeId("a"), "in"], { weight: 9 });
+
+    const snapshot = Snapshot.of(graph, {
+      weight: cost,
+      undirected: true,
+      merge: Math.min,
+    });
+    expect(snapshot.size).toBe(1);
+    expect([...snapshot.weight!]).toEqual([4]);
+    expect(outOf(snapshot, nodeId("a"))).toEqual([nodeId("b")]);
+    expect(outOf(snapshot, nodeId("b"))).toEqual([nodeId("a")]);
+  });
+
+  it("真自环在合并下保留一条", () => {
+    const graph = new Graph<null, number>(graphId("loop"));
+    graph.addNode(vertex<null>("a", null));
+    graph.connect([nodeId("a"), "out"], [nodeId("a"), "in"], { weight: 2 });
+    graph.connect([nodeId("a"), "out"], [nodeId("a"), "in"], { weight: 6 });
+
+    const snapshot = Snapshot.of(graph, { weight: cost, merge: Math.min });
+    expect(snapshot.size).toBe(1);
+    expect([...snapshot.weight!]).toEqual([2]);
+  });
+
+  it("merge 给出 NaN 时报错并点名边", () => {
+    expect(() =>
+      Snapshot.of(parallel(), { weight: cost, merge: () => NaN }),
+    ).toThrow(Invalid);
+  });
+
+  it("合并编译不参与增量复用", () => {
+    const graph = parallel();
+    const base = Snapshot.of(graph, { weight: cost, merge: Math.min });
+    const next = Snapshot.of(graph, {
+      weight: cost,
+      merge: Math.min,
+      reuse: base,
+    });
+    expect(next).not.toBe(base);
+    expect(next.size).toBe(1);
+  });
+});
+
+describe("共享内存编译", () => {
+  const backing = (list: Iterable<number>): unknown =>
+    (list as Int32Array).buffer;
+
+  it("CSR 与权重落在 SharedArrayBuffer 上，算法照跑", () => {
+    const graph = randomGraph(91, { order: 30, density: 2 });
+    const snapshot = Snapshot.of(graph, { weight: cost, shared: true });
+
+    expect(backing(snapshot.outbound.offset)).toBeInstanceOf(SharedArrayBuffer);
+    expect(backing(snapshot.outbound.other)).toBeInstanceOf(SharedArrayBuffer);
+    expect(backing(snapshot.inbound!.edge)).toBeInstanceOf(SharedArrayBuffer);
+    expect((snapshot.weight as Float64Array).buffer).toBeInstanceOf(
+      SharedArrayBuffer,
+    );
+
+    const plain = weighted(graph);
+    expect(settle(scc(snapshot)).count).toBe(settle(scc(plain)).count);
+    expect([...snapshot.weight!]).toEqual([...plain.weight!]);
+  });
+
+  it("合并 + 共享的权重仍在 SharedArrayBuffer 上", () => {
+    const graph = new Graph<null, number>(graphId("shared-merge"));
+    graph.addNode(vertex<null>("a", null));
+    graph.addNode(vertex<null>("b", null));
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 3 });
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"], { weight: 7 });
+
+    const snapshot = Snapshot.of(graph, {
+      weight: cost,
+      shared: true,
+      merge: Math.min,
+    });
+    expect((snapshot.weight as Float64Array).buffer).toBeInstanceOf(
+      SharedArrayBuffer,
+    );
+    expect([...snapshot.weight!]).toEqual([3]);
+  });
+
+  it("共享与非共享互不复用，重算保持原有的底层介质", () => {
+    const graph = randomGraph(92, { order: 20, density: 2 });
+    const shared = Snapshot.of(graph, { weight: cost, shared: true });
+    expect(Snapshot.of(graph, { weight: cost, reuse: shared })).not.toBe(
+      shared,
+    );
+    expect(
+      Snapshot.of(graph, { weight: cost, shared: true, reuse: shared }),
+    ).toBe(shared);
+
+    graph.setEdgeWeight(graph.edges()[0]!, 42);
+    const next = Snapshot.of(graph, {
+      weight: cost,
+      shared: true,
+      reuse: shared,
+    });
+    expect(next.outbound).toBe(shared.outbound);
+    expect((next.weight as Float64Array).buffer).toBeInstanceOf(
+      SharedArrayBuffer,
+    );
+  });
+});
+
+describe("搬运数据的形状校验", () => {
+  it("字段长度相互矛盾时抛 Schema，而不是给出怪异行为", () => {
+    const graph = randomGraph(93, { order: 10, density: 2 });
+    const data = weighted(graph).data;
+
+    expect(() =>
+      Snapshot.from({ ...data, order: data.order + 1 }),
+    ).toThrow(Schema);
+    expect(() =>
+      Snapshot.from({ ...data, weight: new Float64Array(1) }),
+    ).toThrow(Schema);
+    expect(() =>
+      Snapshot.from({ ...data, labels: data.labels!.slice(0, 1) }),
+    ).toThrow(Schema);
+    expect(() =>
+      Snapshot.from({ ...data, edges: data.edges!.slice(0, 1) }),
+    ).toThrow(Schema);
+    expect(() =>
+      Snapshot.from({
+        ...data,
+        outbound: {
+          ...data.outbound,
+          other: data.outbound.other.subarray(0, 1),
+        },
+      }),
+    ).toThrow(Schema);
+  });
+
+  it("完好的数据照常通过", () => {
+    const graph = randomGraph(94, { order: 10, density: 2 });
+    const snapshot = weighted(graph);
+    expect(() => Snapshot.from(snapshot.data)).not.toThrow();
+    expect(() => Snapshot.from(snapshot.core)).not.toThrow();
   });
 });
 

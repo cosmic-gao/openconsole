@@ -1,5 +1,6 @@
 import { LazyQueue } from "@openconsole/queue";
 
+import { Invalid } from "../error";
 import {
   inboundOf,
   merged,
@@ -99,6 +100,7 @@ class Prim extends Stepwise<Link[]> {
     if (this._inTree[to] === 1) return;
     const weight = this._weight;
     const cost = weight === undefined ? 1 : weight[slot]!;
+    if (Number.isNaN(cost)) throw new Invalid(slot);
     if (cost >= this._reach[to]!) return;
     this._reach[to] = cost;
     this._from[to] = from;
@@ -123,6 +125,7 @@ class Kruskal extends Stepwise<Link[]> {
   private readonly _tail: Int32Array;
   private readonly _head: Int32Array;
   private readonly _parent: Int32Array;
+  private readonly _rank: Int32Array;
   private readonly _weight: Reals | undefined;
   private readonly _queue: LazyQueue;
   private readonly _links: Link[] = [];
@@ -135,6 +138,7 @@ class Kruskal extends Stepwise<Link[]> {
     this._tail = new Int32Array(_structure.size).fill(NONE);
     this._head = new Int32Array(_structure.size);
     this._parent = new Int32Array(_structure.order);
+    this._rank = new Int32Array(_structure.order);
     this._weight = _structure.weight;
     this._queue = new LazyQueue(_structure.size);
     for (let u = 0; u < _structure.order; u++) this._parent[u] = u;
@@ -157,7 +161,7 @@ class Kruskal extends Stepwise<Link[]> {
     const a = this._find(this._tail[e]!);
     const b = this._find(this._head[e]!);
     if (a !== b) {
-      this._parent[a] = b;
+      this._union(a, b);
       this._links.push({
         source: this._tail[e]!,
         target: this._head[e]!,
@@ -175,9 +179,24 @@ class Kruskal extends Stepwise<Link[]> {
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       const e = edge[k]!;
       if (this._tail[e] !== NONE) continue;
+      const cost = weight === undefined ? 1 : weight[e]!;
+      if (Number.isNaN(cost)) throw new Invalid(e);
       this._tail[e] = u;
       this._head[e] = other[k]!;
-      this._queue.push(e, weight === undefined ? 1 : weight[e]!);
+      this._queue.push(e, cost);
+    }
+  }
+
+  private _union(a: number, b: number): void {
+    const deep = this._rank[a]!;
+    const wide = this._rank[b]!;
+    if (deep < wide) {
+      this._parent[a] = b;
+    } else if (deep > wide) {
+      this._parent[b] = a;
+    } else {
+      this._parent[b] = a;
+      this._rank[a] = deep + 1;
     }
   }
 

@@ -7,7 +7,7 @@ import {
   type GraphId,
   type NodeId,
 } from "../ident";
-import { builtins, Socket } from "../socket";
+import { builtins, type Socket } from "../socket";
 import { Port, type Constraints } from "../vertex";
 
 export const VERSION = 2 as const;
@@ -113,17 +113,22 @@ export function tuples(
   return listed.length > 0 ? listed : null;
 }
 
+/** @throws {@link Missing} socket 名不在查找表里——自定义 socket 经 `UnpackOptions.sockets` 传入 */
 export function restore(
   listed: ReadonlyArray<PortTuple> | null,
   sockets: ReadonlyMap<string, Socket>,
 ): Record<string, Port> {
   const ports: Record<string, Port> = {};
   for (const [name, socket, packed] of listed ?? []) {
+    const found = sockets.get(socket);
+    if (found === undefined) {
+      throw new Missing("socket", socket, "pass it via UnpackOptions.sockets");
+    }
     const constraints: Constraints = {};
     if (packed?.m === false) constraints.multiple = false;
     if (packed?.r === true) constraints.required = true;
     if (packed?.f !== undefined) constraints.fallback = packed.f;
-    ports[name] = new Port(sockets.get(socket) ?? Socket.any, constraints);
+    ports[name] = new Port(found, constraints);
   }
   return ports;
 }
@@ -217,7 +222,11 @@ export function unpack<N, E>(
   options: UnpackOptions<N, E> = {},
 ): Graph<N, E> {
   const { compact, ids } = bundle;
-  if (compact.v !== VERSION) throw new Schema(compact.v, VERSION);
+  if (compact.v !== VERSION) {
+    throw new Schema(
+      `unsupported schema version ${String(compact.v)} (expected ${VERSION})`,
+    );
+  }
 
   const revive = ids && options.keepShortIds !== true;
   const node = (id: NodeId): NodeId =>

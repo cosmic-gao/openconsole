@@ -1,4 +1,4 @@
-import { Invalid, Oneway, Oversized, Stale } from "./error";
+import { Invalid, Oneway, Oversized, Schema, Stale } from "./error";
 import type { EdgeRecord, Graph } from "./graph";
 import type { EdgeId, GraphId, NodeId } from "./ident";
 
@@ -139,9 +139,14 @@ export interface CompileOptions<N = unknown, E = unknown> {
   undirected?: boolean;
   /** 只编译出边方向，省掉一半内存与编译时间；{@link Snapshot.reverse} 与入向遍历将不可用。 */
   outbound?: boolean;
+  /** 平行边合并为一条：权重两两经此函数聚合（如 `Math.min`），边 id 取首条。 */
+  merge?: (a: number, b: number) => number;
+  /** CSR 与权重分配在 `SharedArrayBuffer` 上，多个 Worker 可零拷贝共享；标签层不受影响。 */
+  shared?: boolean;
   /**
-   * 上一份快照。结构自它编译以来没变过就地复用 CSR，只重算边权；完全没变则原样返回。
-   * 编译选项不一致或用了谓词 / 折叠时自动退回全量编译，因此传错不会出错，只是没有加速。
+   * 上一份快照。结构自它编译以来没变过就地复用 CSR，只重算边权；图与 `weight` 回调
+   * 引用都没变则原样返回。编译选项不一致或用了谓词 / 折叠 / 合并时自动退回全量编译，
+   * 因此传错不会出错，只是没有加速。
    */
   reuse?: Snapshot;
 }
@@ -169,8 +174,19 @@ interface Lookup {
   map?: ReadonlyMap<NodeId, number>;
 }
 
-/** 编译来源与选项指纹，用于判定能否增量重编译。 */
-interface Source {
+/** 编译选项的指纹。整组一致才谈得上复用，因此作为一个值传递与比对。 */
+interface Recipe {
+  /** 没用谓词、折叠或合并——只有这种编译的结构才由 `shape` 完全决定。 */
+  readonly plain: boolean;
+  readonly undirected: boolean;
+  readonly outbound: boolean;
+  readonly shared: boolean;
+  /** 编译时的 `weight` 回调。引用变了说明语义可能已变，权重必须重算。 */
+  readonly weigh: unknown;
+}
+
+/** 编译来源：配方指纹之上再记下是从哪张图的哪个版本编出来的。 */
+interface Source extends Recipe {
   /**
    * 弱引用：快照可能活得比源图久（缓存在算法层、挂在 UI 状态上），强引用会把整张图连同
    * 全部端口对象一起钉住——快照自身可能只有几百 KB，钉住的图却是它的几十倍。
@@ -181,10 +197,6 @@ interface Source {
   }>;
   /** 编译时的 `graph.shape`。 */
   readonly shape: number;
-  /** 没用谓词也没折叠——只有这种编译的结构才由 `shape` 完全决定。 */
-  readonly plain: boolean;
-  readonly undirected: boolean;
-  readonly outbound: boolean;
   /** 出入向已被 {@link Snapshot.reverse} 对调过；这样的快照不能再拿去复用。 */
   readonly flipped: boolean;
   /** CSR 边序号 → 图内边槽位。结构不变时槽位不动，据此可零哈希地重算边权。 */
@@ -322,7 +334,9 @@ export class Snapshot implements Structure {
     return this;
   }
 
+  /** @throws {@link Schema} 字段长度相互矛盾（截断或错位的搬运数据） */
   public static from(data: SnapshotData): Snapshot {
+    conform(data);
     return new Snapshot(data);
   }
 
@@ -331,21 +345,22 @@ export class Snapshot implements Structure {
     options: CompileOptions<N, E> = {},
   ): Snapshot {
     const collapse = options.collapse ? [...options.collapse] : [];
-    const plain =
-      options.node === undefined &&
-      options.edge === undefined &&
-      collapse.length === 0;
-    const undirected = options.undirected === true;
-    const outward = options.outbound === true;
+    const recipe: Recipe = {
+      plain:
+        options.node === undefined &&
+        options.edge === undefined &&
+        options.merge === undefined &&
+        collapse.length === 0,
+      undirected: options.undirected === true,
+      outbound: options.outbound === true,
+      shared: options.shared === true,
+      weigh: options.weight,
+    };
 
-    const recycled = options.reuse?._recycle(
-      graph,
-      plain,
-      undirected,
-      outward,
-      options.weight,
-    );
+    const recycled = options.reuse?._recycle(graph, recipe, options.weight);
     if (recycled) return recycled;
+
+    const { undirected, shared } = recipe;
 
     const represent = folding(graph, collapse);
     const place = new Int32Array(graph.bound).fill(-1);
@@ -379,16 +394,42 @@ export class Snapshot implements Structure {
       count++;
     });
 
+    const order = labels.length;
+    let weight = measure(graph, slots, count, options.weight, shared);
+    if (options.merge !== undefined) {
+      count = coalesce(
+        tail,
+        head,
+        slots,
+        count,
+        order,
+        undirected,
+        weight,
+        options.merge,
+      );
+      if (weight !== undefined) {
+        // 聚合能从有限值造出 NaN（如 Infinity 相消），与 measure 同一道关，在源头拦。
+        for (let i = 0; i < count; i++) {
+          if (Number.isNaN(weight[i])) {
+            throw new Invalid(graph.edgeIdAt(slots[i]!)!);
+          }
+        }
+        // 合并后长度缩水，裁一份紧的，快照不拖超配的尾巴。
+        const packed = reals(count, shared);
+        packed.set(weight.subarray(0, count));
+        weight = packed;
+      }
+    }
+
     const edges: EdgeId[] = new Array(count);
     for (let i = 0; i < count; i++) edges[i] = graph.edgeIdAt(slots[i]!)!;
 
-    const order = labels.length;
-    const outbound = adjacency(order, tail, head, count, undirected);
-    const inbound = outward
+    const outbound = adjacency(order, tail, head, count, undirected, shared);
+    const inbound = recipe.outbound
       ? undefined
       : undirected
         ? outbound
-        : adjacency(order, head, tail, count, false);
+        : adjacency(order, head, tail, count, false, shared);
 
     return new Snapshot(
       {
@@ -400,14 +441,12 @@ export class Snapshot implements Structure {
         edges,
         outbound,
         inbound,
-        weight: measure(graph, slots, count, options.weight),
+        weight,
       },
       {
+        ...recipe,
         graph: new WeakRef(graph),
         shape: graph.shape,
-        plain,
-        undirected,
-        outbound: outward,
         flipped: false,
         slots: slots.slice(0, count),
       },
@@ -421,9 +460,7 @@ export class Snapshot implements Structure {
    */
   private _recycle<N, E>(
     graph: Graph<N, E>,
-    plain: boolean,
-    undirected: boolean,
-    outward: boolean,
+    recipe: Recipe,
     weight: ((weight: E | undefined) => number) | undefined,
   ): Snapshot | undefined {
     const source = this._source;
@@ -432,18 +469,14 @@ export class Snapshot implements Structure {
     if (source.graph.deref() !== graph) return undefined;
     // 翻转过的快照方向与编译选项对不上，复用它会静默给出反向结构。
     if (source.flipped) return undefined;
-    // 带谓词或折叠时，结构不只由 shape 决定（谓词可能看权重），一律全量重来。
-    if (!source.plain || !plain) return undefined;
-    if (source.undirected !== undirected || source.outbound !== outward) {
-      return undefined;
-    }
+    // 带谓词、折叠或合并时，结构不只由 shape 决定（谓词可能看权重），一律全量重来。
+    if (!source.plain || !recipe.plain) return undefined;
+    if (source.undirected !== recipe.undirected) return undefined;
+    if (source.outbound !== recipe.outbound) return undefined;
+    if (source.shared !== recipe.shared) return undefined;
     if (source.shape !== graph.shape) return undefined;
 
-    const wanted = weight !== undefined;
-    if (
-      graph.revision === this.revision &&
-      wanted === (this.weight !== undefined)
-    ) {
+    if (graph.revision === this.revision && weight === source.weigh) {
       return this;
     }
     const slots = source.slots;
@@ -457,12 +490,24 @@ export class Snapshot implements Structure {
         edges: this.edges,
         outbound: this.outbound,
         inbound: this.inbound,
-        weight: measure(graph, slots, slots.length, weight),
+        weight: measure(graph, slots, slots.length, weight, source.shared),
       },
-      { ...source, shape: graph.shape },
+      { ...source, shape: graph.shape, weigh: weight },
       this._lookup,
     );
   }
+}
+
+function ints(length: number, shared: boolean): Int32Array {
+  return shared
+    ? new Int32Array(new SharedArrayBuffer(4 * length))
+    : new Int32Array(length);
+}
+
+function reals(length: number, shared: boolean): Float64Array {
+  return shared
+    ? new Float64Array(new SharedArrayBuffer(8 * length))
+    : new Float64Array(length);
 }
 
 /** @throws {@link Invalid} `weight` 回调给出了 `NaN` */
@@ -471,9 +516,10 @@ function measure<N, E>(
   slots: Int32Array,
   count: number,
   weight: ((weight: E | undefined) => number) | undefined,
+  shared: boolean,
 ): Float64Array | undefined {
   if (weight === undefined) return undefined;
-  const costs = new Float64Array(count);
+  const costs = reals(count, shared);
   for (let i = 0; i < count; i++) {
     const slot = slots[i]!;
     const cost = weight(graph.edgeWeightAt(slot));
@@ -482,6 +528,76 @@ function measure<N, E>(
     costs[i] = cost;
   }
   return costs;
+}
+
+/** 平行边就地去重：首条留位，其余的权重经 `merge` 折进首条；返回合并后的边数。 */
+function coalesce(
+  tail: Int32Array,
+  head: Int32Array,
+  slots: Int32Array,
+  count: number,
+  order: number,
+  undirected: boolean,
+  weight: Float64Array | undefined,
+  merge: (a: number, b: number) => number,
+): number {
+  const seen = new Map<number, number>();
+  let kept = 0;
+  for (let i = 0; i < count; i++) {
+    let u = tail[i]!;
+    let v = head[i]!;
+    if (undirected && v < u) {
+      const flip = u;
+      u = v;
+      v = flip;
+    }
+    const key = u * order + v;
+    const at = seen.get(key);
+    if (at === undefined) {
+      seen.set(key, kept);
+      tail[kept] = tail[i]!;
+      head[kept] = head[i]!;
+      slots[kept] = slots[i]!;
+      if (weight !== undefined) weight[kept] = weight[i]!;
+      kept++;
+    } else if (weight !== undefined) {
+      weight[at] = merge(weight[at]!, weight[i]!);
+    }
+  }
+  return kept;
+}
+
+/** @throws {@link Schema} 字段长度相互矛盾 */
+function conform(data: SnapshotData): void {
+  const { order, size, labels, edges, weight } = data;
+  fit(data.outbound, order, "outbound");
+  const inbound = data.inbound;
+  if (inbound !== undefined && inbound !== data.outbound) {
+    fit(inbound, order, "inbound");
+  }
+  if (weight !== undefined && weight.length !== size) {
+    throw new Schema(`weight has ${weight.length} entries for ${size} edges`);
+  }
+  if (labels !== undefined && labels.length !== order) {
+    throw new Schema(`${labels.length} labels for ${order} nodes`);
+  }
+  if (edges !== undefined && edges.length !== size) {
+    throw new Schema(`${edges.length} edge ids for ${size} edges`);
+  }
+}
+
+function fit(adjacency: Adjacency, order: number, side: string): void {
+  const { offset, other, edge } = adjacency;
+  if (offset.length !== order + 1) {
+    throw new Schema(
+      `${side} offset has ${offset.length} entries for ${order} nodes`,
+    );
+  }
+  if (other.length !== edge.length || offset[order] !== other.length) {
+    throw new Schema(
+      `${side} lists ${other.length} slots but offset ends at ${offset[order]}`,
+    );
+  }
 }
 
 function locate(labels: ReadonlyArray<NodeId>): ReadonlyMap<NodeId, number> {
@@ -502,8 +618,9 @@ function adjacency(
   head: Int32Array,
   count: number,
   both: boolean,
+  shared: boolean,
 ): Adjacency {
-  const offset = new Int32Array(order + 1);
+  const offset = ints(order + 1, shared);
   for (let e = 0; e < count; e++) {
     const t = tail[e]!;
     offset[t + 1] = offset[t + 1]! + 1;
@@ -512,8 +629,8 @@ function adjacency(
   }
   for (let u = 0; u < order; u++) offset[u + 1] = offset[u + 1]! + offset[u]!;
 
-  const other = new Int32Array(offset[order]!);
-  const edge = new Int32Array(offset[order]!);
+  const other = ints(offset[order]!, shared);
+  const edge = ints(offset[order]!, shared);
   const cursor = Int32Array.from(offset.subarray(0, order));
   for (let e = 0; e < count; e++) {
     const t = tail[e]!;

@@ -8,9 +8,6 @@ import type { Ports } from "./vertex";
 
 const NONE = -1;
 
-/** "还没出错"的哨兵；`undefined` 本身可以是被抛出的值，不能拿它当标记。 */
-const INTACT = Symbol("intact");
-
 /** 加入图所需的节点描述。{@link Vertex} 与 {@link NodeRecord} 都满足它，故可直接互相搬运。 */
 export interface NodeSpec<W = unknown> {
   readonly id: NodeId;
@@ -55,13 +52,13 @@ export class Graph<N = unknown, E = unknown> {
    * 变更事件总线。
    *
    * @remarks 装了 `rescue`：某个 handler 抛错时**其余 handler 与其余事件照常派发**，
-   *   错误留到本轮派发完再上抛。少了这层隔离，一个坏订阅者会连带掐掉同一事务里其他
-   *   订阅者的事件——那些事件已从队列里摘走，补不回来，按索引维护增量状态的订阅者
-   *   （{@link Ordering}、布局缓存）从此静默错位。
+   *   错误收集起来、本轮派发完再上抛（多个错误聚合为 `AggregateError`）。少了这层隔离，
+   *   一个坏订阅者会连带掐掉同一事务里其他订阅者的事件——那些事件已从队列里摘走，
+   *   补不回来，按索引维护增量状态的订阅者（{@link Ordering}、布局缓存）从此静默错位。
    */
   public readonly signal = new Signal<Events<N, E>>({
     rescue: (error) => {
-      if (this._failure === INTACT) this._failure = error;
+      this._failures.push(error);
     },
   });
 
@@ -92,8 +89,8 @@ export class Graph<N = unknown, E = unknown> {
   private _depth = 0;
   private _changes = 0;
   private _settling = false;
-  /** 本轮派发里第一个 handler 抛出的错误，见 {@link Graph.signal}。 */
-  private _failure: unknown = INTACT;
+  /** 本轮派发里各 handler 抛出的错误，见 {@link Graph.signal}。 */
+  private readonly _failures: unknown[] = [];
   /** 待派发事件，`[类型, 载荷, 类型, 载荷, ...]` 交错存放，免去每条事件一个闭包。 */
   private readonly _queue: unknown[] = [];
 
@@ -1039,10 +1036,10 @@ export class Graph<N = unknown, E = unknown> {
     } finally {
       this._settling = false;
     }
-    const failure = this._failure;
-    if (failure !== INTACT) {
-      this._failure = INTACT;
-      throw failure;
+    if (this._failures.length > 0) {
+      const failures = this._failures.splice(0, this._failures.length);
+      if (failures.length === 1) throw failures[0];
+      throw new AggregateError(failures, `${failures.length} handlers failed`);
     }
   }
 }

@@ -12,7 +12,8 @@
 | `Task`      | 调度       | 分步推进，可中断、可续跑、可分帧                  |
 
 算法只吃 `Structure`，不吃图。输入不可变带来三件事：长跑任务中断后恢复不会读到半改的图；
-快照能整份搬进 Worker；过滤 / 折叠 / 无向化在编译期一次做完，运行期没有谓词回调或视图转发的开销。
+快照能整份搬进 Worker；过滤 / 折叠 / 无向化 / 合并在编译期一次做完，运行期没有谓词回调或
+视图转发的开销。
 
 ## 快速开始
 
@@ -174,6 +175,8 @@ const snapshot = Snapshot.of(graph, {
   collapse: [groupId], // 把分组折叠成单节点
   undirected: true, // 每条边在两端各出现一次
   outbound: true, // 只编译出向，省一半内存与时间
+  merge: Math.min, // 平行边合并为一条，权重两两聚合，边 id 取首条
+  shared: true, // CSR 与权重落在 SharedArrayBuffer 上，多 Worker 零拷贝共享
   reuse: previous, // 增量重编译，见下
 });
 
@@ -182,8 +185,8 @@ snapshot.verify(); // 源图已变更则抛 Stale；源图已被回收则无从�
 snapshot.names(indices); // 索引 → NodeId；边序号换 id 直接读 snapshot.edges[i]
 ```
 
-以前需要嵌套视图适配器的场景，现在是一次编译的几个选项。代价是编译要 O(V+E)，
-收益是运行期零开销、且不再有「视图上 `order` 是 O(V)」这类陷阱。
+视图不是运行期包装，而是一次编译的几个选项。代价是编译要 O(V+E)，收益是运行期零开销、
+且不存在「视图上 `order` 是 O(V)」这类陷阱。
 
 `weight` 回调只吃边自己的权重值，不给整条记录——这正是增量重编译能便宜的前提。要按端点算权，
 把它烘进 `E` 里。回调给出 `NaN` 时编译就抛 `Invalid` 并报出是哪条边：`NaN` 与任何值比较都是
@@ -201,9 +204,13 @@ snapshot = Snapshot.of(graph, { weight: cost, reuse: snapshot });
 // labels / edges / outbound / inbound / 索引表全部原样共享，只有 weight 是新的
 ```
 
-三档：`revision` 也没动 → 原样返回同一个对象；`shape`（结构版本号）没动 → 复用 CSR、只重算
-边权，走槽位直读、零哈希；结构变了 → 全量重编译。用了谓词或折叠时自动退回全量。传错图的
-快照、传选项不一致的快照、传翻转过的快照，都只是没有加速，不会出错。
+三档：`revision` 与 `weight` 回调引用都没动 → 原样返回同一个对象；`shape`（结构版本号）
+没动 → 复用 CSR、只重算边权，走槽位直读、零哈希；结构变了 → 全量重编译。用了谓词、折叠
+或合并时自动退回全量。传错图的快照、传选项不一致的快照、传翻转过的快照，都只是没有加速，
+不会出错。
+
+**`weight` 回调按引用判同**：回调换了引用（哪怕语义相同）就重算边权，绝不复用可能已经
+过期的权重数组。想吃满第一档加速，把回调提成稳定引用，别在调用点现写 lambda。
 
 ### 对源图只持弱引用
 
@@ -215,6 +222,29 @@ snapshot = Snapshot.of(graph, { weight: cost, reuse: snapshot });
   与跨线程还原的快照同一口径；
 - 增量重编译发现源图对不上（换了图，或已回收）→ 退回全量编译，不会出错。
 
+### 平行边合并
+
+`merge` 在编译期把同一对端点间的平行边折成一条：权重两两经聚合函数收敛，边 id 取首条，
+无向编译下两个方向算同一对。传递归约、可视化、边数统计不再被平行边干扰；最短路本来就
+天然取最小，不合并也不受影响。
+
+```ts
+Snapshot.of(graph, { weight: cost, merge: Math.min }); // 平行边取最轻
+Snapshot.of(graph, { weight: cost, merge: (a, b) => a + b }); // 容量合计
+```
+
+### 多份权重共用一份 CSR
+
+算法吃的是 `Structure` 而不是 `Snapshot` 类，所以换一套权重不必重新编译——展开快照、
+换掉 `weight` 字段就是一个新结构：
+
+```ts
+const byCost = settle(shortestPaths(snapshot, s));
+const byLatency = settle(shortestPaths({ ...snapshot, weight: latency }, s));
+```
+
+边权画像记在**权重数组**上（见下），每套权重各自缓存画像，互不污染。
+
 ### 跨线程
 
 快照的 `data` 只含 typed-array 与字符串数组，可直接 `postMessage`：
@@ -225,6 +255,19 @@ worker.postMessage(snapshot.core); // 只有 CSR 与权重
 // Worker 侧
 const snapshot = Snapshot.from(data);
 settle(scc(snapshot));
+```
+
+`Snapshot.from` 会做一遍 O(1) 的形状校验（offset 长度、槽位总数、权重与标签的条数），
+截断或错位的搬运数据抛 `Schema`，而不是还原出一个行为怪异的快照。
+
+要在多个 Worker 之间**零拷贝**共享，用 `shared: true` 把 CSR 与权重直接编译到
+`SharedArrayBuffer` 上（浏览器侧需要 cross-origin isolation）。不要对快照的底层数组用
+transfer 清单：`reverse()` 与增量重编译都与源快照共享底层数组，transfer 会把共享方一起
+打死。
+
+```ts
+const snapshot = Snapshot.of(graph, { weight: cost, shared: true });
+worker.postMessage(snapshot.data); // SAB 按共享语义克隆，各线程读同一份内存
 ```
 
 id → 索引表是**惰性**的：只跑索引空间算法的一侧从不碰它，因此 Worker 还原一份百万级快照
@@ -280,13 +323,15 @@ try {
 
 - **拓扑**：`topology`（环单列出来）/ `toposort`（遇环抛 `Cycle`）/ `acyclic` / `ranks` /
   `generations`（分层，同层可并行）/ `criticalPath`
-- **连通**：`components`（弱）/ `scc`（Pearce 2016）/ `condensation` / `simpleCycles`（Johnson）/
+- **连通**：`components`（弱）/ `scc`（Pearce 2016）/ `condensation` /
+  `simpleCycles`（Johnson，先缩点把搜索限在各强连通分量内，DAG 上只剩一遍 O(V+E) 跳过）/
   `cuts`（桥与割点）/ `dominators`（Lengauer-Tarjan）
 - **可达**：`reachable`（双向 BFS）/ `ancestors` / `descendants` / `closure`（按 SCC 存位图）/ `reduction`
 - **最短路**：`shortestPaths`（单源全树）/ `shortestPath`（单条）/ `astar` / `bidirectional` /
   `bellmanFord`（容许负权）/ `floydWarshall`（全源）
 - **生成森林**：`prim` / `kruskal`
-- **遍历**：`dfs` / `bfs`（生成器）/ `postorder` / `levels` / `visit`（事件式，带边分类）
+- **遍历**：`dfs` / `bfs`（生成器）/ `postorder` / `levels`（方向自适应，见下）/
+  `visit`（事件式，带边分类）
 - **查询**：`degrees` / `sources` / `sinks` / `isolated` / `neighborhood`（切 CSR 视图，零分配）/
   `roots` / `subtree` / `ancestry`
 - **增量**：`Ordering`（Pearce-Kelly 增量拓扑序）
@@ -307,6 +352,14 @@ settle(closure(snapshot, { limit })); // reduction 会把 limit 透传下去
 ```
 
 `closure` 的位图行数是**分量数**，要等 `scc` 跑完才知道，因此它的闸门落在推进途中而不是构造时。
+
+### 分层 BFS 的方向自适应
+
+`levels` 采用 Beamer 的方向优化：前沿的出边规模压过未访问区的 1/15 时改为反向扫描——
+未访问节点在自己的入边里找前沿，命中即领深度、立即 break；前沿缩回 V/18 且不再增长时切回
+正向。低直径图（社交网络形状）上前沿两三层就覆盖大半个图，反向省掉的是对已访问区的整片
+重复检查，V=10 万的无标度图实测 4×。前沿窄的图（编辑器 DAG）启发式不会触发，只编出向的
+结构没有入边可扫，两者都始终正向，行为与朴素分层 BFS 完全一致。
 
 ### 提前终止不泄漏未收敛的值
 
@@ -359,6 +412,9 @@ apply(graph, invert(changes)); // 撤销
 `Compact<N, E>` 带权重泛型，因此还原时不需要任何类型断言。边 id 会被自由表回收复用，所以
 `diff` 判定「是不是同一条边」时除了 id 还比端点。
 
+自定义 Socket 还原时必须通过 `unpack(bundle, { sockets })` 提供查找表；查不到的 socket 名
+抛 `Missing`，而不是静默降级成通配——那会让本该被 `Mismatch` 拦住的连线悄悄合法化。
+
 端口结构变了的节点，`diff` 按「删除 + 重建」处理——`apply` 的结果与 `reshape` 等价，但补丁更大
 （连带产出那些边的重建操作）。要精确记录引脚变更时，直接把 `reshape` 记进自己的撤销栈。
 
@@ -384,9 +440,10 @@ graph.signal.watch((type, payload) => {});
 - 派发落在**事务边界**：单次变更自成一段事务，`batch` 是一整段；两者都先按序放出变更事件，
   再放一次 `flushed`。下游据此把一段编辑合并成一次重算。
 - 载荷只在变更发生时**确有监听者**才构造，因此无人订阅的变更热路径零分配。
-- **订阅者相互隔离**：某个 handler 抛错时其余 handler 与其余事件照常派发，错误留到本轮
-  派发完再上抛。少了这层隔离，一个坏订阅者会连带掐掉同一事务里其他订阅者的事件——那些事件
-  已从队列里摘走、补不回来，按索引维护增量状态的订阅者从此静默错位。
+- **订阅者相互隔离**：某个 handler 抛错时其余 handler 与其余事件照常派发，错误收集到本轮
+  派发完再上抛，多个错误聚合为 `AggregateError`、一个不丢。少了这层隔离，一个坏订阅者会
+  连带掐掉同一事务里其他订阅者的事件——那些事件已从队列里摘走、补不回来，按索引维护
+  增量状态的订阅者从此静默错位。
 
 ## 错误
 
@@ -394,7 +451,7 @@ graph.signal.watch((type, payload) => {});
 
 | 错误                    | code                    | 何时                                       |
 | ----------------------- | ----------------------- | ------------------------------------------ |
-| `Duplicate` / `Missing` | `duplicate` / `missing` | id 已存在 / 节点、边、端口不存在           |
+| `Duplicate` / `Missing` | `duplicate` / `missing` | id 已存在 / 节点、边、端口、socket 不存在  |
 | `Mismatch` / `Capacity` | `socket` / `capacity`   | Socket 不兼容 / 单连接端口已占用           |
 | `Cycle` / `Nested`      | `cycle`                 | 算法撞上环 / 层级会成环                    |
 | `Oneway`                | `oneway`                | 算法需要入向邻接，但结构只编了出向         |
@@ -403,7 +460,7 @@ graph.signal.watch((type, payload) => {});
 | `Stale`                 | `stale`                 | 快照编译后源图又变了                       |
 | `Incomplete`            | `incomplete`            | 任务没跑完就取结果                         |
 | `Interrupted`           | `interrupted`           | 任务被 `AbortSignal` 中断（现场保留）      |
-| `Schema`                | `schema`                | 反序列化时格式版本不匹配                   |
+| `Schema`                | `schema`                | 格式版本不匹配 / 搬运数据的字段长度矛盾    |
 
 这些位置恰是「给个看起来正常的答案」最容易骗过人的地方——`NaN` 尤其典型：它与任何值比较都是
 `false`，于是连通节点被报成不可达。
@@ -441,8 +498,8 @@ import { pack } from "@openconsole/graph/serialize";
   惰性生成的图都能直接跑算法，不必先物化成 `Graph`。
 - **索引是公开的一等公民**：算法在索引空间进出，事件载荷带槽位，图同时提供 id / 槽位 / 纯整数
   三套访问口径。字符串哈希只在人机边界上付。
-- **视图是编译选项，不是运行期包装**：过滤 / 折叠 / 无向化一次做完，运行期零开销；结构没变时
-  连编译都能省掉大半。
+- **视图是编译选项，不是运行期包装**：过滤 / 折叠 / 无向化 / 合并一次做完，运行期零开销；
+  结构没变时连编译都能省掉大半。
 - **删除后索引稳定**：自由表复用空位，已发出的下标永不改指；要回收空位就显式 `compact()`，
   并且会发事件告诉订阅者索引怎么变了。
 - **不可变在类型层面成立**：快照暴露的是只读的 `Ints` / `Reals`，不是可写的 typed-array。

@@ -7,6 +7,7 @@ import {
   dominators,
   floydWarshall,
   kruskal,
+  levels,
   nodeId,
   pack,
   reduction,
@@ -17,7 +18,7 @@ import {
   toposort,
   unpack,
 } from "../../index";
-import { cost, randomGraph, weighted } from "../support";
+import { cost, randomGraph, scaleFree, weighted } from "../support";
 
 const graph = randomGraph(2026, { order: 5000, density: 8, acyclic: true });
 const snapshot = weighted(graph);
@@ -89,6 +90,21 @@ describe("算法（同一份快照）", () => {
 
   bench("kruskal", () => {
     settle(kruskal(snapshot));
+  });
+});
+
+describe("分层 BFS（V=100k，形状决定方向切换是否触发）", () => {
+  const social = Snapshot.of(scaleFree(2026, 100_000, 8), {
+    undirected: true,
+  });
+  const sparse = Snapshot.of(randomGraph(2026, { order: 100_000, density: 3 }));
+
+  bench("levels：无标度无向（前沿膨胀，走反向扫描）", () => {
+    levels(social, [0]);
+  });
+
+  bench("levels：均匀稀疏有向（前沿窄，始终正向）", () => {
+    levels(sparse, [0]);
   });
 });
 

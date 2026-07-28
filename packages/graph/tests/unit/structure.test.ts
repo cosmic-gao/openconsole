@@ -79,6 +79,28 @@ describe("Structure 是算法的唯一契约", () => {
       ...settle(shortestPaths(snapshot, 0)).distance,
     ]);
   });
+
+  it("同一份 CSR 可换上不同的权重数组，各自享有独立画像", () => {
+    const snapshot = weighted(randomGraph(95, { order: 30, density: 3 }));
+    const flat = new Float64Array(snapshot.size).fill(1);
+    const hops: Structure = { ...snapshot, weight: flat };
+    const steep: Structure = {
+      ...snapshot,
+      weight: Float64Array.from(snapshot.weight!, (w) => w * 100),
+    };
+
+    const byCost = settle(shortestPaths(snapshot, 0)).distance;
+    const byHops = settle(shortestPaths(hops, 0)).distance;
+    const bySteep = settle(shortestPaths(steep, 0)).distance;
+
+    for (let u = 0; u < snapshot.order; u++) {
+      expect(bySteep[u]).toBe(byCost[u]! * 100);
+      if (byCost[u] !== Infinity) expect(byHops[u]).toBeLessThanOrEqual(byCost[u]!);
+    }
+    expect([...settle(shortestPaths(snapshot, 0)).distance]).toEqual([
+      ...byCost,
+    ]);
+  });
 });
 
 describe("缺入向邻接时明确报错", () => {

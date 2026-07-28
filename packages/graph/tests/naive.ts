@@ -37,6 +37,34 @@ function sweep(
   return seen;
 }
 
+/** 逐层 BFS 的最短跳数；`both` 为真时忽略方向。不可达的节点不在结果里。 */
+export function hops(
+  graph: Graph<number, number>,
+  sources: NodeId[],
+  both = false,
+): Map<NodeId, number> {
+  const links = both ? undirected(graph) : undefined;
+  const around = (node: NodeId): NodeId[] =>
+    links ? links.get(node)! : graph.outNeighbors(node);
+
+  const depth = new Map<NodeId, number>();
+  const queue: NodeId[] = [];
+  for (const source of sources) {
+    if (!graph.hasNode(source) || depth.has(source)) continue;
+    depth.set(source, 0);
+    queue.push(source);
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const node = queue[head]!;
+    for (const peer of around(node)) {
+      if (depth.has(peer)) continue;
+      depth.set(peer, depth.get(node)! + 1);
+      queue.push(peer);
+    }
+  }
+  return depth;
+}
+
 /** 逐点搜索求可达集，不含自身（除非有环绕回来）。 */
 export function reach(graph: Graph<number, number>): Map<NodeId, Set<NodeId>> {
   const found = new Map<NodeId, Set<NodeId>>();
