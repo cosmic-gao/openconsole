@@ -143,6 +143,16 @@ describe("单步粒度", () => {
     expect(snapshot.size).toBeGreaterThan(snapshot.order * 10);
     expect(steps).toBeGreaterThan(snapshot.size);
   });
+
+  it("closure 的传播一步是一条邻接槽而不是一整个分量", () => {
+    // 密集图缩成寥寥几个分量：按分量计步只剩个位数，按边计步则超过 size。
+    const snapshot = Snapshot.of(randomGraph(11, { order: 40, density: 6 }));
+    const task = closure(snapshot);
+
+    let steps = 0;
+    while (task.advance(1)) steps++;
+    expect(steps).toBeGreaterThan(snapshot.size);
+  });
 });
 
 describe("中断与续跑", () => {
@@ -185,8 +195,9 @@ describe("分帧调度", () => {
     const snapshot = sample();
     const seen: number[] = [];
 
+    // budget 保证十几帧即可；Windows 定时器 ~15.6ms 一跳，帧数太多会顶到用例超时。
     return schedule(closure(snapshot), {
-      budget: 2,
+      budget: 64,
       onProgress: (progress) => seen.push(progress),
     }).then((result) => {
       const source = snapshot.indexOf(nodeId("n0"));

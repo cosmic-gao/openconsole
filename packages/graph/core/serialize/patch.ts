@@ -311,6 +311,9 @@ export function invert<N, E>(
       case "dropEdge":
         inverted.push({ kind: "addEdge", edge: change.edge });
         break;
+      // 三种"改属性"的逆向都只是把 from / to 对调，但分支不能合并：合并后
+      // `change` 退回三者的联合，`from` / `to` 变成 `NodeId | N | E`，落不回任何
+      // 一个变体，只能靠断言硬塞。宁可留三行同形代码，也不引入断言。
       case "weighNode":
         inverted.push({ ...change, from: change.to, to: change.from });
         break;

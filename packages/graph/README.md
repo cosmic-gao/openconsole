@@ -94,7 +94,8 @@ half.reverse(); // 抛 Oneway
 ```
 
 受此约束的是 `degrees` / `sources` / `isolated` / `components` / `cuts` / `dominators` /
-`prim` / `reversed` / `Snapshot.reverse` / `Neighborhood.predecessors`。
+`prim` / `ancestors` / `bidirectional` / `reversed` / `Snapshot.reverse` /
+`Neighborhood.predecessors`。
 
 ## Graph：编辑层
 
@@ -383,6 +384,8 @@ settle(shortestPaths(snapshot, source, { combine: bottleneck })); // 最大边�
 
 `Ordering` 订阅图事件就地重排。成环的边不触发重算，而是记入 `conflicts` 并排除在拓扑约束外——
 剩下的子图始终是 DAG，顺序始终有效，因此「编辑器里长期带环」不会让每次变更都退化成 O(V+E)。
+删边使环消失时，被排除的边自动回到约束里（单趟逐条重试即可——插入只会增加约束），
+`cyclic` 与 `cycles()` 因此始终对得上。
 
 ```ts
 const ordering = new Ordering(graph);
@@ -411,6 +414,13 @@ apply(graph, invert(changes)); // 撤销
 
 `Compact<N, E>` 带权重泛型，因此还原时不需要任何类型断言。边 id 会被自由表回收复用，所以
 `diff` 判定「是不是同一条边」时除了 id 还比端点。
+
+无权重的节点与边在元组里**省略**权重位而不是写 `undefined`——JSON 会把数组里的
+`undefined` 写成 `null`，往返一趟后「没有权重」就静默变成了「权重是 null」；省略位让
+`undefined` 往返仍是 `undefined`，显式的 `null` 权重保留为 `null`。
+
+`pack` 的 `order` 必须与图内节点一一对应，漏或重都抛 `Schema`——漏节点会让边引用到不存在的
+端点、重复节点会撞 `Duplicate`，两者都要到 `unpack` 才在远处炸；图里不存在的 id 被忽略。
 
 自定义 Socket 还原时必须通过 `unpack(bundle, { sockets })` 提供查找表；查不到的 socket 名
 抛 `Missing`，而不是静默降级成通配——那会让本该被 `Mismatch` 拦住的连线悄悄合法化。

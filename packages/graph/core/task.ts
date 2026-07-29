@@ -95,7 +95,8 @@ export interface ScheduleOptions {
  * 分帧推进，帧间让出事件循环，长跑算法不再冻结 UI。
  *
  * @remarks 每帧让出都要经过一轮宏任务，浏览器对嵌套 `setTimeout` 有约 4ms 的下限，
- *   因此 `budget` 定得过小会让让出成本盖过计算本身。
+ *   因此 `budget` 定得过小会让让出成本盖过计算本身。要换别的让出原语（`MessageChannel`、
+ *   `scheduler.yield`）就自己驱动 {@link Task.advance}——它正是为此而公开的。
  */
 export async function schedule<T>(
   task: Task<T>,

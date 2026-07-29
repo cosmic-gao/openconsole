@@ -10,7 +10,7 @@ import {
 import { builtins, type Socket } from "../socket";
 import { Port, type Constraints } from "../vertex";
 
-export const VERSION = 2 as const;
+export const VERSION = 3 as const;
 
 /** 端口的紧凑形态：`[名称, socket 名]`，带约束时追加第三项。 */
 export type PortTuple =
@@ -24,20 +24,28 @@ export interface PortLimits {
   f?: unknown;
 }
 
+/**
+ * 节点元组：`[id, 输入端口, 输出端口]`，带权重时追加第四项。
+ *
+ * @remarks 无权重时**省略**该位而不是写 `undefined`——JSON 会把数组里的 `undefined`
+ *   写成 `null`，往返一趟后"没有权重"就静默变成了"权重是 null"。省略位让两者在
+ *   JSON 里也分得开：`undefined` 往返仍是 `undefined`，显式的 `null` 权重保留为 `null`。
+ */
 export type CompactNode<N = unknown> = readonly [
   NodeId,
-  N | undefined,
   ReadonlyArray<PortTuple> | null,
   ReadonlyArray<PortTuple> | null,
+  N?,
 ];
 
+/** 边元组：`[id, 源, 源端口, 目标, 目标端口]`，带权重时追加第六项；省略语义同 {@link CompactNode}。 */
 export type CompactEdge<E = unknown> = readonly [
   EdgeId,
   NodeId,
   string,
   NodeId,
   string,
-  E | undefined,
+  E?,
 ];
 
 /** 权重类型跟着图走，因此还原时不需要任何断言。 */
@@ -63,7 +71,11 @@ export interface Bundle<N = unknown, E = unknown> {
 export type SocketLookup = ReadonlyMap<string, Socket> | ReadonlyArray<Socket>;
 
 export interface PackOptions {
-  /** 节点写出顺序，默认按图内顺序；传拓扑序可得到稳定输出。 */
+  /**
+   * 节点写出顺序，默认按图内顺序；传拓扑序可得到稳定输出。
+   * 必须与图内节点一一对应：漏或重都抛 {@link Schema}。图里不存在的 id 被忽略——
+   * 顺序常来自略旧的快照，多出来的名字无害。
+   */
   order?: Iterable<NodeId>;
   /** 把长 id 折算成短整数，另附还原表。 */
   intern?: boolean;
@@ -71,7 +83,12 @@ export interface PackOptions {
 
 export interface UnpackOptions<N, E> {
   sockets?: SocketLookup;
-  /** 写入已有的图（先清空）而不是新建。 */
+  /**
+   * 写入已有的图（先清空）而不是新建。
+   *
+   * @remarks 失败不回滚：unpack 中途抛错（版本不符、缺 socket 表）时目标图已被清空
+   *   并写入了一半。要么先对 bundle 做一次试还原，要么自备恢复手段。
+   */
   into?: Graph<N, E>;
   /** intern 过的数据默认还原成原始 id；置真则保留短 id。 */
   keepShortIds?: boolean;
@@ -152,7 +169,36 @@ function original(
   return found;
 }
 
-/** 元组化紧凑格式，保留端口约束与复合层级。 */
+/**
+ * 权重为 `undefined` 时省略尾位；两个 `packed` 是元组化格式里唯一需要判省略的地方。
+ * 见 {@link CompactNode} 的省略语义。
+ */
+const packedNode = <N>(
+  id: NodeId,
+  inputs: ReadonlyArray<PortTuple> | null,
+  outputs: ReadonlyArray<PortTuple> | null,
+  weight: N | undefined,
+): CompactNode<N> =>
+  weight === undefined ? [id, inputs, outputs] : [id, inputs, outputs, weight];
+
+const packedEdge = <E>(
+  id: EdgeId,
+  source: NodeId,
+  sourcePort: string,
+  target: NodeId,
+  targetPort: string,
+  weight: E | undefined,
+): CompactEdge<E> =>
+  weight === undefined
+    ? [id, source, sourcePort, target, targetPort]
+    : [id, source, sourcePort, target, targetPort, weight];
+
+/**
+ * 元组化紧凑格式，保留端口约束与复合层级。
+ *
+ * @throws {@link Schema} `order` 没有一一覆盖图内全部节点。漏掉的节点会让边引用到
+ *   不存在的端点，`unpack` 时才在远处报错；重复的节点则要到那时才撞 `Duplicate`。
+ */
 export function pack<N, E>(
   graph: Graph<N, E>,
   options: PackOptions = {},
@@ -169,37 +215,42 @@ export function pack<N, E>(
   const n: Array<CompactNode<N>> = [];
   if (options.order === undefined) {
     graph.forEachNode((id, weight, slot) => {
-      const record = graph.nodeAt(slot)!;
-      n.push([
-        mapNode(id),
-        weight,
-        tuples(record.inputs),
-        tuples(record.outputs),
-      ]);
+      const { inputs, outputs } = graph.nodeAt(slot)!;
+      n.push(packedNode(mapNode(id), tuples(inputs), tuples(outputs), weight));
     });
   } else {
     for (const id of options.order) {
       const record = graph.node(id);
       if (!record) continue;
-      n.push([
-        mapNode(record.id),
-        record.weight,
-        tuples(record.inputs),
-        tuples(record.outputs),
-      ]);
+      n.push(
+        packedNode(
+          mapNode(record.id),
+          tuples(record.inputs),
+          tuples(record.outputs),
+          record.weight,
+        ),
+      );
+    }
+    // 一个计数同时兜住漏与重：漏则短，重则长。
+    if (n.length !== graph.order) {
+      throw new Schema(
+        `PackOptions.order yields ${n.length} entries for ${graph.order} node(s)`,
+      );
     }
   }
 
   const e: Array<CompactEdge<E>> = [];
   graph.forEachEdge((record) => {
-    e.push([
-      mapEdge(record.id),
-      mapNode(record.source),
-      record.sourcePort,
-      mapNode(record.target),
-      record.targetPort,
-      record.weight,
-    ]);
+    e.push(
+      packedEdge(
+        mapEdge(record.id),
+        mapNode(record.source),
+        record.sourcePort,
+        mapNode(record.target),
+        record.targetPort,
+        record.weight,
+      ),
+    );
   });
 
   const h: Array<readonly [NodeId, NodeId]> = [];
@@ -239,7 +290,7 @@ export function unpack<N, E>(
   if (options.into) graph.clear();
 
   return graph.batch(() => {
-    for (const [id, weight, inputs, outputs] of compact.n) {
+    for (const [id, inputs, outputs, weight] of compact.n) {
       graph.addNode({
         id: node(id),
         weight,

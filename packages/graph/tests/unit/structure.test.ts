@@ -80,6 +80,22 @@ describe("Structure 是算法的唯一契约", () => {
     ]);
   });
 
+  /**
+   * `neighborhood` 承诺"切 CSR 视图、不复制"——真复制了一份也照样能通过取值断言，
+   * 因此这里连"视图落在同一段底层内存上"一并钉住。
+   */
+  it("neighborhood 两个方向都给出底层数组的视图而非副本", () => {
+    const view = neighborhood(handmade);
+    expect([...view.successors(0)]).toEqual([1]);
+    expect([...view.successors(1)]).toEqual([2]);
+    expect([...view.successors(2)]).toEqual([]);
+    expect([...view.predecessors(2)]).toEqual([1]);
+    expect([...view.predecessors(0)]).toEqual([]);
+
+    const slice = view.successors(0) as Int32Array;
+    expect(slice.buffer).toBe((handmade.outbound.other as Int32Array).buffer);
+  });
+
   it("同一份 CSR 可换上不同的权重数组，各自享有独立画像", () => {
     const snapshot = weighted(randomGraph(95, { order: 30, density: 3 }));
     const flat = new Float64Array(snapshot.size).fill(1);

@@ -15,6 +15,7 @@ import {
   Socket,
   unpack,
   Vertex,
+  type Bundle,
   type Sockets,
 } from "../../index";
 import { randomGraph, vertex } from "../support";
@@ -67,6 +68,43 @@ describe("紧凑格式", () => {
     const order = graph.nodes().slice().reverse();
     const { compact } = pack(graph, { order });
     expect(compact.n.map((entry) => entry[0])).toEqual(order);
+  });
+
+  /**
+   * 漏节点会让边引用到不存在的端点、重复节点会撞 `Duplicate`——两者都要到 unpack
+   * 才在远处炸。错误应落在出错的地方，故 pack 先按计数兜住。
+   */
+  it("order 没一一覆盖节点时抛 Schema，不认识的 id 忽略", () => {
+    const graph = randomGraph(58, { order: 5, density: 1 });
+    const ids = graph.nodes();
+
+    expect(() => pack(graph, { order: ids.slice(1) })).toThrow(Schema);
+    expect(() => pack(graph, { order: [...ids, ids[0]!] })).toThrow(Schema);
+    expect(() =>
+      pack(graph, { order: [...ids, nodeId("ghost")] }),
+    ).not.toThrow();
+  });
+
+  /**
+   * JSON 会把数组里的 `undefined` 写成 `null`。权重位靠"省略"而不是占位来表达
+   * "没有权重"，两种取值经 JSON 往返后才互不串味。
+   */
+  it("undefined 权重经 JSON 往返仍是 undefined，null 权重保留为 null", () => {
+    const graph = new Graph<number | null, number | null>(graphId("json"));
+    graph.addNode(vertex<number | null>("bare"));
+    graph.addNode(vertex<number | null>("nil", null));
+    graph.connect([nodeId("bare"), "out"], [nodeId("nil"), "in"]);
+
+    const wire = JSON.parse(JSON.stringify(pack(graph))) as Bundle<
+      number | null,
+      number | null
+    >;
+    const restored = unpack<number | null, number | null>(wire);
+
+    expect(restored.hasNode(nodeId("bare"))).toBe(true);
+    expect(restored.weightOf(nodeId("bare"))).toBeUndefined();
+    expect(restored.weightOf(nodeId("nil"))).toBeNull();
+    expect(restored.edgeWeight(restored.edges()[0]!)).toBeUndefined();
   });
 
   it("intern 把长 id 换成短整数并能还原", () => {

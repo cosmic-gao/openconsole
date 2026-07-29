@@ -12,7 +12,8 @@ const NONE = -1;
  *
  * 造成环的边不触发重算，而是记入 {@link Ordering.conflicts} 并从拓扑约束中排除——
  * 剩下的子图始终是 DAG，顺序始终有效。因此"图里长期带环"这种编辑器常态不会把
- * 每次变更都退化成 O(V+E)。
+ * 每次变更都退化成 O(V+E)。删边使环消失时，被排除的边会自动回到约束里，
+ * {@link Ordering.cyclic} 与 {@link Ordering.cycles} 因此始终对得上。
  *
  * @remarks 全部内部状态按**整数槽位**存放：位次是一条 `Int32Array`，冲突边是一个数字
  *   `Set`，区域搜索走 {@link Graph.forEachOutAt}。事件载荷自带 `slot`，因此除了建边时
@@ -45,8 +46,10 @@ export class Ordering<N = unknown, E = unknown> {
         this._insert(slot, _graph.indexOf(source), _graph.indexOf(target));
       }),
       signal.on("edgeDropped", ({ slot }) => {
-        // 删边不可能破坏既有顺序，只需撤销它的冲突登记。
+        // 删边不可能破坏既有顺序；撤销它的冲突登记后，再看其余冲突边能否回到约束里——
+        // 消失的环未必途经被删的这条边。
         this._conflicts.delete(slot);
+        this._revive();
       }),
       signal.on("compacted", ({ nodes, edges }) => {
         this._remap(nodes, edges);
@@ -149,6 +152,27 @@ export class Ordering<N = unknown, E = unknown> {
       this._graph.forEachOutAt(slot, (target, edge) => {
         if (from >= this._rank[target]!) this._conflicts.add(edge);
       });
+    }
+  }
+
+  /**
+   * 删边后让冲突边逐条重试，回到拓扑约束里——消失的环未必途经被删的那条边。
+   *
+   * @remarks 单趟足够：{@link Ordering._insert} 只会**增加**约束（重排位次不改变成环与否），
+   *   因此本趟里失败过的边不可能在同一趟后面反而变得可插入。
+   */
+  private _revive(): void {
+    // 先拷一份：`_insert` 会把仍然成环的边放回集合，边迭代边加会重复访问同一条。
+    for (const slot of [...this._conflicts]) {
+      this._conflicts.delete(slot);
+      // 事务里同批被删的边：图已是最终状态，事件还在队列里，清掉登记即可。
+      const record = this._graph.edgeAt(slot);
+      if (record === undefined) continue;
+      this._insert(
+        slot,
+        this._graph.indexOf(record.source),
+        this._graph.indexOf(record.target),
+      );
     }
   }
 

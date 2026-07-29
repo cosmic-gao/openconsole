@@ -298,7 +298,13 @@ export class Snapshot implements Structure {
 
   /** 交给 `postMessage` 的纯数据；`Snapshot.from` 可在另一线程还原。 */
   public get data(): SnapshotData {
-    return { ...this.core, labels: this.labels, edges: this.edges };
+    // 按 core 还原的快照没有标签层。空数组要还原成"缺省"而不是原样带上，
+    // 否则中转 Worker 转发它的 data 时会被 `Snapshot.from` 判作"0 个标签对 N 个节点"。
+    return {
+      ...this.core,
+      labels: this.labels === UNLABELED ? undefined : this.labels,
+      edges: this.edges === UNLABELED ? undefined : this.edges,
+    };
   }
 
   /**
@@ -551,6 +557,8 @@ function coalesce(
       u = v;
       v = flip;
     }
+    // order < 2²⁶ 时 u·order+v 不超过 2⁵³，键精确；标签层远在那个规模之前就会
+    // 先耗尽内存，故不为这个理论上限付分桶或字符串键的开销。
     const key = u * order + v;
     const at = seen.get(key);
     if (at === undefined) {

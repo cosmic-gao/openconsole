@@ -87,6 +87,12 @@ function beyond(
   return found.subarray(0, at);
 }
 
+/** 在位图的某一行上置一位。 */
+const mark = (bits: Uint32Array, row: number, node: number): void => {
+  const cell = row + (node >>> 5);
+  bits[cell] = bits[cell]! | (1 << (node & 31));
+};
+
 /**
  * 可达性位图：按强连通分量存一行——同分量内所有节点的可达集完全相同。
  */
@@ -131,8 +137,12 @@ export class Closure {
 class Propagate extends Stepwise<Closure> {
   private readonly _words: number;
   private readonly _bits: Uint32Array;
-  private readonly _members: number[][];
+  private readonly _members: Int32Array[];
   private _component = 0;
+  /** 当前分量里的成员下标。 */
+  private _at = 0;
+  /** 当前成员已消费的邻接槽数。相对计数而非绝对下标，换成员只需归零。 */
+  private _taken = 0;
 
   public constructor(
     private readonly _structure: Structure,
@@ -140,18 +150,25 @@ class Propagate extends Stepwise<Closure> {
     limit: number,
   ) {
     super();
-    this._words = (_structure.order + 31) >>> 5;
+    const { order } = _structure;
+    const { count } = _partition;
+    this._words = (order + 31) >>> 5;
     // 位图是 count × ⌈V/32⌉ 字：无环图上 count == order，于是这就是 O(V²/32)。
     // 闸门只能设在这里——分量数要等 scc 跑完才知道。
     afford(
-      _partition.count * this._words * 4,
+      count * this._words * 4,
       limit,
-      `closure on V=${_structure.order} with ${_partition.count} component(s)`,
+      `closure on V=${order} with ${count} component(s)`,
     );
-    this._bits = new Uint32Array(_partition.count * this._words);
-    this._members = Array.from({ length: _partition.count }, () => []);
-    for (let u = 0; u < _structure.order; u++) {
-      this._members[_partition.component[u]!]!.push(u);
+    this._bits = new Uint32Array(count * this._words);
+    this._members = _partition.groups();
+
+    // 多成员分量内部必然互相可达，成员位在这里一次置好（O(V)）；单成员分量要靠自环
+    // 才自可达，那一位留给 `step` 撞上自环时补。
+    for (let c = 0; c < count; c++) {
+      const members = this._members[c]!;
+      if (members.length < 2) continue;
+      for (const u of members) mark(this._bits, c * this._words, u);
     }
   }
 
@@ -161,39 +178,49 @@ class Propagate extends Stepwise<Closure> {
       : this._component / this._partition.count;
   }
 
+  /**
+   * 一步 = 一条邻接槽，跨分量边随之做一次 O(V/32) 的行位或。
+   *
+   * @remarks 原先一步吃整个分量：强连通占主导的图上分量数是 1，单步就是整个
+   *   O(E·V/32)——`schedule` 的预算再小也让不出帧。拆到边级后单步压回 O(V)。
+   */
   protected step(): boolean {
-    if (this._component >= this._partition.count) return false;
-    const c = this._component++;
-    const row = c * this._words;
-    const members = this._members[c]!;
-    const labels = this._partition.component;
-    const { offset, other } = this._structure.outbound;
-    // 多成员分量必然互相可达；单成员则看是否有自环。
-    let internal = members.length > 1;
+    const { count, component } = this._partition;
+    if (this._component >= count) return false;
 
-    for (const u of members) {
-      for (let k = offset[u]!; k < offset[u + 1]!; k++) {
-        const v = other[k]!;
-        const target = labels[v]!;
-        if (target === c) {
-          internal = true;
-          continue;
-        }
-        const cell = row + (v >>> 5);
-        this._bits[cell] = this._bits[cell]! | (1 << (v & 31));
-        const source = target * this._words;
-        for (let w = 0; w < this._words; w++) {
-          this._bits[row + w] = this._bits[row + w]! | this._bits[source + w]!;
-        }
-      }
+    const c = this._component;
+    const members = this._members[c]!;
+    if (this._at >= members.length) {
+      this._component = c + 1;
+      this._at = 0;
+      return this._component < count;
     }
-    if (internal) {
-      for (const u of members) {
-        const cell = row + (u >>> 5);
-        this._bits[cell] = this._bits[cell]! | (1 << (u & 31));
-      }
+
+    const { offset, other } = this._structure.outbound;
+    const u = members[this._at]!;
+    const slot = offset[u]! + this._taken;
+    if (slot >= offset[u + 1]!) {
+      this._at++;
+      this._taken = 0;
+      return true;
     }
-    return this._component < this._partition.count;
+    this._taken++;
+
+    const row = c * this._words;
+    const v = other[slot]!;
+    const target = component[v]!;
+    if (target === c) {
+      // 单成员分量的自环；多成员的成员位构造时已置好，再置一次无害。
+      mark(this._bits, row, u);
+      return true;
+    }
+    mark(this._bits, row, v);
+    // scc 按逆拓扑序编号，故 target 的行此刻已终局，一遍位或即收敛。
+    const source = target * this._words;
+    for (let w = 0; w < this._words; w++) {
+      this._bits[row + w] = this._bits[row + w]! | this._bits[source + w]!;
+    }
+    return true;
   }
 
   public result(): Closure {

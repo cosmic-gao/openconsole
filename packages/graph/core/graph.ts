@@ -46,6 +46,9 @@ export interface ConnectOptions<E> {
  * 删除只在索引位上留空并进入自由表，已发出的索引永不改指；空位由 {@link Graph.compact}
  * 显式回收（回收会派发 `compacted`，带旧→新索引映射）。算法不直接吃 `Graph`，
  * 而是吃它编译出的 {@link Snapshot}。
+ *
+ * @remarks 各 `forEach*` 遍历期间修改图（增删节点或边）的行为未定义——先把要改的
+ *   收集出来再动手，事件订阅者不受此限（事件在变更完成后的事务边界派发）。
  */
 export class Graph<N = unknown, E = unknown> {
   /**
@@ -221,6 +224,10 @@ export class Graph<N = unknown, E = unknown> {
     });
   }
 
+  /**
+   * @remarks 返回记录里的 `inputs` / `outputs` 与图共享（零拷贝），类型上只读；
+   *   绕过类型去改写它属于未定义行为——要换端口走 {@link Graph.reshape}。
+   */
   public node(node: NodeId): NodeRecord<N> | undefined {
     const u = this._nodes.indexOf(node);
     if (u < 0) return undefined;
@@ -232,7 +239,7 @@ export class Graph<N = unknown, E = unknown> {
     };
   }
 
-  /** 按槽位取节点记录，跳过 id 查表；空位返回 `undefined`。 */
+  /** 按槽位取节点记录，跳过 id 查表；空位返回 `undefined`。端口共享语义见 {@link Graph.node}。 */
   public nodeAt(slot: number): NodeRecord<N> | undefined {
     const id = this._nodes.at(slot);
     if (id === undefined) return undefined;
@@ -724,17 +731,18 @@ export class Graph<N = unknown, E = unknown> {
     return this._rebuild(new Graph<N, E>(this.id));
   }
 
-  /** 同 id 的空图。 */
-  public emptyCopy(): Graph<N, E> {
-    return new Graph<N, E>(this.id);
-  }
-
   /** 诱导子图：只保留两端都在 `keep` 内的边。 */
   public subgraph(keep: Iterable<NodeId>): Graph<N, E> {
     return this._rebuild(new Graph<N, E>(this.id), new Set(keep));
   }
 
-  /** 并图；重复的节点与边以本图为准。 */
+  /**
+   * 并图；重复的节点与边以本图为准。
+   *
+   * @throws {@link Missing} / {@link Mismatch} / {@link Capacity} `other` 的边在本图的
+   *   同名节点上连不上——端口不存在、Socket 不兼容或单连接容量已被占。两图对同名节点
+   *   声明了不同端口时就会这样，并图前先对齐形状。
+   */
   public union(other: Graph<N, E>): Graph<N, E> {
     return other._rebuild(this.copy());
   }

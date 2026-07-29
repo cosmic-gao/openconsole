@@ -74,11 +74,20 @@ export class Vertex<
     return this;
   }
 
-  public removeInput(name: string & keyof I): boolean {
-    return delete this.inputs[name];
+  /**
+   * 摘掉一个输入端口声明；端口本来就不存在时无事发生。
+   *
+   * @remarks 与 `addInput` 一样返回 `this` 以便链式调用。刻意不返回"是否真的删掉了"：
+   *   `delete` 对不存在的属性同样给 `true`，那个布尔值恒真、不携带任何信息。
+   */
+  public removeInput(name: string & keyof I): this {
+    delete this.inputs[name];
+    return this;
   }
 
-  public removeOutput(name: string & keyof O): boolean {
-    return delete this.outputs[name];
+  /** 摘掉一个输出端口声明，语义同 {@link Vertex.removeInput}。 */
+  public removeOutput(name: string & keyof O): this {
+    delete this.outputs[name];
+    return this;
   }
 }

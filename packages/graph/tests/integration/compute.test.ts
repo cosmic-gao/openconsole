@@ -96,8 +96,10 @@ describe("中断、续跑与分帧的组合", () => {
     const task = halfway(closure(snapshot));
 
     const seen: number[] = [];
+    // 预算要够大：单步是一条邻接槽，而每帧让出受 setTimeout 的 ~15ms 粒度限制，
+    // 预算调小只是把帧数拖成几百，测不出更多东西。
     const result = await schedule(task, {
-      budget: 8,
+      budget: 64,
       onProgress: (progress) => seen.push(progress),
     });
 

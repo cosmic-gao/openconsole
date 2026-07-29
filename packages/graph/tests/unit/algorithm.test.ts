@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   acyclic,
   ancestors,
+  ancestry,
   astar,
   bellmanFord,
   bidirectional,
@@ -24,16 +25,20 @@ import {
   levels,
   nodeId,
   prim,
+  ranks,
   reachable,
   reduction,
+  roots,
   scc,
   settle,
   shortestPath,
   shortestPaths,
   simpleCycles,
   Snapshot,
+  subtree,
   topology,
   toposort,
+  type NodeId,
   type Structure,
   type Task,
 } from "../../index";
@@ -125,6 +130,30 @@ describe("拓扑序", () => {
     const snapshot = Snapshot.of(randomGraph(3, { order: 10, density: 4 }));
     expect(settle(acyclic(snapshot))).toBe(false);
     expect(() => settle(toposort(snapshot))).toThrow(Cycle);
+  });
+
+  /**
+   * `ranks` 是 `toposort` 的逆置换：一个给"第 i 位是谁"，一个给"谁在第几位"。
+   * 两者必须严格互逆，否则按位次比较先后的调用方（如 `Ordering.compare` 的全量口径）
+   * 会与拓扑序本身对不上。
+   */
+  it.each(SEEDS)("seed %i：ranks 与 toposort 互为逆置换", (seed) => {
+    const snapshot = Snapshot.of(
+      randomGraph(seed, { order: 30, density: 3, acyclic: true }),
+    );
+    const order = settle(toposort(snapshot));
+    const rank = settle(ranks(snapshot));
+
+    // 互逆即蕴含"每条边的位次递增"——边序本身已由上面的 toposort 用例钉住。
+    expect(rank).toHaveLength(snapshot.order);
+    for (let at = 0; at < order.length; at++) {
+      expect(rank[order[at]!]).toBe(at);
+    }
+  });
+
+  it("ranks 在有环图上抛 Cycle，不给出半截位次", () => {
+    const snapshot = Snapshot.of(randomGraph(4, { order: 12, density: 4 }));
+    expect(() => settle(ranks(snapshot))).toThrow(Cycle);
   });
 });
 
@@ -551,6 +580,7 @@ describe("NaN 权重防线", () => {
     ["floydWarshall", () => floydWarshall(tainted)],
     ["prim", () => prim(tainted)],
     ["kruskal", () => kruskal(tainted)],
+    ["criticalPath", () => criticalPath(tainted)],
   ] as const;
 
   it.each(guarded)("%s 抛 Invalid 而不是静默不可达", (_label, run) => {
@@ -600,5 +630,98 @@ describe("简单环的分量限域", () => {
     graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]);
 
     expect(rings(graph)).toEqual(["a,b", "a,b,c"]);
+  });
+});
+
+/**
+ * 复合层级的三个查询只吃活图（层级不进快照，也不进 `Structure`），是编辑器里「展开分组」
+ * 「面包屑」的直接实现。层级会被 `dropNode` 的提升与 `unparent` 就地改写，因此除了
+ * 常规形状，这两种改写之后的答案也各钉一遍。
+ */
+describe("复合层级查询", () => {
+  /** `top ⊃ group ⊃ {leaf, twig}`，另有一个独立节点 `loose`。 */
+  const nested = (): Graph<null, number> => {
+    const graph = new Graph<null, number>(graphId("tree"));
+    for (const name of ["top", "group", "leaf", "twig", "loose"]) {
+      graph.addNode(vertex<null>(name, null));
+    }
+    graph.setParent(nodeId("group"), nodeId("top"));
+    graph.setParent(nodeId("leaf"), nodeId("group"));
+    graph.setParent(nodeId("twig"), nodeId("group"));
+    return graph;
+  };
+
+  const sorted = (found: NodeId[]): string[] => found.slice().sort();
+
+  it("roots 给出全部顶层节点", () => {
+    expect(sorted(roots(nested()))).toEqual(["loose", "top"]);
+  });
+
+  it("subtree 含自身、跨全部层级；叶子只剩自己", () => {
+    const graph = nested();
+    expect(sorted(subtree(graph, nodeId("top")))).toEqual([
+      "group",
+      "leaf",
+      "top",
+      "twig",
+    ]);
+    expect(sorted(subtree(graph, nodeId("group")))).toEqual([
+      "group",
+      "leaf",
+      "twig",
+    ]);
+    expect(subtree(graph, nodeId("leaf"))).toEqual([nodeId("leaf")]);
+    expect(subtree(graph, nodeId("loose"))).toEqual([nodeId("loose")]);
+  });
+
+  it("ancestry 自底向上、不含自身；顶层给空", () => {
+    const graph = nested();
+    expect(ancestry(graph, nodeId("leaf"))).toEqual([
+      nodeId("group"),
+      nodeId("top"),
+    ]);
+    expect(ancestry(graph, nodeId("group"))).toEqual([nodeId("top")]);
+    expect(ancestry(graph, nodeId("top"))).toEqual([]);
+    expect(ancestry(graph, nodeId("loose"))).toEqual([]);
+  });
+
+  /** `dropNode` 把子节点提升到祖父，两个查询都得照着提升后的层级回答。 */
+  it("删掉中间分组后，子树与祖先链跟着收拢", () => {
+    const graph = nested();
+    graph.dropNode(nodeId("group"));
+
+    expect(sorted(subtree(graph, nodeId("top")))).toEqual([
+      "leaf",
+      "top",
+      "twig",
+    ]);
+    expect(ancestry(graph, nodeId("leaf"))).toEqual([nodeId("top")]);
+    expect(sorted(roots(graph))).toEqual(["loose", "top"]);
+  });
+
+  it("unparent 之后被摘出的子树自成顶层", () => {
+    const graph = nested();
+    graph.unparent(nodeId("group"));
+
+    expect(sorted(roots(graph))).toEqual(["group", "loose", "top"]);
+    expect(subtree(graph, nodeId("top"))).toEqual([nodeId("top")]);
+    expect(ancestry(graph, nodeId("leaf"))).toEqual([nodeId("group")]);
+  });
+
+  /**
+   * `subtree` 用循环而不是 `stack.push(...children)` 逐个入栈：展开实参有引擎上限，
+   * 宽分组会直接 RangeError。这里只取一个足够宽、又不依赖具体阈值的规模——阈值随
+   * 可用栈变化，钉它就是钉机器。
+   */
+  it("宽分组不靠展开实参，规模再大也照常展开", () => {
+    const graph = new Graph<null, number>(graphId("wide"));
+    graph.addNode(vertex<null>("group", null));
+    for (let i = 0; i < 20000; i++) {
+      graph.addNode(vertex<null>(`k${i}`, null));
+      graph.setParent(nodeId(`k${i}`), nodeId("group"));
+    }
+
+    expect(subtree(graph, nodeId("group"))).toHaveLength(20001);
+    expect(ancestry(graph, nodeId("k19999"))).toEqual([nodeId("group")]);
   });
 });

@@ -220,6 +220,24 @@ describe("跨线程搬运", () => {
     expect(revived.indexOf(graph.nodes()[0]!)).toBe(-1);
     expect(() => revived.names([0])).toThrow(/without labels/);
   });
+
+  /**
+   * `data` 的契约是"交给 postMessage、`Snapshot.from` 可还原"。按 core 还原的快照
+   * 没有标签层，它的 `data` 必须把空标签还原成"缺省"——原样带上空数组的话，
+   * 中转 Worker 转发时会被判作"0 个标签对 N 个节点"的矛盾数据。
+   */
+  it("core 还原的快照可以按 data 再转发一跳", () => {
+    const graph = randomGraph(31, { order: 20, density: 2 });
+    const snapshot = weighted(graph);
+    const relay = Snapshot.from(structuredClone(snapshot.core));
+    const again = Snapshot.from(structuredClone(relay.data));
+
+    expect(again.order).toBe(snapshot.order);
+    expect(again.size).toBe(snapshot.size);
+    expect(settle(scc(again)).count).toBe(settle(scc(snapshot)).count);
+    // 转发一跳后依然是"没有标签层"的快照，语义不变。
+    expect(() => again.names([0])).toThrow(/without labels/);
+  });
 });
 
 describe("增量重编译", () => {

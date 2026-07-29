@@ -1,4 +1,4 @@
-import { Cycle } from "../error";
+import { Cycle, Invalid } from "../error";
 import type { Structure } from "../snapshot";
 import { Stepwise, transform, type Task } from "../task";
 
@@ -21,33 +21,39 @@ export interface Critical {
  *   项即答案。
  */
 class Kahn extends Stepwise<Topology> {
-  private readonly _pending: Int32Array;
+  /** 首步才建：缺入向邻接时入度要 O(E) 扫出来，摆在构造函数里就成了不可中断的准备段。 */
+  private _pending: Int32Array | undefined;
   private readonly _queue: Int32Array;
   private _head = 0;
   private _tail = 0;
 
   public constructor(private readonly _structure: Structure) {
     super();
-    this._pending = indegrees(_structure);
     this._queue = new Int32Array(_structure.order);
-    for (let u = 0; u < _structure.order; u++) {
-      if (this._pending[u] === 0) this._queue[this._tail++] = u;
-    }
   }
 
   protected measure(): number {
     return this._structure.order === 0 ? 1 : this._head / this._structure.order;
   }
 
+  private _open(): Int32Array {
+    const pending = indegrees(this._structure);
+    for (let u = 0; u < this._structure.order; u++) {
+      if (pending[u] === 0) this._queue[this._tail++] = u;
+    }
+    return pending;
+  }
+
   protected step(): boolean {
+    const pending = (this._pending ??= this._open());
     if (this._head >= this._tail) return false;
     const u = this._queue[this._head++]!;
 
     const { offset, other } = this._structure.outbound;
     for (let k = offset[u]!; k < offset[u + 1]!; k++) {
       const v = other[k]!;
-      const left = this._pending[v]! - 1;
-      this._pending[v] = left;
+      const left = pending[v]! - 1;
+      pending[v] = left;
       if (left === 0) this._queue[this._tail++] = v;
     }
     return this._head < this._tail;
@@ -55,6 +61,8 @@ class Kahn extends Stepwise<Topology> {
 
   public result(): Topology {
     this.ensure();
+    // 跑完必然经过首步，`_pending` 已建；空图也会推进一次空步。
+    const pending = this._pending ?? EMPTY;
     const order = this._queue.subarray(0, this._tail);
     if (this._tail === this._structure.order) {
       return { order, cycle: EMPTY };
@@ -63,7 +71,7 @@ class Kahn extends Stepwise<Topology> {
     let at = 0;
     for (let u = 0; u < this._structure.order; u++) {
       // 自环会把入度减到负数，故用 !== 0 而非 > 0。
-      if (this._pending[u] !== 0) cycle[at++] = u;
+      if (pending[u] !== 0) cycle[at++] = u;
     }
     return { order, cycle: cycle.subarray(0, at) };
   }
@@ -145,7 +153,12 @@ export const generations = (structure: Structure): Task<Int32Array[]> =>
     return layers;
   });
 
-/** DAG 最长路。需要带权结构，否则每条边按 1 计。@throws {@link Cycle} */
+/**
+ * DAG 最长路。需要带权结构，否则每条边按 1 计。
+ *
+ * @throws {@link Cycle} 图中有环
+ * @throws {@link Invalid} 存在 `NaN` 权边——`NaN` 比不过任何候选，放过去只会静默漏掉整段路径
+ */
 export const criticalPath = (structure: Structure): Task<Critical> =>
   transform(toposort(structure), (order) => {
     const { offset, other, edge } = structure.outbound;
@@ -159,7 +172,9 @@ export const criticalPath = (structure: Structure): Task<Critical> =>
       if (dist[u]! > dist[end]!) end = u;
       for (let k = offset[u]!; k < offset[u + 1]!; k++) {
         const v = other[k]!;
-        const candidate = dist[u]! + (weight ? weight[edge[k]!]! : 1);
+        const cost = weight === undefined ? 1 : weight[edge[k]!]!;
+        if (Number.isNaN(cost)) throw new Invalid(edge[k]!);
+        const candidate = dist[u]! + cost;
         if (candidate > dist[v]!) {
           dist[v] = candidate;
           prev[v] = u;

@@ -235,6 +235,7 @@ export const condensation = (structure: Structure): Task<Condensed> =>
       for (let k = offset[u]!; k < offset[u + 1]!; k++) {
         const to = partition.component[other[k]!]!;
         if (to === from) continue;
+        // count < 2²⁶ 时不超过 2⁵³，键精确；标签层远在那个规模前就先耗尽内存了。
         const key = from * partition.count + to;
         if (seen.has(key)) continue;
         seen.add(key);

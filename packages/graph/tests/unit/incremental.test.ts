@@ -87,6 +87,69 @@ describe("增量拓扑序", () => {
     ordering.dispose();
   });
 
+  /**
+   * 消失的环未必途经被删的那条边。冲突边若不复活，`cyclic` 会在图早已无环之后
+   * 一直报真，而 `cycles()` 按 scc 真算又给空——两个口径就此对不上。
+   */
+  it("删掉环上的旁观边后，冲突边回到约束里", () => {
+    const graph = new Graph<number, number>(graphId("revive"));
+    for (const name of ["a", "b", "c"]) graph.addNode(vertex(name, 0));
+    const edges = [
+      graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"]),
+      graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"]),
+      graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]),
+    ];
+    const ordering = new Ordering(graph);
+    expect(ordering.cyclic).toBe(true);
+
+    const bystander = edges.find(
+      (edge) => !ordering.conflicts.has(graph.edgeIndexOf(edge)),
+    )!;
+    graph.disconnect(bystander);
+
+    expect(ordering.cyclic).toBe(false);
+    expect(ordering.cycles()).toEqual([]);
+    consistent(graph, ordering);
+    ordering.dispose();
+  });
+
+  it("一次删边可以连锁解除多条冲突边，收敛到不动点", () => {
+    const graph = new Graph<number, number>(graphId("chain"));
+    for (const name of ["a", "b", "c", "d"]) graph.addNode(vertex(name, 0));
+    // 大环 a→b→c→d→a 加弦 c→a：两个环共享 a→b→c 一段。
+    const ab = graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"]);
+    graph.connect([nodeId("c"), "out"], [nodeId("d"), "in"]);
+    graph.connect([nodeId("d"), "out"], [nodeId("a"), "in"]);
+    graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]);
+    const ordering = new Ordering(graph);
+    expect(ordering.cyclic).toBe(true);
+
+    // 删共享段上的一条边，两个环同时消失，全部冲突边都该复活。
+    graph.disconnect(ab);
+    expect(ordering.cyclic).toBe(false);
+    expect(ordering.cycles()).toEqual([]);
+    consistent(graph, ordering);
+    ordering.dispose();
+  });
+
+  it("事务里级联删边同样触发复活，且只按最终状态判定", () => {
+    const graph = new Graph<number, number>(graphId("cascade"));
+    for (const name of ["a", "b", "c"]) graph.addNode(vertex(name, 0));
+    graph.connect([nodeId("a"), "out"], [nodeId("b"), "in"]);
+    graph.connect([nodeId("b"), "out"], [nodeId("c"), "in"]);
+    graph.connect([nodeId("c"), "out"], [nodeId("a"), "in"]);
+    const ordering = new Ordering(graph);
+    expect(ordering.cyclic).toBe(true);
+
+    // 删节点级联删掉两条边，环消失；无论冲突边落在哪条，最终都不许残留。
+    graph.dropNode(nodeId("b"));
+    expect(ordering.cyclic).toBe(false);
+    expect(ordering.cycles()).toEqual([]);
+    consistent(graph, ordering);
+    ordering.dispose();
+  });
+
   it("带环起步时也能给出可用的顺序", () => {
     const graph = randomGraph(62, { order: 20, density: 3 });
     const ordering = new Ordering(graph);

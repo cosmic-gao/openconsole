@@ -270,6 +270,40 @@ describe("reshape", () => {
       "true",
     ]);
   });
+
+  /**
+   * `Vertex` 是可复用的可变模板，`removeInput` / `removeOutput` 是 `addInput` /
+   * `addOutput` 的另一半：在模板上摘掉引脚再 `reshape`，等价于声明一个更窄的形状。
+   */
+  it("模板上摘掉引脚，reshape 后该引脚的连线随之断开", () => {
+    const graph = blueprint();
+    expect(graph.linkedTo(branch, "false")).toBeDefined();
+
+    const template = new Vertex<Sockets, Sockets, string>(branch)
+      .addOutput("true", Socket.exec)
+      .addOutput("false", Socket.exec)
+      // 摘一个本来就没有的引脚只是无事发生，链式不断。
+      .removeOutput("false")
+      .removeOutput("nope");
+
+    expect(Object.keys(template.outputs)).toEqual(["true"]);
+    graph.reshape(branch, template);
+    expect(Object.keys(graph.node(branch)!.outputs)).toEqual(["true"]);
+    expect(graph.linkedTo(branch, "false")).toBeUndefined();
+  });
+
+  it("removeInput 同理，摘掉之后还能加回来", () => {
+    const template = new Vertex<Sockets, Sockets, string>(nodeId("t"))
+      .addInput("keep", Socket.exec)
+      .addInput("drop", Socket.number)
+      .removeInput("drop");
+
+    expect(Object.keys(template.inputs)).toEqual(["keep"]);
+
+    // 模板不持有任何连接状态，改它随时安全。
+    template.addInput("drop", Socket.string);
+    expect(template.inputs["drop"]!.socket).toBe(Socket.string);
+  });
 });
 
 describe("上层编排形态", () => {
